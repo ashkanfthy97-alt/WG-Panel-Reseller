@@ -1,0 +1,40 @@
+server {
+    listen 127.0.0.1:@PORTAL_PORT@;
+    server_name _;
+    root /srv/site;
+    index index.html;
+
+    location = / {
+        try_files /index.html =404;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'" always;
+    }
+
+    location = /app.html {
+        try_files /app.html =404;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'" always;
+    }
+
+    location ^~ /assets/ {
+        try_files $uri =404;
+        add_header X-Content-Type-Options nosniff always;
+        expires 1d;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:@PANEL_PORT@;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        client_max_body_size 16m;
+    }
+}

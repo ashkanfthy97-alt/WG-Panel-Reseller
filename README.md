@@ -26,4 +26,3 @@ Overview, customers/peers, subscriptions, reseller panel, one-off orders, WireGu
 ## Visual direction
 
 Midnight navy surfaces, restrained electric blue and teal highlights, a lightweight animated network grid, Persian RTL by default, English LTR on request, responsive layouts, and reduced-motion support. The operational feature set is inspired by the public [WG_Panel repository](https://github.com/Azumi67/WG_Panel), while this interface uses its own structure and styling.
-
