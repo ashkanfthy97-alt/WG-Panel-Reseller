@@ -26,16 +26,20 @@ GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git l
 سپس مخزن را دریافت و یکی از روش‌های بخش ۲ را اجرا کنید. اتصال دستورها با `&&` مانع اجرای `cd` و نصب در صورت شکست دریافت مخزن می‌شود:
 
 ```bash
-GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git && \
-  cd WG-Panel-Reseller/deploy/linux && \
-  bash ./install.sh --managed
+GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git && bash WG-Panel-Reseller/deploy/linux/install.sh --managed
 ```
 
-برای نصب کنار پنل موجود، در خط آخر به‌جای `--managed` از `--existing-port PORT` با پورت واقعی محلی استفاده کنید. اگر `ls-remote` همچنان `Permission denied (publickey)` داد، مطمئن شوید کلید عمومی ثبت‌شده همان خروجی فایل `.pub` روی **همین VPS** است، Deploy key در **همین مخزن** ثبت شده، و دسترسی مخزن برای حساب شما برقرار است. برای به‌روزرسانی بعدی نیز هنگام `git pull` همان `GIT_SSH_COMMAND` را به کار ببرید.
+برای نصب کنار پنل موجود، `--managed` را با `--existing-port PORT` و پورت واقعی محلی عوض کنید. اگر `ls-remote` همچنان `Permission denied (publickey)` داد، مطمئن شوید کلید عمومی ثبت‌شده همان خروجی فایل `.pub` روی **همین VPS** است و Deploy key در **همین مخزن** ثبت شده است. برای به‌روزرسانی بعدی نیز هنگام `git pull` همان `GIT_SSH_COMMAND` را به کار ببرید.
+
+اگر مخزن قبلاً در `/root/WG-Panel-Reseller` دریافت شده است، از هر پوشه‌ای روی همان VPS این یک خط را اجرا کنید:
+
+```bash
+GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git -C /root/WG-Panel-Reseller pull --ff-only && bash /root/WG-Panel-Reseller/deploy/linux/install.sh --managed
+```
 
 ## ۱. اطلاعات و پیش‌نیازهای سرور
 
-- یک VPS لینوکسی با دسترسی `sudo`، IP عمومی ثابت، WireGuard و Docker Engine + Docker Compose v2. برای نصب تازهٔ WG_Panel باید امکان مدیریت `/etc/wireguard` و ماژول‌های کرنل وجود داشته باشد.
+- یک VPS Ubuntu/Debian با دسترسی `root`، Git و IP عمومی ثابت. اسکریپت بسته‌های WireGuard و Python را خودش با `apt` نصب می‌کند و سرویس‌ها را با `systemd` راه می‌اندازد؛ Docker لازم نیست. برای نصب تازهٔ WG_Panel باید امکان مدیریت `/etc/wireguard` و ماژول‌های کرنل وجود داشته باشد.
 - یک زیردامنهٔ اختصاصی برای پرتال، رکورد DNS نوع A و در صورت استفاده از IPv6 رکورد AAAA، و یک reverse proxy دارای HTTPS روی همان سرور. نصب‌کننده هیچ سرویسی روی پورت ۴۴۳ بالا نمی‌آورد.
 - پورت‌های پیش‌فرض فقط روی `127.0.0.1` هستند: پرتال `8765` و WG_Panel نصب‌شده `8766`. n8n و ورودی HTTPS موجود دست‌نخورده می‌مانند.
 - یک پورت UDP جدا برای Interface وایرگارد (برای نمونه `51820/udp`) باید مطابق تنظیم خود WG_Panel و فایروال باز شود. پورت‌های محلی `8765` و `8766` نباید از اینترنت قابل دسترسی باشند.
@@ -45,11 +49,10 @@ GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git c
 
 ### اتصال به WG_Panel موجود
 
-اگر WG_Panel از قبل روی همین VPS اجرا می‌شود و از `127.0.0.1:8000` قابل دسترسی است:
+اگر WG_Panel از قبل روی همین VPS اجرا می‌شود و از `127.0.0.1:8000` قابل دسترسی است، از ریشهٔ پوشهٔ خانگی اجرا کنید:
 
 ```bash
-cd deploy/linux
-./install.sh --existing-port 8000
+bash WG-Panel-Reseller/deploy/linux/install.sh --existing-port 8000
 ```
 
 پورت نمونه را با پورت واقعی پنل عوض کنید. نصب‌کننده WG_Panel موجود را تغییر نمی‌دهد و صرفاً پرتال را با پروکسی محلی اجرا می‌کند. اگر پنل روی میزبان دیگری است، ابتدا تونل یا پروکسی امن محلی برقرار کنید؛ این نصب‌کننده تنها به یک پورت محلی وصل می‌شود.
@@ -57,13 +60,12 @@ cd deploy/linux
 ### نصب تازهٔ WG_Panel
 
 ```bash
-cd deploy/linux
-./install.sh --managed
+bash WG-Panel-Reseller/deploy/linux/install.sh --managed
 ```
 
-اسکریپت نسخهٔ مشخص‌شدهٔ مخزن رسمی [WG_Panel](https://github.com/Azumi67/WG_Panel) را دریافت می‌کند، کلیدهای نصب را در فایل خصوصی `.env` می‌سازد و پنل و پرتال را با Docker Compose اجرا می‌کند. فایل `.env` را به Git اضافه نکنید. نسخهٔ مبنا `f0f41068e1fd453d17acad23b9b90bc2a284bf59` است و مجوز Apache-2.0 آن در کد دریافت‌شده حفظ می‌شود.
+اسکریپت بسته‌های لازم را با `apt` نصب می‌کند، نسخهٔ مشخص‌شدهٔ مخزن رسمی [WG_Panel](https://github.com/Azumi67/WG_Panel) را دریافت می‌کند، محیط مجازی Python را می‌سازد، وابستگی‌ها را نصب می‌کند و دو سرویس `wg-portal-panel.service` و `wg-portal.service` را راه می‌اندازد. کلیدهای پنل در فایل خصوصی `.env` ساخته می‌شوند؛ آن را به Git اضافه نکنید. نسخهٔ مبنا `f0f41068e1fd453d17acad23b9b90bc2a284bf59` است و مجوز Apache-2.0 آن در کد دریافت‌شده حفظ می‌شود.
 
-برای تغییر پورت‌ها: `./install.sh --managed --panel-port 8866 --portal-port 8865`. هیچ‌کدام را با سرویس‌های موجود یکسان انتخاب نکنید. روش نصب، Dockerfile و سازوکار اولیهٔ ادمین از مخزن رسمی WG_Panel گرفته شده‌اند. رابط جدید روی یک پورت محلی جدا اجرا می‌شود تا تنظیم TLS و پورت ۴۴۳ فعلی را اشغال نکند.
+برای تغییر پورت‌ها: `bash WG-Panel-Reseller/deploy/linux/install.sh --managed --panel-port 8866 --portal-port 8865`. هیچ‌کدام را با سرویس‌های موجود یکسان انتخاب نکنید. روش نصب بومی Python و systemd و سازوکار اولیهٔ ادمین از مخزن رسمی WG_Panel گرفته شده‌اند. رابط جدید روی یک پورت محلی جدا اجرا می‌شود تا تنظیم TLS و پورت ۴۴۳ فعلی را اشغال نکند.
 
 ## ۳. ساخت تنها حساب مدیر اصلی
 
@@ -81,7 +83,7 @@ ssh -L 8765:127.0.0.1:8765 USER@SERVER_IP
 
 ## ۴. اتصال دامنه و انتشار امن
 
-رکورد DNS زیردامنه را به IP سرور اشاره دهید. در reverse proxy موجود، همان زیردامنه را با گواهی معتبر HTTPS به `http://127.0.0.1:8765` هدایت کنید؛ مسیرهای `/users`، `/login` و `/api` هم باید از همان مبدأ عبور کنند. از ایجاد یک listener جدید روی `443` خودداری کنید اگر n8n یا سرویس دیگری آن را در اختیار دارد. بعد از فعال‌سازی HTTPS، در نصب مدیریت‌شده `SECURE_COOKIES=1` را در `.env` تنظیم و `docker compose --profile managed up -d panel portal` را از همین پوشه اجرا کنید. دسترسی `/users` و API از همان مبدأ عبور می‌کند و احراز هویت WG_Panel برقرار می‌ماند. WG Portal هیچ کلید API پنل را به مرورگر نمی‌فرستد.
+رکورد DNS زیردامنه را به IP سرور اشاره دهید. در reverse proxy موجود، همان زیردامنه را با گواهی معتبر HTTPS به `http://127.0.0.1:8765` هدایت کنید؛ مسیرهای `/users`، `/login` و `/api` هم باید از همان مبدأ عبور کنند. از ایجاد یک listener جدید روی `443` خودداری کنید اگر n8n یا سرویس دیگری آن را در اختیار دارد. بعد از فعال‌سازی HTTPS، در نصب مدیریت‌شده `SECURE_COOKIES=1` را در `deploy/linux/.env` تنظیم و `systemctl restart wg-portal-panel.service` را اجرا کنید. دسترسی `/users` و API از همان مبدأ عبور می‌کند و احراز هویت WG_Panel برقرار می‌ماند. WG Portal هیچ کلید API پنل را به مرورگر نمی‌فرستد.
 
 قبل از در دسترس قراردادن دامنه، فقط پورت‌های لازم را در فایروال مجاز کنید، ورود SSH را به کلید محدود کنید، حساب مدیر و TOTP را بررسی کنید، گواهی TLS و نسخهٔ پشتیبان بازیابی‌پذیر را تأیید کنید. پورت غیرمعمول به‌تنهایی امنیت ایجاد نمی‌کند؛ کنترل دسترسی و HTTPS مهم هستند.
 
@@ -89,6 +91,6 @@ ssh -L 8765:127.0.0.1:8765 USER@SERVER_IP
 
 پس از ورود به `/users`، Interface و پورت UDP را طبق راهنمای خود WG_Panel بسازید، آدرس شبکهٔ خصوصی، DNS و مسیر خروجی را مطابق VPS تنظیم کنید، سپس Peer آزمایشی بسازید و وضعیت اتصال و مصرف را در `/app.html` ببینید. برای اتصال Nodeهای دیگر از دستورهای رسمی WG_Panel استفاده کنید؛ کلیدهای Node را در مخزن قرار ندهید.
 
-ربات تلگرام WG_Panel در Compose به‌صورت اختیاری تعریف شده و با نصب پیش‌فرض فعال نمی‌شود. پس از ساخت ربات در BotFather، توکن را فقط در `.env` سرور وارد کنید، شناسه‌های مجاز ادمین را در تنظیمات خود WG_Panel تعیین کنید و سپس `docker compose --profile managed --profile telegram up -d telegram-bot` را اجرا کنید. رابط نماینده و سفارش سایت هنوز به ربات فروش وصل نشده است.
+ربات تلگرام WG_Panel در سرویس اختیاری `wg-portal-bot.service` تعریف شده و با نصب پیش‌فرض فعال نمی‌شود. پس از ساخت ربات در BotFather، توکن را فقط در `deploy/linux/.env` سرور وارد کنید، شناسه‌های مجاز ادمین را در تنظیمات خود WG_Panel تعیین کنید و سپس `systemctl enable --now wg-portal-bot.service` را اجرا کنید. رابط نماینده و سفارش سایت هنوز به ربات فروش وصل نشده است.
 
 برای نسخهٔ فروش عملیاتی هنوز احراز هویت و مالکیت نماینده، دفتر اعتبار، سفارش‌های قابل حسابرسی، پرداخت و اتصال امن ربات تلگرام باید ساخته شوند. این بسته برای فروش واقعی آن بخش‌ها آماده نیست.
