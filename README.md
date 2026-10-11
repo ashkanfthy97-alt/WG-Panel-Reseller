@@ -44,7 +44,7 @@ GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git c
 GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git -C /root/WG-Panel-Reseller pull --ff-only && bash /root/WG-Panel-Reseller/deploy/linux/install.sh --managed
 ```
 
-اگر WG_Panel از قبل روی همین سرور اجرا می‌شود، دستور `bash WG-Panel-Reseller/deploy/linux/install.sh --existing-port 8000` را با پورت واقعی محلی پنل اجرا کنید. پرتال روی `127.0.0.1:8765` و پنل نصب تازه روی `127.0.0.1:8766` اجرا می‌شوند؛ پورت `443` اشغال نمی‌شود. پیش از دسترسی عمومی، مراحل ساخت حساب مدیر، اتصال دامنه، HTTPS، فایروال و پشتیبان‌گیری را در [راهنمای قدم‌به‌قدم فارسی](deploy/linux/README.fa.md) انجام دهید. هیچ رمز یا توکن ادمین در این مخزن قرار ندارد.
+اگر WG_Panel از قبل روی همین سرور اجرا می‌شود، دستور `bash WG-Panel-Reseller/deploy/linux/install.sh --existing-port 8000` را با پورت واقعی محلی پنل اجرا کنید. بعد از نصب، `wgportal` منوی نصب، وضعیت و گزارش‌ها را باز می‌کند؛ `wgpanel` نیز منوی اصلی خود WG_Panel را باز می‌کند، مگر اینکه از قبل فرمانی با همین نام روی سرور باشد. پرتال روی `127.0.0.1:8765` و پنل نصب تازه روی `127.0.0.1:8766` اجرا می‌شوند؛ پورت `443` اشغال نمی‌شود. برای دیدن صفحه از مرورگر خود، از تونل SSH در [راهنمای فارسی](deploy/linux/README.fa.md) استفاده کنید؛ نصب محلی به‌تنهایی سایت را روی IP عمومی منتشر نمی‌کند. هیچ رمز یا توکن ادمین در این مخزن قرار ندارد.
 
 ## Current stage
 
@@ -55,6 +55,8 @@ The hosted Sites edition remains a private frontend preview with local demo data
 The Sites frontend is hosted separately and does not bind a port on the user's VPS. The native Linux package installs Python services through systemd, binds the portal to `127.0.0.1:8765` and, for a managed upstream panel, binds WG_Panel to `127.0.0.1:8766`. It leaves 443 and n8n listeners untouched. A trusted HTTPS reverse proxy is required for external access. A nonstandard port is not a security boundary. n8n should eventually connect through an authenticated hostname/API or a verified webhook; credentials belong in server-side secret storage.
 
 The [step-by-step Linux runbook](deploy/linux/README.fa.md) covers VPS and DNS prerequisites, first-admin registration, TOTP, HTTPS, WireGuard interfaces, and the optional upstream Telegram bot. The only intended initial administrator is `ashkanfthy97@gmail.com`; its password and setup token are entered on the server and are never committed to this repository.
+
+The [WG_Panel integration map](docs/architecture/wg-panel-integration.md) records the upstream modules, CLI/service layout, and the current boundary between native panel functionality and the custom frontend.
 
 ## Product modules represented in the navigation
 
