@@ -34,7 +34,11 @@ done
 [[ "$(id -u)" == 0 ]] || { echo "Run as root" >&2; exit 1; }
 command -v apt-get >/dev/null || { echo "Ubuntu/Debian with apt-get is required" >&2; exit 1; }
 command -v systemctl >/dev/null || { echo "systemd is required" >&2; exit 1; }
-[[ -n "$MODE" ]] || { usage >&2; exit 2; }
+if [[ -z "$MODE" ]]; then
+  if [[ -t 0 ]]; then exec bash "$ROOT/menu.sh"; fi
+  usage >&2
+  exit 2
+fi
 valid_port "$PANEL_PORT" && valid_port "$PORTAL_PORT" || { echo "Invalid port" >&2; exit 2; }
 [[ "$PANEL_PORT" != "$PORTAL_PORT" ]] || { echo "Ports must differ" >&2; exit 2; }
 [[ -f "$SITE/dist/index.html" && -f "$SITE/dist/app.html" ]] || { echo "Built site files are missing" >&2; exit 1; }
@@ -67,6 +71,7 @@ if [[ "$MODE" == managed ]]; then
     echo "WG_Panel is not at the pinned revision; refusing to overwrite it" >&2
     exit 1
   }
+  VENV="$VENDOR/venv"
 fi
 
 [[ -x "$VENV/bin/python" ]] || python3 -m venv "$VENV"
@@ -82,7 +87,11 @@ cp -a "$SITE/dist/." "$ROOT/runtime/site/"
 printf '%s\n' 'window.WG_PORTAL_RUNTIME = Object.freeze({ mode: "wgpanel" });' > "$ROOT/runtime/site/assets/runtime-config.js"
 
 if [[ "$MODE" == managed ]]; then
-  if [[ ! -f "$ROOT/.env" ]]; then
+  ENV_FILE="$VENDOR/.env"
+  if [[ -f "$ROOT/.env" && ! -e "$ENV_FILE" ]]; then
+    mv "$ROOT/.env" "$ENV_FILE"
+  fi
+  if [[ ! -f "$ENV_FILE" ]]; then
     umask 077
     {
       printf 'BIND=127.0.0.1:%s\n' "$PANEL_PORT"
@@ -95,15 +104,52 @@ if [[ "$MODE" == managed ]]; then
       printf 'PANEL_BASE_URL=http://127.0.0.1:%s\n' "$PANEL_PORT"
       printf 'PANEL=http://127.0.0.1:%s\n' "$PANEL_PORT"
       printf 'SECURE_COOKIES=0\nWORKERS=2\nTHREADS=4\nTG_BOT_TOKEN=\n'
-    } > "$ROOT/.env"
+    } > "$ENV_FILE"
   fi
-  chmod 600 "$ROOT/.env"
-  configured_port="$(sed -n 's/^BIND=127\.0\.0\.1:\([0-9][0-9]*\)$/\1/p' "$ROOT/.env" | head -n 1)"
+  chmod 600 "$ENV_FILE"
+  configured_port="$(sed -n 's/^BIND=127\.0\.0\.1:\([0-9][0-9]*\)$/\1/p' "$ENV_FILE" | head -n 1)"
   [[ "$configured_port" == "$PANEL_PORT" ]] || {
     echo "Existing .env uses another panel port; rerun with --panel-port $configured_port" >&2
     exit 1
   }
-  cat > /etc/systemd/system/wg-portal-panel.service <<EOF
+  mkdir -p "$VENDOR/instance"
+  if [[ ! -f "$VENDOR/instance/panel_settings.json" ]]; then
+    cat > "$VENDOR/instance/panel_settings.json" <<EOF
+{
+  "tls_enabled": false,
+  "domain": "",
+  "force_https_redirect": false,
+  "hsts": false,
+  "http_port": $PANEL_PORT,
+  "https_port": 443,
+  "tls_cert_path": "",
+  "tls_key_path": ""
+}
+EOF
+  fi
+  if [[ ! -f "$VENDOR/instance/runtime.json" ]]; then
+    cat > "$VENDOR/instance/runtime.json" <<EOF
+{
+  "bind": "127.0.0.1:$PANEL_PORT",
+  "port": $PANEL_PORT,
+  "workers": 2,
+  "threads": 4,
+  "timeout": 120,
+  "graceful_timeout": 30,
+  "loglevel": "info"
+}
+EOF
+  fi
+  if [[ -e /etc/systemd/system/wg-panel.service ]] &&
+     ! grep -q '^Description=WG Portal managed WG_Panel$' /etc/systemd/system/wg-panel.service; then
+    echo "An existing wg-panel.service belongs to another installation; use --existing-port instead" >&2
+    exit 1
+  fi
+  if [[ -f /etc/systemd/system/wg-portal-panel.service ]] &&
+     grep -q '^Description=WG Portal managed WG_Panel$' /etc/systemd/system/wg-portal-panel.service; then
+    systemctl disable --now wg-portal-panel.service || true
+  fi
+  cat > /etc/systemd/system/wg-panel.service <<EOF
 [Unit]
 Description=WG Portal managed WG_Panel
 After=network-online.target
@@ -113,7 +159,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=$VENDOR
-EnvironmentFile=$ROOT/.env
+EnvironmentFile=$ENV_FILE
 ExecStart=$VENV/bin/python $VENDOR/app.py
 Restart=on-failure
 RestartSec=5
@@ -122,17 +168,25 @@ UMask=0077
 [Install]
 WantedBy=multi-user.target
 EOF
-  cat > /etc/systemd/system/wg-portal-bot.service <<EOF
+  if [[ -e /etc/systemd/system/wg-panel-bot.service ]] &&
+     ! grep -q '^Description=WG Portal optional Telegram bot$' /etc/systemd/system/wg-panel-bot.service; then
+    echo "An existing wg-panel-bot.service belongs to another installation; preserving it" >&2
+  else
+    if [[ -f /etc/systemd/system/wg-portal-bot.service ]] &&
+       grep -q '^Description=WG Portal optional Telegram bot$' /etc/systemd/system/wg-portal-bot.service; then
+      systemctl disable --now wg-portal-bot.service || true
+    fi
+    cat > /etc/systemd/system/wg-panel-bot.service <<EOF
 [Unit]
 Description=WG Portal optional Telegram bot
-After=wg-portal-panel.service
-Requires=wg-portal-panel.service
+After=wg-panel.service
+Requires=wg-panel.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=$VENDOR
-EnvironmentFile=$ROOT/.env
+EnvironmentFile=$ENV_FILE
 ExecStart=$VENV/bin/python $VENDOR/telegram_bot.py
 Restart=on-failure
 RestartSec=5
@@ -141,12 +195,13 @@ UMask=0077
 [Install]
 WantedBy=multi-user.target
 EOF
+  fi
 fi
 
 cat > /etc/systemd/system/wg-portal.service <<EOF
 [Unit]
 Description=WG Portal frontend and WG_Panel gateway
-After=network-online.target
+After=network-online.target wg-panel.service
 Wants=network-online.target
 
 [Service]
@@ -155,7 +210,7 @@ User=root
 WorkingDirectory=$ROOT
 Environment=WG_PORTAL_SITE_ROOT=$ROOT/runtime/site
 Environment=WG_PORTAL_PANEL_URL=http://127.0.0.1:$PANEL_PORT
-ExecStart=$VENV/bin/gunicorn --bind 127.0.0.1:$PORTAL_PORT --workers 2 --threads 4 --timeout 120 portal_proxy:app
+ExecStart=$VENV/bin/gunicorn --no-control-socket --bind 127.0.0.1:$PORTAL_PORT --workers 2 --threads 4 --timeout 120 portal_proxy:app
 Restart=on-failure
 RestartSec=5
 UMask=0077
@@ -169,10 +224,23 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
+cat > /usr/local/bin/wgportal <<EOF
+#!/usr/bin/env bash
+exec /bin/bash "$ROOT/menu.sh" "\$@"
+EOF
+chmod 755 /usr/local/bin/wgportal
+if [[ "$MODE" == managed && ! -e /usr/local/bin/wgpanel ]]; then
+  cat > /usr/local/bin/wgpanel <<EOF
+#!/usr/bin/env bash
+exec "$VENV/bin/python" "$ROOT/native_menu.py" "$VENDOR" "\$@"
+EOF
+  chmod 755 /usr/local/bin/wgpanel
+fi
+
 systemctl daemon-reload
 if [[ "$MODE" == managed ]]; then
-  systemctl enable wg-portal-panel.service
-  systemctl restart wg-portal-panel.service
+  systemctl enable wg-panel.service
+  systemctl restart wg-panel.service
 fi
 systemctl enable wg-portal.service
 systemctl restart wg-portal.service
@@ -187,7 +255,7 @@ wait_url() {
 }
 if [[ "$MODE" == managed ]]; then
   wait_url "http://127.0.0.1:$PANEL_PORT/login" || {
-    journalctl -u wg-portal-panel.service -n 30 --no-pager >&2
+    journalctl -u wg-panel.service -n 30 --no-pager >&2
     exit 1
   }
 fi
@@ -198,3 +266,5 @@ wait_url "http://127.0.0.1:$PORTAL_PORT/" || {
 printf '\nPortal: http://127.0.0.1:%s/\n' "$PORTAL_PORT"
 printf 'WireGuard controls: http://127.0.0.1:%s/users\n' "$PORTAL_PORT"
 printf 'Both listeners are local only; use your existing HTTPS reverse proxy for public access.\n'
+printf 'Private preview from your computer: ssh -L %s:127.0.0.1:%s root@SERVER_IP\n' "$PORTAL_PORT" "$PORTAL_PORT"
+printf 'Server menu: wgportal  |  WG_Panel menu: wgpanel (if no previous command existed)\n'
