@@ -2,6 +2,24 @@
 
 Persian/English interactive portal for WireGuard administrators, resellers, and single-order partners.
 
+## نصب سریع روی VPS لینوکسی
+
+مخزن **خصوصی** است؛ ابتدا کلید SSH سرور را به حساب GitHub خود اضافه کنید. سپس روی VPS، پس از نصب Docker Engine، Docker Compose v2، Git و WireGuard، دستور زیر را اجرا کنید:
+
+```bash
+git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git
+cd WG-Panel-Reseller/deploy/linux
+bash ./install.sh --managed
+```
+
+اگر WG_Panel از قبل روی همین سرور اجرا می‌شود و روی `127.0.0.1:8000` پاسخ می‌دهد، به‌جای دستور آخر از این دستور استفاده کنید:
+
+```bash
+bash ./install.sh --existing-port 8000
+```
+
+در صورت تفاوت، `8000` را با پورت محلی واقعی پنل عوض کنید. پرتال روی `127.0.0.1:8765` و پنل نصب تازه روی `127.0.0.1:8766` اجرا می‌شوند؛ پورت `443` اشغال نمی‌شود. پیش از دسترسی عمومی، مراحل ساخت حساب مدیر، اتصال دامنه، HTTPS، فایروال و پشتیبان‌گیری را در [راهنمای قدم‌به‌قدم فارسی](deploy/linux/README.fa.md) انجام دهید. هیچ رمز یا توکن ادمین در این مخزن قرار ندارد.
+
 ## Current stage
 
 The hosted Sites edition remains a private frontend preview with local demo data. `/` is the bilingual product introduction and `/app.html` is the dashboard preview. Do not enter real credentials, customer data, private keys, or bot tokens into it. The [Linux package](deploy/linux/README.fa.md) can serve the same dark UI alongside an existing or pinned upstream WG_Panel. In that mode, the overview, cumulative usage chart, and peer directory read authenticated live data, and `/users` provides the upstream operational panel. Reseller commerce, payments, Telegram integration, and n8n remain future backend work.
