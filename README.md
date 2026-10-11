@@ -22,15 +22,25 @@ Persian/English interactive portal for WireGuard administrators, resellers, and 
 
 ## نصب سریع روی VPS لینوکسی
 
-مخزن **خصوصی** است؛ ابتدا کلید SSH سرور را به حساب GitHub خود اضافه کنید. سپس روی VPS، پس از نصب Docker Engine، Docker Compose v2، Git و WireGuard، دستور زیر را اجرا کنید:
+مخزن **خصوصی** است. تأیید اثرانگشت `github.com` فقط هویت سرور GitHub را تأیید می‌کند و به VPS اجازهٔ خواندن مخزن نمی‌دهد. برای رفع خطای `Permission denied (publickey)`، روی VPS یک کلید مخصوص همین مخزن بسازید (اگر فایل هم‌نام از قبل وجود دارد، آن را بازنویسی نکنید):
 
 ```bash
-git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git
-cd WG-Panel-Reseller/deploy/linux
-bash ./install.sh --managed
+install -d -m 700 /root/.ssh
+ssh-keygen -t ed25519 -f /root/.ssh/wg_portal_deploy -C "wg-portal-vps" -N ''
+chmod 600 /root/.ssh/wg_portal_deploy
+cat /root/.ssh/wg_portal_deploy.pub
 ```
 
-اگر WG_Panel از قبل روی همین سرور اجرا می‌شود و روی `127.0.0.1:8000` پاسخ می‌دهد، به‌جای دستور آخر از این دستور استفاده کنید:
+**فقط متن کلید عمومی** که دستور آخر چاپ می‌کند را در تنظیمات همین مخزن، [Settings → Deploy keys](https://github.com/ashkanfthy97-alt/WG-Panel-Reseller/settings/keys)، با گزینهٔ **Allow write access خاموش** ثبت کنید. کلید خصوصی (فایل بدون پسوند `.pub`) را جایی ارسال نکنید. سپس، پس از نصب Docker Engine، Docker Compose v2، Git و WireGuard، روی VPS اجرا کنید:
+
+```bash
+GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git ls-remote git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git HEAD
+GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git && \
+  cd WG-Panel-Reseller/deploy/linux && \
+  bash ./install.sh --managed
+```
+
+اگر دستور `ls-remote` خطا داد، پیش از نصب [عیب‌یابی دسترسی SSH](deploy/linux/README.fa.md) را بخوانید. دستورهای `cd` و نصب فقط بعد از موفقیت `git clone` اجرا می‌شوند. اگر WG_Panel از قبل روی همین سرور اجرا می‌شود و روی `127.0.0.1:8000` پاسخ می‌دهد، به‌جای `bash ./install.sh --managed` از این دستور استفاده کنید:
 
 ```bash
 bash ./install.sh --existing-port 8000
