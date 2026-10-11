@@ -1,0 +1,6 @@
+deploy/linux/.env
+deploy/linux/venv/
+deploy/linux/vendor/
+deploy/linux/runtime/
+**/__pycache__/
+*.pyc
