@@ -2,6 +2,24 @@
 
 Persian/English interactive portal for WireGuard administrators, resellers, and single-order partners.
 
+## پیش‌نمایش تصویری
+
+تصاویر زیر از نسخهٔ نمایشی سایت گرفته شده‌اند. نام‌ها، مصرف و مبلغ‌ها نمونه هستند؛ بخش‌های فروش، نمایندگی و ربات تلگرام در این تصاویر پیش‌نمایش رابط کاربری‌اند و هنوز به سرویس فروش واقعی وصل نشده‌اند.
+
+**صفحهٔ معرفی**
+
+![صفحهٔ معرفی دو‌زبانهٔ وایرپنل با تم سرمه‌ای](docs/images/01-home.jpg)
+
+**داشبورد و نمودار مصرف**
+
+![نمای کلی داشبورد و نمودار مصرف سرویس‌ها](docs/images/02-dashboard.jpg)
+
+**بخش‌های پنل** — برای دیدن تصویر بزرگ‌تر، روی آن کلیک کنید.
+
+| مشتری‌ها و Peerها | نماینده‌ها | ربات تلگرام |
+| --- | --- | --- |
+| [![فهرست Peerها و مصرف سرویس](docs/images/03-peers.jpg)](docs/images/03-peers.jpg) | [![نمای مدیریت نمایندگان](docs/images/04-resellers.jpg)](docs/images/04-resellers.jpg) | [![گزینه‌های ربات تلگرام](docs/images/05-telegram.jpg)](docs/images/05-telegram.jpg) |
+
 ## نصب سریع روی VPS لینوکسی
 
 مخزن **خصوصی** است؛ ابتدا کلید SSH سرور را به حساب GitHub خود اضافه کنید. سپس روی VPS، پس از نصب Docker Engine، Docker Compose v2، Git و WireGuard، دستور زیر را اجرا کنید:
