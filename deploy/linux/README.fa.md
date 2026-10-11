@@ -2,6 +2,37 @@
 
 این بسته صفحهٔ معرفی دو‌زبانه در `/` و پنل تیره در `/app.html` را کنار نسخهٔ واقعی WG_Panel اجرا می‌کند. نمای کلی، نمودار مصرف تجمعی و فهرست Peerها بعد از ورود، داده را از WG_Panel می‌خوانند. عملیات کامل WireGuard از مسیر `/users` همان پنل در دسترس است. بخش نمایندگی، پرداخت و ثبت سفارش هنوز به سرویس فروش متصل نشده و در حالت لینوکس به‌عنوان دادهٔ واقعی نمایش داده نمی‌شود.
 
+## دریافت مخزن خصوصی و خطای `Permission denied (publickey)`
+
+اگر `git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git` خطای بالا را نشان داد، VPS برای خواندن این مخزن خصوصی مجوز SSH ندارد. پرسش مربوط به اثرانگشت `github.com` فقط برای تأیید هویت GitHub است و به مخزن دسترسی نمی‌دهد. در نتیجه پوشهٔ `WG-Panel-Reseller` ساخته نشده و خطاهای بعدی `cd` و `install.sh` پیامد همان شکست اول هستند.
+
+روی VPS، با کاربر `root`، یک کلید جدا برای این مخزن بسازید. اگر فایل `/root/.ssh/wg_portal_deploy` از پیش وجود دارد، آن را بازنویسی نکنید؛ کلید عمومی موجود را بررسی کنید یا نام دیگری برگزینید.
+
+```bash
+install -d -m 700 /root/.ssh
+ssh-keygen -t ed25519 -f /root/.ssh/wg_portal_deploy -C "wg-portal-vps" -N ''
+chmod 600 /root/.ssh/wg_portal_deploy
+cat /root/.ssh/wg_portal_deploy.pub
+```
+
+متن خروجی دستور `cat` را در [Settings → Deploy keys همین مخزن](https://github.com/ashkanfthy97-alt/WG-Panel-Reseller/settings/keys) با عنوان دلخواه ثبت کنید و گزینهٔ **Allow write access** را خاموش بگذارید. کلید خصوصی را در GitHub، پیام‌رسان یا این مخزن نگذارید. کلید بدون رمز برای نصب غیرتعاملی است و فقط `root` باید به فایل آن دسترسی داشته باشد.
+
+ابتدا دسترسی به مخزن را بررسی کنید؛ خروجی موفق `ls-remote` باید شناسهٔ commit را کنار `HEAD` نشان دهد:
+
+```bash
+GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git ls-remote git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git HEAD
+```
+
+سپس مخزن را دریافت و یکی از روش‌های بخش ۲ را اجرا کنید. اتصال دستورها با `&&` مانع اجرای `cd` و نصب در صورت شکست دریافت مخزن می‌شود:
+
+```bash
+GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git && \
+  cd WG-Panel-Reseller/deploy/linux && \
+  bash ./install.sh --managed
+```
+
+برای نصب کنار پنل موجود، در خط آخر به‌جای `--managed` از `--existing-port PORT` با پورت واقعی محلی استفاده کنید. اگر `ls-remote` همچنان `Permission denied (publickey)` داد، مطمئن شوید کلید عمومی ثبت‌شده همان خروجی فایل `.pub` روی **همین VPS** است، Deploy key در **همین مخزن** ثبت شده، و دسترسی مخزن برای حساب شما برقرار است. برای به‌روزرسانی بعدی نیز هنگام `git pull` همان `GIT_SSH_COMMAND` را به کار ببرید.
+
 ## ۱. اطلاعات و پیش‌نیازهای سرور
 
 - یک VPS لینوکسی با دسترسی `sudo`، IP عمومی ثابت، WireGuard و Docker Engine + Docker Compose v2. برای نصب تازهٔ WG_Panel باید امکان مدیریت `/etc/wireguard` و ماژول‌های کرنل وجود داشته باشد.
