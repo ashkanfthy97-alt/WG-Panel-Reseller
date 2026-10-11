@@ -9,6 +9,16 @@ UPSTREAM_COMMIT="f0f41068e1fd453d17acad23b9b90bc2a284bf59"
 MODE=""
 PANEL_PORT=8766
 PORTAL_PORT=8765
+if [[ -f "$ROOT/runtime/install.conf" ]]; then
+  while IFS='=' read -r key value; do
+    case "$key:$value" in
+      PORTAL_PORT:*) [[ "$value" =~ ^[0-9]+$ ]] && PORTAL_PORT="$value" ;;
+      PANEL_PORT:*) [[ "$value" =~ ^[0-9]+$ ]] && PANEL_PORT="$value" ;;
+    esac
+  done < "$ROOT/runtime/install.conf"
+fi
+trap 'echo "Installation stopped at line $LINENO. Review the error above; configuration was not reset." >&2' ERR
+step() { printf '\n[%s/6] %s\n' "$1" "$2"; }
 
 usage() {
   cat <<'EOF'
@@ -42,8 +52,31 @@ fi
 valid_port "$PANEL_PORT" && valid_port "$PORTAL_PORT" || { echo "Invalid port" >&2; exit 2; }
 [[ "$PANEL_PORT" != "$PORTAL_PORT" ]] || { echo "Ports must differ" >&2; exit 2; }
 [[ -f "$SITE/dist/index.html" && -f "$SITE/dist/app.html" ]] || { echo "Built site files are missing" >&2; exit 1; }
+VENDOR="$ROOT/vendor/WG_Panel"
+# Reject unrelated service ownership before moving config or stopping anything.
+for unit in wg-portal wg-panel wg-panel-bot; do
+  [[ "$MODE" == existing && "$unit" != wg-portal ]] && continue
+  expected="$VENDOR"
+  [[ "$unit" == wg-portal ]] && expected="$ROOT"
+  if [[ -f "/etc/systemd/system/$unit.service" ]] &&
+     ! grep -Fxq "WorkingDirectory=$expected" "/etc/systemd/system/$unit.service"; then
+    echo "$unit belongs to another installation. No services were changed." >&2
+    exit 1
+  fi
+done
+BOT_ENABLED=0 BOT_ACTIVE=0
+if [[ "$MODE" == managed ]]; then
+  for unit in wg-panel-bot wg-portal-bot; do
+    if [[ -f "/etc/systemd/system/$unit.service" ]] &&
+       grep -Fxq "WorkingDirectory=$VENDOR" "/etc/systemd/system/$unit.service"; then
+      if systemctl is-enabled --quiet "$unit.service"; then BOT_ENABLED=1; fi
+      if systemctl is-active --quiet "$unit.service"; then BOT_ACTIVE=1; fi
+    fi
+  done
+fi
 
-packages="ca-certificates curl git openssl python3 python3-venv python3-pip"
+step 1 "Checking system requirements / بررسی پیش‌نیازها"
+packages="sudo ca-certificates curl wget git jq rsync unzip openssl python3 python3-venv python3-pip"
 if [[ "$MODE" == managed ]]; then
   packages="$packages python3-dev build-essential pkg-config libffi-dev libssl-dev wireguard wireguard-tools iproute2 iptables procps"
 fi
@@ -60,6 +93,7 @@ if [[ -n "$missing" ]]; then
   apt-get install -y --no-install-recommends $missing
 fi
 
+step 2 "Preparing upstream WG_Panel / آماده‌سازی هسته اصلی"
 if [[ "$MODE" == managed ]]; then
   VENDOR="$ROOT/vendor/WG_Panel"
   if [[ ! -d "$VENDOR/.git" ]]; then
@@ -74,6 +108,7 @@ if [[ "$MODE" == managed ]]; then
   VENV="$VENDOR/venv"
 fi
 
+step 3 "Installing Python dependencies / نصب وابستگی‌ها"
 [[ -x "$VENV/bin/python" ]] || python3 -m venv "$VENV"
 "$VENV/bin/python" -m pip install --upgrade pip setuptools wheel
 if [[ "$MODE" == managed ]]; then
@@ -82,6 +117,7 @@ else
   "$VENV/bin/python" -m pip install Flask requests gunicorn
 fi
 
+step 4 "Preparing configuration / آماده‌سازی تنظیمات"
 mkdir -p "$ROOT/runtime/site/assets"
 cp -a "$SITE/dist/." "$ROOT/runtime/site/"
 printf '%s\n' 'window.WG_PORTAL_RUNTIME = Object.freeze({ mode: "wgpanel" });' > "$ROOT/runtime/site/assets/runtime-config.js"
@@ -141,7 +177,7 @@ EOF
 EOF
   fi
   if [[ -e /etc/systemd/system/wg-panel.service ]] &&
-     ! grep -q '^Description=WG Portal managed WG_Panel$' /etc/systemd/system/wg-panel.service; then
+     ! grep -Fxq "WorkingDirectory=$VENDOR" /etc/systemd/system/wg-panel.service; then
     echo "An existing wg-panel.service belongs to another installation; use --existing-port instead" >&2
     exit 1
   fi
@@ -169,7 +205,7 @@ UMask=0077
 WantedBy=multi-user.target
 EOF
   if [[ -e /etc/systemd/system/wg-panel-bot.service ]] &&
-     ! grep -q '^Description=WG Portal optional Telegram bot$' /etc/systemd/system/wg-panel-bot.service; then
+     ! grep -Fxq "WorkingDirectory=$VENDOR" /etc/systemd/system/wg-panel-bot.service; then
     echo "An existing wg-panel-bot.service belongs to another installation; preserving it" >&2
   else
     if [[ -f /etc/systemd/system/wg-portal-bot.service ]] &&
@@ -198,6 +234,7 @@ EOF
   fi
 fi
 
+step 5 "Installing systemd services / راه‌اندازی سرویس‌ها"
 cat > /etc/systemd/system/wg-portal.service <<EOF
 [Unit]
 Description=WG Portal frontend and WG_Panel gateway
@@ -244,11 +281,16 @@ if [[ "$MODE" == managed ]]; then
 fi
 systemctl enable wg-portal.service
 systemctl restart wg-portal.service
+if [[ "$MODE" == managed ]]; then
+  if [[ "$BOT_ENABLED" == 1 ]]; then systemctl enable wg-panel-bot.service; fi
+  if [[ "$BOT_ACTIVE" == 1 ]]; then systemctl restart wg-panel-bot.service; fi
+fi
 
+step 6 "Checking local HTTP responses / بررسی پاسخ سایت"
 wait_url() {
   local url="$1"
   for _ in $(seq 1 90); do
-    if curl --fail --silent --output /dev/null "$url"; then return 0; fi
+    if curl --fail --silent --connect-timeout 2 --max-time 3 --output /dev/null "$url"; then return 0; fi
     sleep 1
   done
   return 1
@@ -264,7 +306,11 @@ wait_url "http://127.0.0.1:$PORTAL_PORT/" || {
   exit 1
 }
 printf '\nPortal: http://127.0.0.1:%s/\n' "$PORTAL_PORT"
+umask 077
+printf 'MODE=%s\nPANEL_PORT=%s\nPORTAL_PORT=%s\n' "$MODE" "$PANEL_PORT" "$PORTAL_PORT" > "$ROOT/runtime/install.conf"
 printf 'WireGuard controls: http://127.0.0.1:%s/users\n' "$PORTAL_PORT"
 printf 'Both listeners are local only; use your existing HTTPS reverse proxy for public access.\n'
 printf 'Private preview from your computer: ssh -L %s:127.0.0.1:%s root@SERVER_IP\n' "$PORTAL_PORT" "$PORTAL_PORT"
 printf 'Server menu: wgportal  |  WG_Panel menu: wgpanel (if no previous command existed)\n'
+printf 'Next: wgportal > 3 for browser/owner setup, 4 for WireGuard, 5 for Telegram.\n'
+printf 'Persian installation guide: %s/README.fa.md\n' "$ROOT"
