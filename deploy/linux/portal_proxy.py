@@ -31,7 +31,8 @@ STATIC_HEADERS = {
     ),
 }
 
-app = Flask(__name__)
+# /static belongs to WG_Panel. Flask's default static route would shadow it.
+app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 256 * 1024 * 1024
 
 
@@ -63,10 +64,12 @@ def panel(path):
     url = PANEL_URL + "/" + path
     if request.query_string:
         url += "?" + request.query_string.decode("latin-1")
+    connection_headers = {name.strip().lower() for name in request.headers.get("Connection", "").split(",")}
     headers = {
         key: value
         for key, value in request.headers.items()
         if key.lower() not in HOP_HEADERS
+        and key.lower() not in connection_headers
         and key.lower() not in {"host", "content-length", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"}
     }
     headers["Host"] = request.host
@@ -90,7 +93,8 @@ def panel(path):
         return Response("WG_Panel is unavailable", status=502, content_type="text/plain")
     response_headers = []
     for key in upstream.raw.headers.keys():
-        if key.lower() in HOP_HEADERS:
+        response_connection_headers = {name.strip().lower() for name in upstream.headers.get("Connection", "").split(",")}
+        if key.lower() in HOP_HEADERS or key.lower() in response_connection_headers:
             continue
         for value in upstream.raw.headers.getlist(key):
             response_headers.append((key, value))
