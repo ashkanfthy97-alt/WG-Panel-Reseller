@@ -97,8 +97,8 @@
   }
 
   function peerState(peer) {
-    if (peer.status === "expired" || peer.panel_status === "disabled") return "expired";
-    return /online|connected/i.test(String(peer.conn_status || peer.connection_status || "")) ? "online" : "offline";
+    if ([peer.status, peer.panel_status].some((state) => ["expired", "disabled", "blocked"].includes(state))) return "expired";
+    return /^(online|connected)$/i.test(String(peer.conn_status || peer.connection_status || "").trim()) ? "online" : "offline";
   }
 
   function usedGb(peer) {
@@ -110,8 +110,8 @@
     const value = Number(peer.data_limit || 0);
     const unit = String(peer.limit_unit || "GB").toLowerCase();
     if (!value) return null;
-    if (unit === "mb" || unit === "mib") return value / 1024;
-    if (unit === "tb" || unit === "tib") return value * 1024;
+    if (["mi", "mb", "mib"].includes(unit)) return value / 1024;
+    if (["ti", "tb", "tib"].includes(unit)) return value * 1024;
     return value;
   }
 
