@@ -102,7 +102,15 @@ wizard() {
     bash "$ROOT/install.sh" --existing-port "$PANEL_PORT" --portal-port "$PORTAL_PORT" || return 1
   fi
   access
-  echo "Next: option 4 for WireGuard; option 5 for Telegram."
+  if [[ "$MODE" == managed ]]; then
+    printf '\nساخت Interface و NAT اکنون؟ / Configure WireGuard now? [y/N]: '
+    read -r selected || return
+    case "$selected" in y|Y) native wireguard || return 1 ;; esac
+    printf '\nراه‌اندازی ربات اکنون؟ / Configure Telegram now? [y/N]: '
+    read -r selected || return
+    case "$selected" in y|Y) native telegram || return 1 ;; esac
+  fi
+  echo "Next: register the owner in the browser, create one peer, and connect a client."
 }
 while true; do
   section "WG PORTAL · مرکز مدیریت وایرگارد"
@@ -129,7 +137,7 @@ while true; do
     5) native telegram; pause ;;
     6)
       echo "Advanced settings can change ports/TLS. Keep bind 127.0.0.1:$PANEL_PORT."
-      echo "Back up before using the upstream update/uninstall actions."
+      echo "Upstream main-branch updates are disabled to preserve WG Portal patches."
       native menu; pause ;;
     7) status; pause ;;
     8) journalctl -u wg-panel.service -u wg-portal.service -u wg-panel-bot.service -n 100 --no-pager; pause ;;
