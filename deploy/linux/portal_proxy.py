@@ -1,6 +1,7 @@
 """Local-only frontend and gateway for the native WG_Panel service."""
 
 import os
+import ipaddress
 from pathlib import Path
 
 import requests
@@ -9,6 +10,9 @@ from flask import Flask, Response, abort, request, send_from_directory
 
 SITE_ROOT = Path(os.environ["WG_PORTAL_SITE_ROOT"]).resolve()
 PANEL_URL = os.environ["WG_PORTAL_PANEL_URL"].rstrip("/")
+# Only local reverse proxies can supply forwarding metadata. They must overwrite
+# X-Forwarded-Proto and append the actual client address to X-Forwarded-For.
+PROXY_HEADERS = {"forwarded", "cf-connecting-ip", "cf-visitor", "true-client-ip", "x-real-ip", "x-url-scheme"}
 HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -70,16 +74,31 @@ def panel(path):
         for key, value in request.headers.items()
         if key.lower() not in HOP_HEADERS
         and key.lower() not in connection_headers
-        and key.lower() not in {"host", "content-length", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto"}
+        and key.lower() not in {"host", "content-length"}
+        and key.lower() not in PROXY_HEADERS
+        and not key.lower().startswith("x-forwarded-")
     }
     headers["Host"] = request.host
     headers["X-Forwarded-Host"] = request.host
-    headers["X-Forwarded-For"] = request.remote_addr or "127.0.0.1"
-    proto = request.headers.get("X-Forwarded-Proto", request.scheme).split(",")[0].strip()
+    client_ip = request.remote_addr or "127.0.0.1"
+    try:
+        trusted = ipaddress.ip_address(client_ip).is_loopback
+    except ValueError:
+        trusted = False
+    if trusted:
+        forwarded = request.headers.get("X-Forwarded-For", "").split(",")[-1].strip()
+        try:
+            client_ip = str(ipaddress.ip_address(forwarded))
+        except ValueError:
+            pass
+    headers["X-Forwarded-For"] = client_ip
+    proto = request.headers.get("X-Forwarded-Proto", request.scheme).strip() if trusted else request.scheme
     headers["X-Forwarded-Proto"] = proto if proto in {"http", "https"} else request.scheme
     body = request.get_data(cache=False) if request.method in {"POST", "PUT", "PATCH", "DELETE"} else None
     try:
-        upstream = requests.request(
+        transport = requests.Session()
+        transport.trust_env = False
+        upstream = transport.request(
             request.method,
             url,
             headers=headers,
@@ -89,11 +108,12 @@ def panel(path):
             timeout=(5, 120),
         )
     except requests.RequestException:
+        transport.close()
         app.logger.exception("WG_Panel upstream unavailable")
         return Response("WG_Panel is unavailable", status=502, content_type="text/plain")
     response_headers = []
+    response_connection_headers = {name.strip().lower() for name in upstream.headers.get("Connection", "").split(",")}
     for key in upstream.raw.headers.keys():
-        response_connection_headers = {name.strip().lower() for name in upstream.headers.get("Connection", "").split(",")}
         if key.lower() in HOP_HEADERS or key.lower() in response_connection_headers:
             continue
         for value in upstream.raw.headers.getlist(key):
@@ -105,4 +125,5 @@ def panel(path):
         direct_passthrough=True,
     )
     response.call_on_close(upstream.close)
+    response.call_on_close(transport.close)
     return response
