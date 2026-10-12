@@ -109,12 +109,14 @@ if [[ "$MODE" == managed ]]; then
 fi
 
 step 3 "Installing Python dependencies / نصب وابستگی‌ها"
-[[ -x "$VENV/bin/python" ]] || python3 -m venv "$VENV"
-"$VENV/bin/python" -m pip install --upgrade pip setuptools wheel
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else "Python 3.11+ required; use Debian 12+ or Ubuntu 24.04+.")'
 if [[ "$MODE" == managed ]]; then
-  "$VENV/bin/python" -m pip install -r "$VENDOR/requirements.txt"
-else
-  "$VENV/bin/python" -m pip install Flask requests gunicorn
+  python3 "$ROOT/apply_upstream_patches.py" "$VENDOR" --check
+fi
+[[ -x "$VENV/bin/python" ]] || python3 -m venv "$VENV"
+"$VENV/bin/python" -m pip install -r "$ROOT/requirements.lock"
+if [[ "$MODE" == managed ]]; then
+  python3 "$ROOT/apply_upstream_patches.py" "$VENDOR"
 fi
 
 step 4 "Preparing configuration / آماده‌سازی تنظیمات"
@@ -143,6 +145,7 @@ if [[ "$MODE" == managed ]]; then
     } > "$ENV_FILE"
   fi
   chmod 600 "$ENV_FILE"
+  "$VENV/bin/python" -c 'import sys; from dotenv import dotenv_values; values=dotenv_values(sys.argv[1]); key=(values.get("FLASK_SECRET_KEY") or "").strip(); sys.exit(0 if len(key)>=32 and key.lower() not in ("change-me","changeme") else "Unsafe FLASK_SECRET_KEY; set a random key of at least 32 characters in .env before continuing. Existing keys were not changed.")' "$ENV_FILE"
   configured_port="$(sed -n 's/^BIND=127\.0\.0\.1:\([0-9][0-9]*\)$/\1/p' "$ENV_FILE" | head -n 1)"
   [[ "$configured_port" == "$PANEL_PORT" ]] || {
     echo "Existing .env uses another panel port; rerun with --panel-port $configured_port" >&2
