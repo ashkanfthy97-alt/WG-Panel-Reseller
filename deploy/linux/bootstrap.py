@@ -50,11 +50,16 @@ def ensure_token(path: Path, prompt=None) -> str:
             raise ValueError("Existing SETUP_TOKEN is shorter than 32 characters; use controlled recovery rather than overwriting it")
         return token
     if prompt is None:
+        import warnings
         try:
-            with open("/dev/tty", "r+", encoding="utf-8") as terminal:
-                token = getpass.getpass("کد نصب اولیه (حداقل ۳۲ نویسه؛ آن را برای مرورگر نگه دارید): ", stream=terminal)
-        except OSError as exc:
-            raise ValueError("An interactive /dev/tty is required once to enter the first-run token") from exc
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", getpass.GetPassWarning)
+                token = getpass.getpass("کد نصب اولیه (حداقل ۳۲ نویسه؛ آن را برای مرورگر نگه دارید): ")
+        except (OSError, EOFError, getpass.GetPassWarning) as exc:
+            raise ValueError(
+                "Secure hidden input requires an interactive SSH terminal. "
+                "Reconnect with a TTY and rerun the installer; the first-run token was not saved."
+            ) from exc
     else:
         token = prompt()
     if len(token) < 32 or len(token) > 256 or token != token.strip() or any(character in token for character in "\r\n\0"):
