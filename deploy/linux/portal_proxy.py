@@ -2,10 +2,12 @@
 
 import os
 import ipaddress
+from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
-from flask import Flask, Response, abort, request, send_from_directory
+from flask import Flask, Response, abort, redirect, request, send_from_directory
 
 
 SITE_ROOT = Path(os.environ["WG_PORTAL_SITE_ROOT"]).resolve()
@@ -38,6 +40,29 @@ STATIC_HEADERS = {
 # /static belongs to WG_Panel. Flask's default static route would shadow it.
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 256 * 1024 * 1024
+app.config.update(SECRET_KEY=os.environ.get('FLASK_SECRET_KEY'),
+                  SESSION_COOKIE_NAME='wgportal_reseller_session',
+                  SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True,
+                  SESSION_COOKIE_SAMESITE='Strict', PERMANENT_SESSION_LIFETIME=timedelta(minutes=30))
+if os.environ.get('WG_PORTAL_RESELLER_DB'):
+    if len(os.environ.get('FLASK_SECRET_KEY', '')) < 32:
+        raise RuntimeError('A protected application secret is required for reseller sessions')
+    from portal_reseller import reseller_blueprint
+    app.register_blueprint(reseller_blueprint(PANEL_URL, os.environ['WG_PORTAL_RESELLER_DB'], os.environ.get('API_KEY', '')))
+
+
+def _allowed_hosts() -> set[str]:
+    configured = app.config.get("WG_PORTAL_ALLOWED_HOSTS")
+    if configured is None:
+        configured = os.environ.get("WG_PORTAL_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]")
+    return {item.strip().lower().rstrip(".") for item in str(configured).split(",") if item.strip()}
+
+
+@app.before_request
+def validate_host():
+    host = (urlsplit(request.host_url).hostname or "").lower().rstrip(".")
+    if not host or host not in _allowed_hosts():
+        abort(400, description="Unrecognized Host header")
 
 
 def static_file(name):
@@ -48,12 +73,17 @@ def static_file(name):
 
 @app.route("/")
 def home():
-    return static_file("index.html")
+    return panel("")
 
 
 @app.route("/app.html")
 def dashboard():
-    return static_file("app.html")
+    return redirect('/')
+
+
+@app.route('/welcome')
+def welcome():
+    return static_file('index.html')
 
 
 @app.route("/assets/<path:name>")

@@ -1,5 +1,6 @@
 deploy/linux/.env
 deploy/linux/venv/
+deploy/linux/acme-venv/
 deploy/linux/vendor/
 deploy/linux/runtime/
 **/__pycache__/

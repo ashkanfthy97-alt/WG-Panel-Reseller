@@ -1,6 +1,6 @@
 # WG Portal
 
-Persian/English interactive portal for WireGuard administrators, resellers, and single-order partners.
+WG_Panel native application with a dark Persian/English shell, scoped reseller accounts and browser-based setup.
 
 ## پیش‌نمایش تصویری
 
@@ -20,61 +20,45 @@ Persian/English interactive portal for WireGuard administrators, resellers, and 
 | --- | --- | --- |
 | [![فهرست Peerها و مصرف سرویس](docs/images/03-peers.jpg)](docs/images/03-peers.jpg) | [![نمای مدیریت نمایندگان](docs/images/04-resellers.jpg)](docs/images/04-resellers.jpg) | [![گزینه‌های ربات تلگرام](docs/images/05-telegram.jpg)](docs/images/05-telegram.jpg) |
 
-## نصب سریع روی VPS لینوکسی
+## نصب با یک دستور و ادامه از مرورگر
 
-**نسخهٔ اصلاح‌شدهٔ هسته:** کنترل ثبت مدیر و CSRF، کنترل مقصد Node، وابستگی‌های ثابت و مسیر ارتقای اختصاصی محصول اضافه شده‌اند. Python 3.11+ لازم است. [جزئیات اصلاحات و محدودیت‌ها](docs/architecture/hardening-2026-10-12.fa.md).
+نسخهٔ اجرایی، خود Flask و صفحات بومی **WG_Panel** است؛ تصاویر بالا مرجع طراحی نسخهٔ نمایشی‌اند. صفحهٔ اصلی نصب جدید به داشبورد واقعی پنل می‌رود. نمایندگی افزونه‌ای با حساب و مالکیت مستقل است.
 
-برای نصب تعاملی، بعد از دریافت مخزن دستور `bash deploy/linux/menu.sh` را از ریشه مخزن اجرا کنید. منوی رنگی، راهنمای فارسی، نصب مرحله‌ای، آدرس ورود، ساخت مدیر و راه‌اندازهای اصلی WireGuard و Telegram را در اختیار می‌گذارد. پس از نصب، همین منو با `wgportal` باز می‌شود. [گزارش اصلاحات و محدودیت‌های فعلی](docs/architecture/review-2026-10-11.fa.md).
-
-مخزن **خصوصی** است. تأیید اثرانگشت `github.com` فقط هویت سرور GitHub را تأیید می‌کند و به VPS اجازهٔ خواندن مخزن نمی‌دهد. برای رفع خطای `Permission denied (publickey)`، روی VPS یک کلید مخصوص همین مخزن بسازید (اگر فایل هم‌نام از قبل وجود دارد، آن را بازنویسی نکنید):
+پس از دریافت مخزن خصوصی، از ریشهٔ آن با دسترسی root اجرا کنید:
 
 ```bash
-install -d -m 700 /root/.ssh
-ssh-keygen -t ed25519 -f /root/.ssh/wg_portal_deploy -C "wg-portal-vps" -N ''
-chmod 600 /root/.ssh/wg_portal_deploy
-cat /root/.ssh/wg_portal_deploy.pub
+bash deploy/linux/install.sh
 ```
 
-**فقط متن کلید عمومی** که دستور آخر چاپ می‌کند را در تنظیمات همین مخزن، [Settings → Deploy keys](https://github.com/ashkanfthy97-alt/WG-Panel-Reseller/settings/keys)، با گزینهٔ **Allow write access خاموش** ثبت کنید. کلید خصوصی (فایل بدون پسوند `.pub`) را جایی ارسال نکنید. روی VPS اجرا کنید:
+هدف نصب فعلی: **Ubuntu 24.04، x86_64، Python 3.12 و systemd**. Docker لازم نیست. نصب‌کننده بسته‌ها و سرویس‌ها را آماده می‌کند و در نصب تازه فقط **توکن ثبت‌نام اولیهٔ انتخابی شما با حداقل ۳۲ نویسه** را پنهان می‌پرسد. رمز مدیر، دامنه و توکن تلگرام در ترمینال پرسیده نمی‌شوند.
 
-```bash
-GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git ls-remote git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git HEAD
-GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git && bash WG-Panel-Reseller/deploy/linux/install.sh --managed
-```
+پس از نصب، آدرس `https://SERVER_IP:8767/setup` و اثرانگشت گواهی چاپ می‌شود. گواهی نخست محلی است و مرورگر هشدار می‌دهد؛ اثرانگشت را با خروجی VPS مقایسه کنید. HTTP روی IP فقط راهنمای ورود امن است و توکن یا رمز نمی‌گیرد. اگر ۸۰ اشغال باشد راهنما روی ۸۷۶۸ قرار می‌گیرد؛ سرویس دیگر متوقف نمی‌شود. پورت **۴۴۳ تصاحب نمی‌شود**.
 
-اگر دستور `ls-remote` خطا داد، پیش از نصب [عیب‌یابی دسترسی SSH](deploy/linux/README.fa.md) را بخوانید. نصب‌کننده بسته‌های Ubuntu/Debian، محیط مجازی Python و سرویس‌های systemd را خودش آماده می‌کند؛ **Docker لازم نیست**. اگر مخزن را قبلاً در `/root/WG-Panel-Reseller` گرفته‌اید، با یک دستور به‌روزرسانی و نصب کنید:
+در مرورگر:
 
-```bash
-GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_portal_deploy -o IdentitiesOnly=yes' git -C /root/WG-Panel-Reseller pull --ff-only && bash /root/WG-Panel-Reseller/deploy/linux/install.sh --managed
-```
+1. با توکن نصب، نخستین و تنها مدیر مادر را بسازید؛ توکن برای ورودهای بعدی نیست.
+2. با همان حساب وارد شوید؛ احراز هویت و 2FA متعلق به هستهٔ WG_Panel باقی می‌ماند.
+3. در `/manage`، گواهی عمومی IP یا دامنه، Interface و ربات تلگرام را تنظیم کنید. درخواست صدور تا تأیید راه‌اندازی سرویس «در انتظار» می‌ماند.
+4. در `/resellers` حساب نماینده بسازید، Interface و سقف Peer را تعیین و اعتبارش را تمدید کنید. نماینده در `/reseller` وارد می‌شود.
+5. پس از تکمیل، `/` پنل عملیاتی WG_Panel است؛ Peer، اشتراک، Node، backup/restore و تنظیمات اصلی مسیرهای بومی خود را دارند.
 
-اگر WG_Panel از قبل روی همین سرور اجرا می‌شود، دستور `bash WG-Panel-Reseller/deploy/linux/install.sh --existing-port 8000` را با پورت واقعی محلی پنل اجرا کنید. بعد از نصب، `wgportal` منوی نصب، وضعیت و گزارش‌ها را باز می‌کند؛ `wgpanel` نیز منوی اصلی خود WG_Panel را باز می‌کند، مگر اینکه از قبل فرمانی با همین نام روی سرور باشد. پرتال روی `127.0.0.1:8765` و پنل نصب تازه روی `127.0.0.1:8766` اجرا می‌شوند؛ پورت `443` اشغال نمی‌شود. برای دیدن صفحه از مرورگر خود، از تونل SSH در [راهنمای فارسی](deploy/linux/README.fa.md) استفاده کنید؛ نصب محلی به‌تنهایی سایت را روی IP عمومی منتشر نمی‌کند. هیچ رمز یا توکن ادمین در این مخزن قرار ندارد.
+برای گواهی عمومی HTTP-01، پورت ۸۰ باید از اینترنت برای challenge این محصول قابل دسترسی باشد. اگر آن را سرویس دیگری گرفته است، از reverse proxy همان سرویس مسیر challenge را متصل کنید؛ نصب‌کننده سرویس نامرتبط را تغییر نمی‌دهد. DNS دامنه باید به IP سرور اشاره کند. فایروال VPS یا ارائه‌دهنده نیز باید دسترسی پورت پنل و UDP وایرگارد را مجاز کند.
 
-## Current stage
+### دسترسی به مخزن خصوصی
 
-The hosted Sites edition remains a private frontend preview with local demo data. `/` is the bilingual product introduction and `/app.html` is the dashboard preview. Do not enter real credentials, customer data, private keys, or bot tokens into it. The [Linux package](deploy/linux/README.fa.md) can serve the same dark UI alongside an existing or pinned upstream WG_Panel. In that mode, the overview, cumulative usage chart, and peer directory read authenticated live data, and `/users` provides the upstream operational panel. Reseller commerce, payments, Telegram integration, and n8n remain future backend work.
+نصب محصول جای احراز هویت GitHub را نمی‌گیرد. VPS باید قبلاً مجوز خواندن مخزن را داشته باشد. برای Deploy key فقط کلید **عمومی** را در تنظیمات مخزن اضافه کنید و دسترسی نوشتن ندهید؛ کلید خصوصی را ارسال یا commit نکنید. پس از دریافت موفق مخزن، دستور نصب بالا کافی است. هیچ لینک دانلود عمومی یا انتشار تازه‌ای در این تغییر ایجاد نشده است.
 
-## Site runtime and ports
+## امکانات و مرز نسخهٔ فعلی
 
-The Sites frontend is hosted separately and does not bind a port on the user's VPS. The native Linux package installs Python services through systemd, binds the portal to `127.0.0.1:8765` and, for a managed upstream panel, binds WG_Panel to `127.0.0.1:8766`. It leaves 443 and n8n listeners untouched. A trusted HTTPS reverse proxy is required for external access. A nonstandard port is not a security boundary. n8n should eventually connect through an authenticated hostname/API or a verified webhook; credentials belong in server-side secret storage.
+- هستهٔ ثابت upstream: `f0f41068e1fd453d17acad23b9b90bc2a284bf59`؛ patcher پیش از نوشتن همهٔ anchorها و تغییرات محلی را بررسی می‌کند.
+- تم سرمه‌ای/آبی روی قالب‌های واقعی، فونت محلی، RTL/LTR و تغییر زبان پوستهٔ مشترک اعمال می‌شود. ترجمهٔ همهٔ متن‌های صفحات بومی هنوز کامل نیست.
+- نمایندهٔ فعلی: ورود مستقل، ساخت Peer محلی با حجم/زمان، مشاهدهٔ مصرف، دریافت config/QR، توقف/ادامه بدون reset سهمیه. انقضای اعتبار، دسترسی پنل نماینده را می‌بندد؛ داده و کانفیگ مشتری حذف نمی‌شود. این نسخه همهٔ اختیارهای مدیر مادر را به نماینده نمی‌دهد.
+- تمدید اعتبار با رسید یکتای درخواست ثبت می‌شود؛ ساخت نامشخص خودکار تکرار نمی‌شود و برای بررسی مدیر نگه داشته می‌شود.
+- ابزارهای مدیریتی Linux برای عیب‌یابی باقی‌اند؛ راه‌اندازی روزمره به وب منتقل شده است. نصب Node روی VPS دیگر، تغییر DNS نزد ارائه‌دهنده و قواعد فایروال بیرونی هنوز نیاز به دسترسی همان محیط دارند.
+- updater مستقیم upstream عمداً مسدود است تا تغییرات محصول پاک نشوند. ارتقا فقط از نسخهٔ بازبینی‌شدهٔ همین محصول و نصب‌کننده انجام شود.
 
-The [step-by-step Linux runbook](deploy/linux/README.fa.md) covers VPS and DNS prerequisites, first-admin registration, TOTP, HTTPS, WireGuard interfaces, and the optional upstream Telegram bot. The only intended initial administrator is `ashkanfthy97@gmail.com`; its password and setup token are entered on the server and are never committed to this repository.
+## وضعیت بررسی
 
-The [WG_Panel integration map](docs/architecture/wg-panel-integration.md) records the upstream modules, CLI/service layout, and the current boundary between native panel functionality and the custom frontend.
+کد نصب و سرویس‌ها ایجاد شده است؛ تست‌های محلی جدا و بررسی syntax، نصب واقعی روی Ubuntu، صدور واقعی ACME یا تأیید عملکرد WireGuard نیستند. قبل از استفادهٔ عملی، نصب روی VPS آزمایشی و بررسی مسیرهای شبکه، بازیابی و تمدید گواهی لازم است. این نسخه برای نصب مدیریت‌شدهٔ تازه است؛ اتصال به پنل موجود بدون patch سازگار در این انتشار پشتیبانی نمی‌شود.
 
-## Product modules represented in the navigation
-
-Overview, customers/peers, subscriptions, reseller panel, one-off orders, WireGuard interfaces, nodes, profiles, health/operations, audit logs, backup/restore, security, traffic policies, Telegram, settings, and API documentation.
-
-## Integration requirements before production
-
-- Add tenant ownership and role-scoped authorization to the backend; never rely on hidden navigation or client-side role selection.
-- Replace the current single-admin identity model with administrator, full-panel reseller, and approved order-only partner identities.
-- Keep WG_Panel as a WireGuard execution adapter behind a narrow service API. Do not expose its broad shared API key to browsers or third parties.
-- Add an auditable credit ledger, idempotent order/recharge operations, expiry/renewal jobs, and safe provisioning compensation.
-- Run the Persian Telegram bot as a separate long-lived service next to the backend. Use allowlisted chat/user identities and scoped commands for each role.
-- Add database migrations, per-tenant isolation, rate limits, abuse controls, operational monitoring, tested backup/restore, and security review before live sales.
-
-## Visual direction
-
-Midnight navy surfaces, restrained electric blue and teal highlights, a lightweight animated network grid, Persian RTL by default, English LTR on request, responsive layouts, and reduced-motion support. The operational feature set is inspired by the public [WG_Panel repository](https://github.com/Azumi67/WG_Panel), while this interface uses its own structure and styling.
+[راهنمای نصب و مدیریت وب](deploy/linux/README.fa.md) · [مرجع upstream](https://github.com/Azumi67/WG_Panel)

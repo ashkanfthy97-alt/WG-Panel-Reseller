@@ -9,6 +9,37 @@ import requests
 import urllib3
 
 
+MAX_NODE_RESPONSE_BYTES = 16 * 1024 * 1024
+
+
+class NodeResponseTooLarge(requests.RequestException):
+    """A trusted Node API exceeded the configured decoded response limit."""
+
+
+def _read_bounded(response, max_bytes=MAX_NODE_RESPONSE_BYTES):
+    try:
+        declared = response.headers.get("Content-Length")
+        if declared is not None:
+            try:
+                if int(declared) > max_bytes:
+                    raise NodeResponseTooLarge("Node response exceeds size limit")
+            except ValueError as exc:
+                raise NodeResponseTooLarge("Node returned an invalid Content-Length") from exc
+        chunks = []
+        size = 0
+        while True:
+            chunk = response.read(min(64 * 1024, max_bytes - size + 1), decode_content=True)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > max_bytes:
+                raise NodeResponseTooLarge("Node response exceeds size limit")
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        response.close()
+
+
 def _request(method, base_url, path, api_key, payload=None, timeout=8, raw=False):
     base = urlsplit(str(base_url).rstrip("/"))
     if base.scheme not in {"http", "https"} or not base.hostname or base.username or base.password or base.query or base.fragment:
@@ -42,11 +73,15 @@ def _request(method, base_url, path, api_key, payload=None, timeout=8, raw=False
         pool = urllib3.HTTPConnectionPool(address, **options)
     try:
         response = pool.urlopen(method, target, headers=headers, body=body, redirect=False,
-                                retries=False, assert_same_host=False)
+                                retries=False, assert_same_host=False, preload_content=False)
+        content = _read_bounded(response)
         result = requests.Response()
         result.status_code = response.status
         result.headers.update(response.headers)
-        result._content = response.data
+        if result.headers.get("Content-Encoding"):
+            result.headers.pop("Content-Encoding", None)
+        result.headers["Content-Length"] = str(len(content))
+        result._content = content
         result.url = base_url + "/" + str(path).lstrip("/")
         if 300 <= response.status < 400:
             raise requests.HTTPError("Node redirects are not permitted", response=result)

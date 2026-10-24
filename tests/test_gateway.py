@@ -4,7 +4,10 @@ import os
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
+import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,7 +48,10 @@ class GatewayChecks(unittest.TestCase):
         os.environ["WG_PORTAL_PANEL_URL"] = "http://127.0.0.1:" + str(cls.server.server_port)
         spec = importlib.util.spec_from_file_location("gateway", ROOT / "deploy/linux/portal_proxy.py")
         cls.module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(cls.module)
+        cls.temporary = tempfile.TemporaryDirectory()
+        sys.path.insert(0, str(ROOT / 'deploy/linux'))
+        with patch.dict(os.environ, {'WG_PORTAL_RESELLER_DB': str(Path(cls.temporary.name) / 'resellers.sqlite3'), 'FLASK_SECRET_KEY': 'test-secret-' * 4}):
+            spec.loader.exec_module(cls.module)
         cls.client = cls.module.app.test_client()
 
     @classmethod
@@ -53,6 +59,7 @@ class GatewayChecks(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join()
+        cls.temporary.cleanup()
 
     def test_native_static_is_forwarded(self):
         with self.client.get("/static/panel.css") as response:
@@ -80,9 +87,41 @@ class GatewayChecks(unittest.TestCase):
     def test_frontend_and_missing_asset(self):
         with self.client.get("/") as response:
             self.assertEqual(response.status_code, 200)
-            self.assertIn("Content-Security-Policy", response.headers)
+            self.assertEqual(response.data, b'/')
+        with self.client.get('/app.html') as response:
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.headers['Location'], '/')
+        with self.client.get('/welcome') as response:
+            self.assertIn('Content-Security-Policy', response.headers)
         with self.client.get("/assets/not-present.css") as response:
             self.assertEqual(response.status_code, 404)
+
+    def test_rejects_unconfigured_host(self):
+        with self.client.get("/login", headers={"Host": "attacker.example"}) as response:
+            self.assertEqual(response.status_code, 400)
+
+    def test_reseller_assets_and_separate_session_are_reachable(self):
+        for path in ('/reseller', '/resellers', '/reseller/assets/reseller.js', '/reseller/assets/reseller.css'):
+            with self.client.get(path) as response:
+                self.assertEqual(response.status_code, 200, path)
+        with self.client.get('/reseller/api/session') as response:
+            self.assertIsNone(response.json['account'])
+            cookie = response.headers.get('Set-Cookie', '')
+            self.assertIn('wgportal_reseller_session=', cookie)
+            self.assertIn('Secure', cookie)
+            self.assertIn('HttpOnly', cookie)
+
+    def test_configured_host_is_case_insensitive_and_port_aware(self):
+        os.environ["WG_PORTAL_ALLOWED_HOSTS"] = "portal.example, 192.0.2.8"
+        self.module.app.config["WG_PORTAL_ALLOWED_HOSTS"] = None
+        try:
+            with self.client.get("/", headers={"Host": "PORTAL.EXAMPLE:8765"}) as response:
+                self.assertEqual(response.status_code, 200)
+            with self.client.get("/", headers={"Host": "unknown.example"}) as response:
+                self.assertEqual(response.status_code, 400)
+        finally:
+            os.environ.pop("WG_PORTAL_ALLOWED_HOSTS", None)
+            self.module.app.config["WG_PORTAL_ALLOWED_HOSTS"] = None
 
 
 if __name__ == "__main__":
