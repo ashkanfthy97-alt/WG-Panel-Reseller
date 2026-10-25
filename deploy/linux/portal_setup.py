@@ -32,7 +32,6 @@ from setup_state import (
 
 ROOT = Path(os.environ.get("WG_PORTAL_SETUP_ROOT", Path(__file__).resolve().parent)).resolve()
 RUNTIME = Path(os.environ.get("WG_PORTAL_RUNTIME", ROOT / "runtime")).resolve()
-SITE_ROOT = Path(os.environ.get("WG_PORTAL_SITE_ROOT", RUNTIME / "site")).resolve()
 UI_ROOT = Path(os.environ.get("WG_PORTAL_SETUP_UI_ROOT", Path(__file__).parent / "setup_ui")).resolve()
 PANEL_URL = os.environ.get("WG_PORTAL_PANEL_URL", "http://127.0.0.1:8766").rstrip("/")
 GATEWAY_URL = os.environ.get("WG_PORTAL_GATEWAY_URL", "http://127.0.0.1:8765").rstrip("/")

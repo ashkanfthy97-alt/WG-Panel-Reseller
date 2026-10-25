@@ -1,0 +1,18 @@
+# Example for /opt/wg-panel. The managed installer writes its actual panel/bot units.
+[Unit]
+Description=WG_Panel WireGuard Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/wg-panel/agent
+EnvironmentFile=/opt/wg-panel/agent/.env
+ExecStart=/opt/wg-panel/agent/venv/bin/python /opt/wg-panel/agent/node_agent.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

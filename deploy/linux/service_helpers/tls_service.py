@@ -47,7 +47,7 @@ def assert_secure_checkout(root: Path) -> None:
     site = root.parent.parent
     assert_secure_ancestry(site)
     assert_secure_ancestry(root)
-    venvs = (root / "venv", root / "acme-venv", root / "vendor/WG_Panel/venv")
+    venvs = (site / "venv", root / "venv", root / "acme-venv")
     for directory, directories, files in os.walk(site, followlinks=False):
         for name in [*directories, *files]:
             path = Path(directory) / name
@@ -323,7 +323,7 @@ def renew_reload_tls(root: Path) -> None:
 
 def start_telegram(root: Path, unit_file: Path | None = None) -> None:
     unit = unit_file or Path("/etc/systemd/system/wg-panel-bot.service")
-    expected = "WorkingDirectory=" + str(root / "vendor/WG_Panel")
+    expected = "WorkingDirectory=" + str(root.parent.parent)
     if not unit.is_file() or expected not in unit.read_text(encoding="utf-8").splitlines():
         raise ValueError("Telegram service does not belong to this WG Portal installation")
     if os.name != "nt":

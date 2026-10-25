@@ -1,0 +1,1 @@
+{% extends 'dashboard-legacy.html' if request.args.get('design', request.cookies.get('wg-design')) == 'legacy' else 'dashboard-modern.html' %}

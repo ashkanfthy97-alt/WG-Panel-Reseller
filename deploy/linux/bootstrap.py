@@ -174,7 +174,6 @@ def prepare(root: Path, panel_env: Path, panel_port: int, portal_port: int, http
             state.mark_tls_ready("wg-portal-bootstrap", str(current))
     paths = {
         "WG_PORTAL_SETUP_ROOT": str(root), "WG_PORTAL_RUNTIME": str(runtime),
-        "WG_PORTAL_SITE_ROOT": str(runtime / "site"),
         "WG_PORTAL_SETUP_DB": str(runtime / "setup.sqlite3"),
         "WG_PORTAL_RESELLER_DB": str(runtime / "resellers.sqlite3"),
         "WG_PORTAL_ENV_FILE": str(runtime / "portal.env"),

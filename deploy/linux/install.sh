@@ -31,7 +31,6 @@ spec.loader.exec_module(module)
 module.assert_secure_checkout(root)
 PY
 VENV="$ROOT/venv"
-UPSTREAM_URL="https://github.com/Azumi67/WG_Panel.git"
 UPSTREAM_COMMIT="f0f41068e1fd453d17acad23b9b90bc2a284bf59"
 MODE="managed"
 PANEL_PORT_EXPLICIT=0
@@ -94,8 +93,13 @@ command -v ss >/dev/null || { echo "The ss utility (iproute2) is required for sa
 valid_port "$PANEL_PORT" && valid_port "$PORTAL_PORT" || { echo "Invalid port" >&2; exit 2; }
 [[ "$PANEL_PORT" != "$PORTAL_PORT" ]] || { echo "Ports must differ" >&2; exit 2; }
 [[ "$PANEL_PORT" != "$SETUP_PORT" && "$PORTAL_PORT" != "$SETUP_PORT" ]] || { echo "Port 8767 is reserved for HTTPS setup" >&2; exit 2; }
-[[ -f "$SITE/dist/index.html" && -f "$SITE/dist/app.html" ]] || { echo "Built site files are missing" >&2; exit 1; }
-VENDOR="$ROOT/vendor/WG_Panel"
+[[ -f "$SITE/UPSTREAM_REVISION" && "$(cat "$SITE/UPSTREAM_REVISION")" == "$UPSTREAM_COMMIT" ]] || {
+  echo "Unsupported or incomplete native-source release; no services were changed" >&2; exit 1;
+}
+for source in app.py models.py wg.py portal_security.py portal_peer_guard.py templates/dashboard-modern.html static/css/portal-theme.css; do
+  [[ -f "$SITE/$source" ]] || { echo "Packaged native source is missing: $source" >&2; exit 1; }
+done
+VENDOR="$SITE"
 if [[ "$MODE" == managed ]]; then
   prior_env="$VENDOR/.env"
   [[ -f "$prior_env" ]] || prior_env="$ROOT/.env"
@@ -189,36 +193,19 @@ if [[ -n "$missing" ]]; then
 fi
 python3 "$ROOT/install_helpers.py" check-runtime
 
-step 2 "Preparing upstream WG_Panel / آماده‌سازی هسته اصلی"
-if [[ "$MODE" == managed ]]; then
-  VENDOR="$ROOT/vendor/WG_Panel"
-  if [[ ! -d "$VENDOR/.git" ]]; then
-    mkdir -p "$ROOT/vendor"
-    git clone --filter=blob:none --no-checkout "$UPSTREAM_URL" "$VENDOR"
-    git -C "$VENDOR" checkout --detach "$UPSTREAM_COMMIT"
-  fi
-  [[ "$(git -C "$VENDOR" rev-parse HEAD)" == "$UPSTREAM_COMMIT" ]] || {
-    echo "WG_Panel is not at the pinned revision; refusing to overwrite it" >&2
-    exit 1
-  }
-  VENV="$VENDOR/venv"
-fi
+step 2 "Using packaged WG_Panel source / استفاده از سورس همین مخزن"
+VENDOR="$SITE"
+VENV="$VENDOR/venv"
 
 step 3 "Installing Python dependencies / نصب وابستگی‌ها"
-if [[ "$MODE" == managed ]]; then
-  python3 "$ROOT/apply_upstream_patches.py" "$VENDOR" --check
-fi
 [[ -x "$VENV/bin/python" ]] || python3 -m venv "$VENV"
 "$VENV/bin/python" "$ROOT/install_helpers.py" check-runtime
 "$VENV/bin/python" -m pip install --require-hashes -r "$ROOT/requirements.lock"
-if [[ "$MODE" == managed ]]; then
-  python3 "$ROOT/apply_upstream_patches.py" "$VENDOR"
-fi
 
 step 4 "Preparing configuration / آماده‌سازی تنظیمات"
 if [[ "$MODE" == managed ]]; then
   ENV_FILE="$VENDOR/.env"
-  if [[ ! -f "$ENV_FILE" && ! -f "$ROOT/.env" ]]; then
+  if [[ ! -f "$ENV_FILE" ]]; then
     mkdir -p "$(dirname "$ENV_FILE")"
     umask 077
     temporary_env="$(mktemp "$(dirname "$ENV_FILE")/.env-new.XXXXXX")"
@@ -241,7 +228,7 @@ if [[ "$MODE" == managed ]]; then
     fi
     rm -f "$temporary_env"
   fi
-  migration_args=(migrate-env "$ENV_FILE" --fallback "$ROOT/.env" --port "$PANEL_PORT")
+  migration_args=(migrate-env "$ENV_FILE" --port "$PANEL_PORT")
   [[ "$PANEL_PORT_EXPLICIT" == 1 ]] && migration_args+=(--port-explicit)
   PANEL_PORT="$("$VENV/bin/python" "$ROOT/install_helpers.py" "${migration_args[@]}")"
   chmod 600 "$ENV_FILE"
@@ -345,9 +332,6 @@ fi
   "$ROOT/acme-venv/bin/python" -m pip install 'certbot==5.8.0'
 }
 
-mkdir -p "$ROOT/runtime/site/assets"
-cp -a "$SITE/dist/." "$ROOT/runtime/site/"
-printf '%s\n' 'window.WG_PORTAL_RUNTIME = Object.freeze({ mode: "wgpanel" });' > "$ROOT/runtime/site/assets/runtime-config.js"
 if [[ ! -f "$ROOT/runtime/portal.env" ]]; then
   umask 077
   printf '%s\n' 'WG_PORTAL_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]' > "$ROOT/runtime/portal.env"
@@ -365,7 +349,6 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=$ROOT
-Environment=WG_PORTAL_SITE_ROOT=$ROOT/runtime/site
 Environment=WG_PORTAL_PANEL_URL=http://127.0.0.1:$PANEL_PORT
 EnvironmentFile=$ROOT/runtime/setup.env
 EnvironmentFile=-$ROOT/runtime/portal.env

@@ -44,7 +44,6 @@ class GatewayChecks(unittest.TestCase):
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
-        os.environ["WG_PORTAL_SITE_ROOT"] = str(ROOT / "dist")
         os.environ["WG_PORTAL_PANEL_URL"] = "http://127.0.0.1:" + str(cls.server.server_port)
         spec = importlib.util.spec_from_file_location("gateway", ROOT / "deploy/linux/portal_proxy.py")
         cls.module = importlib.util.module_from_spec(spec)
@@ -92,7 +91,8 @@ class GatewayChecks(unittest.TestCase):
             self.assertEqual(response.status_code, 302)
             self.assertEqual(response.headers['Location'], '/')
         with self.client.get('/welcome') as response:
-            self.assertIn('Content-Security-Policy', response.headers)
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.headers['Location'], '/')
         with self.client.get("/assets/not-present.css") as response:
             self.assertEqual(response.status_code, 404)
 

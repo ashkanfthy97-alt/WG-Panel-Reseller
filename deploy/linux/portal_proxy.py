@@ -3,14 +3,12 @@
 import os
 import ipaddress
 from datetime import timedelta
-from pathlib import Path
 from urllib.parse import urlsplit
 
 import requests
-from flask import Flask, Response, abort, redirect, request, send_from_directory
+from flask import Flask, Response, abort, redirect, request
 
 
-SITE_ROOT = Path(os.environ["WG_PORTAL_SITE_ROOT"]).resolve()
 PANEL_URL = os.environ["WG_PORTAL_PANEL_URL"].rstrip("/")
 # Only local reverse proxies can supply forwarding metadata. They must overwrite
 # X-Forwarded-Proto and append the actual client address to X-Forwarded-For.
@@ -25,18 +23,6 @@ HOP_HEADERS = {
     "transfer-encoding",
     "upgrade",
 }
-STATIC_HEADERS = {
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Content-Security-Policy": (
-        "default-src 'self'; base-uri 'self'; object-src 'none'; "
-        "frame-ancestors 'none'; form-action 'self'; script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-        "font-src 'self' data:; connect-src 'self'"
-    ),
-}
-
 # /static belongs to WG_Panel. Flask's default static route would shadow it.
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 256 * 1024 * 1024
@@ -65,12 +51,6 @@ def validate_host():
         abort(400, description="Unrecognized Host header")
 
 
-def static_file(name):
-    response = send_from_directory(SITE_ROOT, name)
-    response.headers.update(STATIC_HEADERS)
-    return response
-
-
 @app.route("/")
 def home():
     return panel("")
@@ -83,12 +63,12 @@ def dashboard():
 
 @app.route('/welcome')
 def welcome():
-    return static_file('index.html')
+    return redirect('/')
 
 
 @app.route("/assets/<path:name>")
 def assets(name):
-    return static_file("assets/" + name)
+    abort(404)
 
 
 @app.route("/<path:path>", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
