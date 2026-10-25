@@ -24,14 +24,15 @@ def replace_once(text, before, after):
 
 
 def digest(text):
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return hashlib.sha256(text if isinstance(text, bytes) else text.encode("utf-8")).hexdigest()
 
 
 def atomic_write(path, content, mode=0o644):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=".portal-", dir=path.parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+        options = {} if isinstance(content, bytes) else dict(encoding='utf-8', newline='\n')
+        with os.fdopen(fd, 'wb' if isinstance(content, bytes) else 'w', **options) as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
@@ -75,7 +76,12 @@ def prepare(root):
     app = replace_once(app, 'x_host=1, x_port=1)', 'x_host=1, x_port=0)')
     app = replace_once(app, 'if __name__ == "__main__":',
                        'from portal_security import install_security\n'
-                       'install_security(app, csrf)\n\nif __name__ == "__main__":')
+                       'install_security(app, csrf)\n'
+                       'from portal_peer_guard import install_peer_guard\n'
+                       'install_peer_guard(app, csrf, globals())\n\nif __name__ == "__main__":')
+    app = replace_once(app, "                'id': peer.id,\n\n                'shortlink': shortlink_url or '',",
+                       "                'id': peer.id,\n                'public_key': peer.public_key,\n"
+                       "                'iface_id': peer.iface_id,\n\n                'shortlink': shortlink_url or '',")
     # Keep the upstream sync concurrency model. Do not claim THREADS is effective.
     app = replace_once(app, '    threads          = _env_int("THREADS", 4)',
                        '    # WG Portal: sync workers deliberately do not consume THREADS.')
@@ -93,12 +99,33 @@ def prepare(root):
         "wg.py": wg,
         "scripts/panel_update.py": updater,
         "portal_security.py": (HERE / "overlays/portal_security.py").read_text(encoding="utf-8"),
+        "portal_peer_guard.py": (HERE / "overlays/portal_peer_guard.py").read_text(encoding="utf-8"),
         "panel_core/node_client.py": (HERE / "overlays/node_client.py").read_text(encoding="utf-8"),
         "requirements.txt": (HERE / "requirements.lock").read_text(encoding="utf-8"),
         "install-gui.sh": '#!/usr/bin/env bash\nset -euo pipefail\n'
-            'echo "WG Portal uses its guided terminal installer."\n'
-            f'exec bash {shlex.quote(str(HERE / "menu.sh"))}\n',
+            'echo "WG Portal: install once, then complete setup in your browser."\n'
+            f'exec bash {shlex.quote(str(HERE / "install.sh"))}\n',
     }
+    added = {'portal_security.py', 'portal_peer_guard.py'}
+    for path in ('static/css/portal-theme.css', 'static/js/portal-locale.js'):
+        changes[path] = (HERE / 'overlays' / path).read_text(encoding='utf-8')
+        added.add(path)
+    for filename in ('Vazirmatn-wght.woff2', 'OFL.txt'):
+        destination = 'static/fonts/' + ('portal-vazirmatn.woff2' if filename.endswith('.woff2') else 'portal-vazirmatn-OFL.txt')
+        changes[destination] = (HERE.parents[1] / 'dist/assets/fonts' / filename).read_bytes()
+        added.add(destination)
+    # Skin native templates, preserving their forms, IDs and existing scripts.
+    for name in ('base.html', 'login.html', 'register.html', 'user_peer.html',
+                 'user_peer_compact.html', 'user_peer_minimal.html', 'user_peer_pro.html', 'subscription_public.html'):
+        path = 'templates/' + name
+        template = original(path)
+        template = replace_once(template, '</head>',
+            '<link rel="stylesheet" href="/static/css/portal-theme.css"></head>')
+        template = replace_once(template, '</body>',
+            '<script defer src="/static/js/portal-locale.js"></script></body>')
+        changes[path] = template
+    changes['templates/dashboard-modern.html'] = (
+        HERE / 'overlays/templates/dashboard-modern.html').read_text(encoding='utf-8')
     for name, directory, entry in [
         ("bot.service", root, "telegram_bot.py"),
         ("wg-node-agent.service", root / "agent", "node_agent.py"),
@@ -115,7 +142,7 @@ def prepare(root):
     for path, content in changes.items():
         if path.endswith(".py"):
             ast.parse(content, filename=path)
-        originals[path] = None if path == "portal_security.py" else original(path)
+        originals[path] = None if path in added else original(path)
     return changes, originals
 
 
@@ -136,7 +163,7 @@ def main():
         path = root / rel
         if path.is_symlink():
             raise SystemExit("Refusing symlink: " + rel)
-        current = path.read_text(encoding="utf-8") if path.exists() else None
+        current = (path.read_bytes() if isinstance(target, bytes) else path.read_text(encoding="utf-8")) if path.exists() else None
         expected_hash = previous.get("files", {}).get(rel)
         if current not in (originals[rel], target) and (current is None or digest(current) != expected_hash):
             raise SystemExit("Unrecognised local edit; preserve and review before updating: " + rel)
