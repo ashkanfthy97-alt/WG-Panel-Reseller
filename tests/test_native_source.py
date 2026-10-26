@@ -39,10 +39,13 @@ class NativeSourceChecks(unittest.TestCase):
             self.assertNotIn(forbidden, installer)
 
     def test_launchers_and_service_examples_are_portable(self):
-        for name in ('install-gui.sh', 'wg.sh'):
+        for name in ('install.sh', 'install-gui.sh', 'wg.sh'):
             text = (ROOT / name).read_text(encoding='utf-8')
             self.assertIn('BASH_SOURCE[0]', text)
-            self.assertNotIn('raw.githubusercontent.com', text)
+            self.assertNotIn('Azumi67/WG_Panel/refs/heads/main', text)
+        native_bootstrap = (ROOT / 'wg.sh').read_text(encoding='utf-8')
+        self.assertIn('_run_wg', native_bootstrap)
+        self.assertIn('Detected matching local installer', native_bootstrap)
         for name in ('systemd/bot.service', 'systemd/wg-node-agent.service'):
             text = (ROOT / name).read_text(encoding='utf-8')
             self.assertIn('/opt/wg-panel', text)
@@ -57,13 +60,14 @@ class NativeSourceChecks(unittest.TestCase):
         exec(compile(module, 'wg.py', 'exec'), namespace)
         return namespace[name]
 
-    def test_native_clone_and_setup_cannot_replace_product_source(self):
-        self.assertFalse(self._native_function('clone_repo', warn=Mock(), pause=Mock())())
-        for name in ('install_everything', '_quick_setup'):
-            managed = Mock()
-            self._native_function(name, _managed_install=managed)()
-            managed.assert_called_once_with()
-        self._native_function('update_menu', warn=Mock(), pause=Mock())()
+    def test_native_update_preserves_product_data_and_source(self):
+        patterns = self._native_function('_update_preserve_patterns', List=list)()
+        for value in ('instance/', '.env', 'deploy/linux/runtime/', 'deploy/linux/.env',
+                      'deploy/linux/venv/', 'deploy/linux/acme-venv/'):
+            self.assertIn(value, patterns)
+        source = (ROOT / 'wg.py').read_text(encoding='utf-8')
+        self.assertIn('git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git', source)
+        self.assertNotIn('_managed_install', source)
 
     def test_native_dashboard_keeps_script_and_interaction_contracts(self):
         class Bindings(HTMLParser):

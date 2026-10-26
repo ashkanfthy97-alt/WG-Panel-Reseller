@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-exec /bin/bash "$SOURCE_DIR/deploy/linux/install.sh" --quick "$@"
+cd -- "$SOURCE_DIR"
+exec /bin/bash "$SOURCE_DIR/wg.sh" "$@"

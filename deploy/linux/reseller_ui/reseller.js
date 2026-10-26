@@ -69,11 +69,13 @@
   async function receipt(operation, payload) {
     const signature = operation + ":" + JSON.stringify(payload);
     if (pending.has(signature)) return pending.get(signature);
-    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(signature)))).map((value) => value.toString(16).padStart(2, "0")).join("");
+    const digest = crypto.subtle
+      ? Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(signature)))).map((value) => value.toString(16).padStart(2, "0")).join("")
+      : encodeURIComponent(signature);
     const storage = "wgportal-operation:" + digest;
     let key;
     try { key = sessionStorage.getItem(storage); } catch { /* In-memory retry still works. */ }
-    if (!key || !/^[A-Za-z0-9_-]{16,80}$/.test(key)) key = crypto.randomUUID().replaceAll("-", "");
+    if (!key || !/^[A-Za-z0-9_-]{16,80}$/.test(key)) key = Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) => value.toString(16).padStart(2, "0")).join("");
     const value = { key, storage, signature };
     pending.set(signature, value);
     try { sessionStorage.setItem(storage, key); } catch { /* Keep the same key in memory. */ }

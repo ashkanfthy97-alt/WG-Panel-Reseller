@@ -16,7 +16,10 @@ from urllib.parse import quote, urlsplit
 import requests
 from flask import Blueprint, Response, abort, current_app, g, jsonify, request, send_from_directory, session
 
-from reseller_store import ResellerStore, StoreError
+if __package__:
+    from .reseller_store import ResellerStore, StoreError
+else:
+    from reseller_store import ResellerStore, StoreError
 
 
 class CoreError(Exception):
@@ -57,10 +60,11 @@ class NativeCore:
             raise CoreError('Native API returned an unexpected response') from exc
 
 
-def reseller_blueprint(panel_url, database, api_key):
+def reseller_blueprint(panel_url, database, api_key, *, core=None,
+                       owner_cookie_reader=None, native_scheme=False):
     bp = Blueprint('reseller', __name__)
     store = ResellerStore(database)
-    core = NativeCore(panel_url, api_key)
+    core = core if core is not None else NativeCore(panel_url, api_key)
     ui = Path(__file__).parent / 'reseller_ui'
 
     def native():
@@ -83,8 +87,9 @@ def reseller_blueprint(panel_url, database, api_key):
     def owner():
         # Only native browser cookies establish administrator authority here.
         # In particular, the reseller cookie and API key are never used.
-        cookies = '; '.join(name + '=' + request.cookies[name]
-                            for name in ('session', 'remember_token') if request.cookies.get(name))
+        cookies = owner_cookie_reader() if owner_cookie_reader is not None else '; '.join(
+            name + '=' + request.cookies[name]
+            for name in ('session', 'remember_token') if request.cookies.get(name))
         if not cookies:
             return None
         try:
@@ -151,8 +156,10 @@ def reseller_blueprint(panel_url, database, api_key):
             abort(413)
         if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
             origin = urlsplit(request.headers.get('Origin', ''))
-            # TLS terminates in the owned public edge; do not trust arbitrary hostnames.
-            if origin.scheme != 'https' or origin.netloc.lower() != request.host.lower():
+            # Embedded mode follows the native panel's own HTTP/TLS choice.
+            # Forwarded headers never change this decision.
+            scheme = request.scheme if native_scheme else 'https'
+            if scheme not in {'http', 'https'} or origin.scheme != scheme or origin.netloc.lower() != request.host.lower():
                 abort(403)
             expected = session.get('reseller_csrf', '')
             supplied = request.headers.get('X-Reseller-CSRF', '')

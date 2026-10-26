@@ -446,6 +446,10 @@ csrf = CSRFProtect(app)
 @app.before_request
 def _csrf_protect_ui():
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        if request.blueprint == "reseller":
+            # The extension enforces its isolated session CSRF and same-origin
+            # checks; its JSON requests do not use native UI form tokens.
+            return
         if request.path.startswith("/api/"):
             return
         csrf.protect()
@@ -517,13 +521,16 @@ def inject_sec_headers(resp):
     try:
         secure_flag = bool(secure_now)
 
-        resp.set_cookie(
-            "csrf_token",
-            generate_csrf(),
-            samesite="Lax",
-            secure=secure_flag,
-            httponly=False,
-        )
+        if request.blueprint != "reseller":
+            # The native UI reads this cookie. A reseller visit must not replace
+            # it with a token signed against the independent reseller session.
+            resp.set_cookie(
+                "csrf_token",
+                generate_csrf(),
+                samesite="Lax",
+                secure=secure_flag,
+                httponly=False,
+            )
     except Exception as e:
         app.logger.debug("inject_sec_headers: failed to set csrf_token cookie: %s", e)
 
@@ -31957,6 +31964,8 @@ from portal_security import install_security
 install_security(app, csrf)
 from portal_peer_guard import install_peer_guard
 install_peer_guard(app, csrf, globals())
+from portal_reseller_native import install_reseller
+install_reseller(app, csrf)
 
 if __name__ == "__main__":
 

@@ -138,15 +138,13 @@ class QuickLauncherChecks(unittest.TestCase):
             self.skipTest('Bash is not installed in the review environment')
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            deployment = root / 'deploy/linux'
-            deployment.mkdir(parents=True)
             # Only this stub is invoked; it cannot install packages or services.
-            (deployment / 'install.sh').write_text('#!/bin/bash\nprintf "ARG:%s\\n" "$@"\n', encoding='utf-8')
+            (root / 'wg.sh').write_text('#!/bin/bash\nprintf "ARG:%s\\n" "$@"\n', encoding='utf-8')
             for name in ('install.sh', 'install-gui.sh'):
                 shutil.copyfile(ROOT / name, root / name)
             for name in ('install.sh', 'install-gui.sh'):
                 result = subprocess.run([str(bash), (root / name).as_posix(), '--panel-port', '9876'], capture_output=True, text=True, check=True)
-                self.assertEqual(result.stdout.splitlines(), ['ARG:--quick', 'ARG:--panel-port', 'ARG:9876'])
+                self.assertEqual(result.stdout.splitlines(), ['ARG:--panel-port', 'ARG:9876'])
 
     def test_quick_mode_retains_native_installer_safety_and_readiness(self):
         source = (DEPLOY / 'install.sh').read_text(encoding='utf-8')

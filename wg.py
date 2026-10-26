@@ -73,7 +73,7 @@ TAG_ERR  = "[ERROR]"
 TAG_RUN  = "[RUN]"
 
 
-REPO_URL = "https://github.com/Azumi67/WG_Panel"
+REPO_URL = "git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git"
 REPO_DIRNAME_DEFAULT = "WG_Panel"
 
 
@@ -356,6 +356,9 @@ def get_project() -> Path:
     cwd = Path.cwd()
     if (cwd / "app.py").exists() and (cwd / "requirements.txt").exists():
         return cwd
+    packaged = Path(__file__).resolve().parent
+    if (packaged / "app.py").is_file() and (packaged / "requirements.txt").is_file():
+        return packaged
     if ROOT_MARKER.exists():
         try:
             d = json.loads(ROOT_MARKER.read_text(encoding="utf-8"))
@@ -659,18 +662,190 @@ def _only_empty_instance(target: Path) -> bool:
         return False
 
 
-def _managed_install():
-    installer = Path(__file__).resolve().parent / "deploy/linux/install.sh"
-    if not installer.is_file():
-        err("Managed installer is missing; restore this product checkout before continuing.")
-        pause()
-        return
-    subprocess.run(["bash", str(installer)], check=False)
-    pause()
+def _product_remote(root: Path) -> bool:
+    """Never pull another repository over this fork's native installation."""
+    if not (root / ".git").exists():
+        return True  # The native archive update still clones the fixed fork URL.
+    result = subprocess.run(
+        ["git", "-C", str(root), "config", "--get", "remote.origin.url"],
+        capture_output=True, text=True, check=False,
+    )
+    remote = result.stdout.strip().lower().removesuffix(".git").rstrip("/")
+    accepted = {
+        "git@github.com:ashkanfthy97-alt/wg-panel-reseller",
+        "ssh://git@github.com/ashkanfthy97-alt/wg-panel-reseller",
+        "https://github.com/ashkanfthy97-alt/wg-panel-reseller",
+    }
+    if result.returncode != 0 or remote not in accepted:
+        err("Origin is not WG-Panel-Reseller. No pull/update was run; use a separate fork checkout.")
+        return False
+    return True
 
 
 def clone_repo() -> bool:
-    warn("This repository already contains WG_Panel. Upstream clone is disabled; use the product installer.")
+    if not _cmd("git"):
+        err("git not installed. Run system requirements first.")
+        pause()
+        return False
+
+    default_target = str(get_project())
+
+    clear()
+    header("Git Clone / Reuse", REPO_URL)
+    print(box("Tips", [
+        c("Choose the FULL target folder path.", BR_WHT),
+        c("Existing WG Panel installations are reused, not overwritten.", BR_GRN),
+        c("Old launcher-only venv/.cache folders can be moved aside safely.", BR_YEL),
+        "",
+        c("Recommended:", BR_YEL) + " " + c(_paths(default_target), BR_CYN),
+    ], border_color=BR_YEL))
+
+    target_in = ask("Install path (full)", default=default_target, show_default=True).strip()
+    if not target_in:
+        warn("Canceled.")
+        pause()
+        return False
+
+    target = Path(target_in).expanduser()
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        err(f"Cannot create parent directory: {exc}")
+        pause()
+        return False
+
+    if target.is_dir() and (target / "app.py").is_file() and (target / "requirements.txt").is_file():
+        info(f"Existing WG Panel installation: {_paths(str(target))}")
+        set_project(target)
+        ok("Existing installation selected; no application data was changed.")
+        if (target / ".git").is_dir():
+            info("Use the Update menu for a backed-up update, or optionally git pull.")
+            if confirm("Run git pull --ff-only now?", default_yes=False):
+                if not _product_remote(target):
+                    pause()
+                    return False
+                _live(["git", "-C", str(target), "pull", "--ff-only"], "git pull --ff-only")
+            pause()
+            return True
+        info("This installation has no .git directory. The Update menu supports it.")
+        if confirm("Run the backed-up Update workflow now?", default_yes=False):
+            update_project(target)
+            return True
+        pause()
+        return True
+
+    old_bootstrap = None
+    empty_instance = False
+    if target.exists():
+        if target.is_symlink() or not target.is_dir():
+            err("Target is a file or symlink, not an installable directory.")
+            pause()
+            return False
+        try:
+            nonempty = any(target.iterdir())
+        except OSError:
+            err("Cannot access target directory.")
+            pause()
+            return False
+        if nonempty and _only_empty_instance(target):
+            info("Found only an empty instance/ directory from a previous setup.")
+            info("It will be removed using rmdir (which refuses non-empty directories).")
+            empty_instance = True
+        elif nonempty and _bootstrap_only_directory(target):
+            warn("Found only venv/.cache left by the old launcher; no panel files detected.")
+            if not confirm("Move this bootstrap-only directory aside and clone here?", default_yes=True):
+                warn("Canceled. No files changed.")
+                pause()
+                return False
+            old_bootstrap = target.with_name(
+                target.name + ".bootstrap-backup-"
+                + datetime.now().strftime("%Y%m%d-%H%M%S")
+                + "-" + secrets.token_hex(4)
+            )
+            try:
+                target.rename(old_bootstrap)
+            except OSError as exc:
+                err(f"Could not move old bootstrap files: {exc}")
+                pause()
+                return False
+            ok(f"Old bootstrap files preserved at: {_paths(str(old_bootstrap))}")
+        elif nonempty:
+            try:
+                entries = sorted(entry.name for entry in target.iterdir())
+            except OSError:
+                err("Cannot inspect the existing installation directory.")
+                pause()
+                return False
+            warn("The install directory contains files, but is not a complete WG Panel installation.")
+            info("Existing entries: " + ", ".join(entries[:12]) + (" ..." if len(entries) > 12 else ""))
+            warn("They may include configuration, databases, or private keys; nothing will be deleted.")
+            if not confirm("Move the ENTIRE directory to a timestamped backup and clone fresh?", default_yes=False):
+                warn("Canceled. Existing files were left untouched.")
+                pause()
+                return False
+            old_bootstrap = target.with_name(
+                target.name + ".preinstall-backup-"
+                + datetime.now().strftime("%Y%m%d-%H%M%S")
+                + "-" + secrets.token_hex(4)
+            )
+            try:
+                target.rename(old_bootstrap)
+            except OSError as exc:
+                err(f"Could not preserve the existing directory: {exc}")
+                pause()
+                return False
+            ok(f"Entire previous directory preserved at: {_paths(str(old_bootstrap))}")
+
+    if not confirm(f"Clone into {_paths(str(target))} ?", default_yes=True):
+        warn("Canceled.")
+        if old_bootstrap is not None:
+            try:
+                if not target.exists():
+                    old_bootstrap.rename(target)
+                    ok("Previous directory restored.")
+                else:
+                    warn(f"Previous directory remains backed up at: {_paths(str(old_bootstrap))}")
+            except OSError as exc:
+                warn(f"Could not automatically restore bootstrap directory: {exc}")
+        pause()
+        return False
+
+    if empty_instance:
+        if not _only_empty_instance(target):
+            err("The instance directory changed; refusing to remove any data.")
+            pause()
+            return False
+        try:
+            (target / "instance").rmdir()
+            target.rmdir()
+        except OSError as exc:
+            err(f"Cannot clear the empty instance directory: {exc}")
+            pause()
+            return False
+
+    rc = _live(["git", "clone", REPO_URL, str(target)], "git clone")
+    if rc == 0 and (target / "app.py").is_file() and (target / "requirements.txt").is_file():
+        set_project(target)
+        ok(f"Project root set: {_paths(str(target))}")
+        if old_bootstrap is not None:
+            info(f"Previous directory backup: {_paths(str(old_bootstrap))}")
+        pause()
+        return True
+
+    err("Clone failed or required panel files were not found.")
+    if old_bootstrap is not None:
+        try:
+            if target.is_dir() and not any(target.iterdir()):
+                target.rmdir()
+            if not target.exists():
+                old_bootstrap.rename(target)
+                ok("Previous directory restored after clone failure.")
+            else:
+                warn(f"Previous files are safe at: {_paths(str(old_bootstrap))}")
+                warn(f"Check incomplete clone at: {_paths(str(target))}")
+        except OSError as exc:
+            warn(f"Automatic directory restore failed: {exc}")
+            info(f"Preserved backup: {_paths(str(old_bootstrap))}")
     pause()
     return False
 
@@ -1287,7 +1462,7 @@ def env_setup(root: Path):
     vals["WG_ONLINE_HANDSHAKE_FALLBACK"] = existing.get("WG_ONLINE_HANDSHAKE_FALLBACK") or "0"
     vals["WG_ONLINE_HANDSHAKE_WINDOW"] = existing.get("WG_ONLINE_HANDSHAKE_WINDOW") or "45"
 
-    vals["SETUP_TOKEN"] = existing.get("SETUP_TOKEN") or ""
+    vals["SETUP_TOKEN"] = existing.get("SETUP_TOKEN") or secrets.token_urlsafe(48)
     vals["TG_HEARTBEAT_SEC"] = existing.get("TG_HEARTBEAT_SEC") or "60"
 
     clear()
@@ -1303,7 +1478,7 @@ def env_setup(root: Path):
         c("LOG_LEVEL", BR_CYN) + c(" → ", DIM) + c("DEBUG | INFO | WARNING | ERROR", BR_WHT),
         c("SECURE_COOKIES", BR_CYN) + c(" → ", DIM) + c("1=HTTPS/prod, 0=dev", BR_WHT),
         c("WIREGUARD_CONF_PATH", BR_CYN) + c(" → ", DIM) + c("folder or single .conf path", BR_WHT),
-        c("SETUP_TOKEN", BR_CYN) + c(" → ", DIM) + c("optional gate for /register", BR_WHT),
+        c("SETUP_TOKEN", BR_CYN) + c(" → ", DIM) + c("first-owner registration token; generated if missing", BR_WHT),
         c("TG_HEARTBEAT_SEC", BR_CYN) + c(" → ", DIM) + c("bot heartbeat window seconds", BR_WHT),
     ], border_color=BR_CYN))
 
@@ -1319,18 +1494,42 @@ def env_setup(root: Path):
     vals["WG_ONLINE_HANDSHAKE_FALLBACK"] = ask("WG_ONLINE_HANDSHAKE_FALLBACK", default=vals["WG_ONLINE_HANDSHAKE_FALLBACK"], show_default=True)
     vals["WG_ONLINE_HANDSHAKE_WINDOW"] = ask("WG_ONLINE_HANDSHAKE_WINDOW", default=vals["WG_ONLINE_HANDSHAKE_WINDOW"], show_default=True)
 
-    vals["SETUP_TOKEN"] = ask("SETUP_TOKEN", default=vals["SETUP_TOKEN"], show_default=True)
+    # Keep the native wizard while preventing the registration gate from being
+    # empty. An existing token is retained unless explicitly replaced here.
+    try:
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            replacement = getpass.getpass("SETUP_TOKEN (hidden; Enter preserves the generated/existing value): ").strip()
+    except (EOFError, OSError, getpass.GetPassWarning):
+        err("Token input needs an interactive terminal; .env was not changed.")
+        pause()
+        return
+    if replacement:
+        vals["SETUP_TOKEN"] = replacement
+    token = vals["SETUP_TOKEN"]
+    if not 32 <= len(token) <= 256 or any(ord(char) < 32 or ord(char) == 127 for char in token):
+        err("SETUP_TOKEN must contain 32–256 characters without control characters; .env was not changed.")
+        pause()
+        return
     vals["TG_HEARTBEAT_SEC"] = ask("TG_HEARTBEAT_SEC", default=vals["TG_HEARTBEAT_SEC"], show_default=True)
 
     env_text = _env_text(vals)
 
     clear()
     header("Preview .env", "Review before saving")
-    print(box_text(".env Preview", c(env_text.rstrip("\n"), BR_WHT), border_color=BR_CYN))
+    preview = env_text.replace("SETUP_TOKEN=" + token, "SETUP_TOKEN=[hidden]")
+    print(box_text(".env Preview", c(preview.rstrip("\n"), BR_WHT), border_color=BR_CYN))
 
     if confirm("Save .env now?", default_yes=True):
         _write(env_path, env_text)
+        env_path.chmod(0o600)
         ok(f"Saved: {_paths(str(env_path))}")
+        try:
+            with open("/dev/tty", "w", encoding="utf-8") as terminal:
+                terminal.write("First-owner /register setup token (keep privately):\n" + token + "\n")
+        except OSError:
+            warn("Read SETUP_TOKEN from the root-private .env in your SSH terminal before /register.")
     else:
         warn("Skipped saving .env.")
     pause()
@@ -2113,7 +2312,60 @@ def telegram_option(root: Path):
 
 
 def _quick_setup():
-    return _managed_install()
+    root = get_project()
+
+    if not _cmd("nft"):
+        warn("nftables is not installed.")
+        if confirm("Install nftables now?", True):
+            if not isitroot():
+                err("Installing nftables requires sudo/root.")
+                pause()
+                return
+
+            if not _debian():
+                pause()
+                return
+
+            rc = _apt_install(
+                ["nftables"],
+                "Install nftables",
+            )
+
+            if rc != 0 or not _cmd("nft"):
+                err("nftables installation failed.")
+                pause()
+                return
+
+            ok("nftables installed.")
+
+    clear()
+    header("Panel Quick Setup", "recommended")
+    print(box("What this will do", [
+        c("1) Create venv + pip install (if missing)", BR_WHT),
+        c("2) .env wizard", BR_WHT),
+        c("3) panel_settings wizard", BR_WHT),
+        c("4) runtime wizard", BR_WHT),
+        c("5) Create/restart PANEL service + verify", BR_GRN),
+    ], border_color=BR_YEL))
+
+    if not confirm("Continue?", True):
+        warn("Canceled.")
+        pause()
+        return
+
+    if not (root / "requirements.txt").exists():
+        warn("requirements.txt not found. Clone the repo first.")
+        pause()
+        return
+
+    if not (root / "venv" / "bin" / "python").exists():
+        _venv_requirements(root)
+        root = get_project()
+
+    env_setup(root)
+    panel_settings(root)
+    runtime(root)
+    _service_option(root)
 
 def telegram_setup():
     root = get_project()
@@ -2133,7 +2385,56 @@ def telegram_setup():
     telegram_option(root)
 
 def install_everything():
-    return _managed_install()
+    clear()
+    header("Install Everything", "guided flow")
+    print(box("Tips", [
+        c("This runs a complete setup in the correct order.", BR_WHT),
+        c("After clone, the chosen directory becomes your active project root.", BR_GRN),
+        c("You can skip any step by answering n.", BR_YEL),
+    ], border_color=BR_CYN))
+
+    if not confirm("Continue?", True):
+        warn("Canceled.")
+        pause()
+        return
+
+    if confirm("Step 1: Install system requirements (apt)?", True):
+        install_requirements()
+
+    if confirm("Step 2: Git clone + set project directory?", True):
+        if not clone_repo():
+            warn("Project selection/clone did not finish. Guided installation stopped safely.")
+            pause()
+            return
+
+    root = get_project()  
+
+    if confirm("Step 3: Create venv + pip install?", True):
+        _venv_requirements(root)
+        root = get_project()
+
+    if confirm("Step 4: Create/Update .env?", True):
+        env_setup(root)
+
+    if confirm("Step 4b: Setup WireGuard interface now (create .conf + NAT)?", False):
+        wireguard_setup(get_project())
+
+    if confirm("Step 5: Create/Update panel_settings.json?", True):
+        panel_settings(root)
+
+    if confirm("Step 6: Create/Update runtime.json?", True):
+        runtime(root)
+
+    if confirm("Step 7: Create/Restart PANEL service + verify?", True):
+        _service_option(root)
+
+    if confirm("Optional: Configure Telegram now?", False):
+        telegram_settings(root)
+        if confirm("Optional: Create/Restart TELEGRAM service + verify?", True):
+            telegram_option(root)
+
+    ok("Install Everything flow completed.")
+    pause()
 
 
 def _menu_input(prompt: str = "Select option") -> str:
@@ -3128,6 +3429,10 @@ def _update_preserve_patterns() -> List[str]:
         ".env",
         "venv/",
         "instance/",
+        "deploy/linux/runtime/",  # Existing reseller data from the previous layout.
+        "deploy/linux/.env",
+        "deploy/linux/venv/",
+        "deploy/linux/acme-venv/",
         "backups/",
         "db/",
         "*.db",
@@ -3318,7 +3623,7 @@ def _github_json(url: str, timeout: int = 20):
 def _github_panel_releases() -> List[dict]:
     data = _github_json(
         "https://api.github.com/repos/"
-        "Azumi67/WG_Panel/releases?per_page=40"
+        "ashkanfthy97-alt/WG-Panel-Reseller/releases?per_page=40"
     )
 
     if not isinstance(data, list):
@@ -3339,7 +3644,7 @@ def _github_panel_releases() -> List[dict]:
             continue
 
         zip_url = (
-            "https://github.com/Azumi67/WG_Panel/"
+            "https://github.com/ashkanfthy97-alt/WG-Panel-Reseller/"
             f"archive/refs/tags/{tag}.zip"
         )
 
@@ -3582,6 +3887,10 @@ def update_project(root: Path):
         pause()
         return
 
+    if not _product_remote(root):
+        pause()
+        return
+
     clear()
     header("Update", "latest main branch")
 
@@ -3764,9 +4073,6 @@ def downgrade_project(root: Path):
 
 
 def update_menu():
-    warn("Managed by WG Portal: update its repository and run deploy/linux/install.sh.")
-    pause()
-    return
     while True:
         root = get_project()
 
