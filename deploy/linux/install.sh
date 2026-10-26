@@ -33,6 +33,7 @@ PY
 VENV="$ROOT/venv"
 UPSTREAM_COMMIT="f0f41068e1fd453d17acad23b9b90bc2a284bf59"
 MODE="managed"
+QUICK=0
 PANEL_PORT_EXPLICIT=0
 PANEL_PORT=8766
 PORTAL_PORT=8765
@@ -51,10 +52,13 @@ step() { printf '\n[%s/6] %s\n' "$1" "$2"; }
 
 usage() {
   cat <<'EOF'
-Usage: bash install.sh
-       bash install.sh --managed [--panel-port 8766] [--portal-port 8765]
+Usage: bash deploy/linux/install.sh [--quick] [--managed] [--panel-port 8766] [--portal-port 8765]
+       bash install.sh [--panel-port 8766] [--portal-port 8765]
 Ubuntu 24.04 x86_64, root, Python 3.12 and systemd. No Docker or port 443.
-Fresh installs ask only for a hidden first-run token; remaining setup is in the browser.
+Manual mode asks for a hidden first-run token; --quick generates one securely.
+Quick mode displays the token only in the SSH terminal after readiness checks.
+نصب سریع: bash install.sh — تولید امن کد اولیه و ادامه راه‌اندازی در مرورگر.
+برای نصب دستی: bash deploy/linux/install.sh
 Unpatched existing-panel installations are not supported by this browser-setup release.
 EOF
 }
@@ -62,6 +66,7 @@ valid_port() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1024 && 10#$1 <= 65535 )); 
 
 while (($#)); do
   case "$1" in
+    --quick) QUICK=1; shift ;;
     --managed) MODE=managed; shift ;;
     --existing-port) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; PANEL_PORT="$2"; MODE=existing; shift 2 ;;
     --panel-port) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; PANEL_PORT="$2"; PANEL_PORT_EXPLICIT=1; shift 2 ;;
@@ -89,7 +94,6 @@ command -v systemctl >/dev/null || { echo "systemd is required" >&2; exit 1; }
 [[ "$(uname -m)" == x86_64 ]] || { echo "Linux x86_64 is required" >&2; exit 1; }
 command -v python3 >/dev/null || { echo "Ubuntu's python3 interpreter is required" >&2; exit 1; }
 python3 "$ROOT/install_helpers.py" check-runtime
-command -v ss >/dev/null || { echo "The ss utility (iproute2) is required for safe listener preflight" >&2; exit 1; }
 valid_port "$PANEL_PORT" && valid_port "$PORTAL_PORT" || { echo "Invalid port" >&2; exit 2; }
 [[ "$PANEL_PORT" != "$PORTAL_PORT" ]] || { echo "Ports must differ" >&2; exit 2; }
 [[ "$PANEL_PORT" != "$SETUP_PORT" && "$PORTAL_PORT" != "$SETUP_PORT" ]] || { echo "Port 8767 is reserved for HTTPS setup" >&2; exit 2; }
@@ -132,6 +136,22 @@ for timer in wg-portal-acme-renew wg-portal-tls-recover; do
     echo "Timer name belongs to another installation; no services were changed" >&2; exit 1
   fi
 done
+if [[ -e /usr/local/lib/wgportal/installation-root ]] && [[ "$(cat /usr/local/lib/wgportal/installation-root)" != "$ROOT" ]]; then
+  echo "WG Portal service helpers belong to another installation; no services were changed" >&2; exit 1
+fi
+if [[ -d /usr/local/lib/wgportal && ! -f /usr/local/lib/wgportal/installation-root ]] && find /usr/local/lib/wgportal -mindepth 1 -print -quit | grep -q .; then
+  echo "Unowned WG Portal helper directory exists; refusing to overwrite it" >&2; exit 1
+fi
+if [[ -e /usr/local/bin/wgportal ]] && ! grep -Fq "$ROOT/menu.sh" /usr/local/bin/wgportal; then
+  echo "The wgportal command belongs to another installation; no services were changed" >&2; exit 1
+fi
+if ! command -v ss >/dev/null; then
+  [[ "$QUICK" == 1 ]] || { echo "The ss utility (iproute2) is required for safe listener preflight" >&2; exit 1; }
+  echo "Installing listener preflight prerequisite / نصب پیش‌نیاز بررسی پورت: iproute2"
+  DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::Retries=3
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends iproute2
+  command -v ss >/dev/null || { echo "Listener preflight requires ss; no services were changed" >&2; exit 1; }
+fi
 listener_owned() {
   local port="$1" unit="$2" listeners group pid
   listeners="$(ss -ltnpH "sport = :$port")"
@@ -154,15 +174,6 @@ fi
 if ! listener_owned 80 wg-portal-http; then HTTP_PORT=8768; fi
 [[ "$PANEL_PORT" != "$HTTP_PORT" && "$PORTAL_PORT" != "$HTTP_PORT" ]] || { echo "HTTP welcome port conflicts with a selected internal port" >&2; exit 1; }
 listener_owned "$HTTP_PORT" wg-portal-http || { echo "HTTP welcome port $HTTP_PORT is occupied; no services were changed" >&2; exit 1; }
-if [[ -e /usr/local/lib/wgportal/installation-root ]] && [[ "$(cat /usr/local/lib/wgportal/installation-root)" != "$ROOT" ]]; then
-  echo "WG Portal service helpers belong to another installation; no services were changed" >&2; exit 1
-fi
-if [[ -d /usr/local/lib/wgportal && ! -f /usr/local/lib/wgportal/installation-root ]] && find /usr/local/lib/wgportal -mindepth 1 -print -quit | grep -q .; then
-  echo "Unowned WG Portal helper directory exists; refusing to overwrite it" >&2; exit 1
-fi
-if [[ -e /usr/local/bin/wgportal ]] && ! grep -Fq "$ROOT/menu.sh" /usr/local/bin/wgportal; then
-  echo "The wgportal command belongs to another installation; no services were changed" >&2; exit 1
-fi
 BOT_ENABLED=0 BOT_ACTIVE=0
 if [[ "$MODE" == managed ]]; then
   for unit in wg-panel-bot wg-portal-bot; do
@@ -326,7 +337,9 @@ if [[ "$MODE" == existing ]]; then
   [[ -f "$ENV_FILE" ]] || { echo "Existing mode requires WG_PORTAL_PANEL_ENV pointing to the existing panel .env" >&2; exit 1; }
 fi
 # All secrets are read from root-private files or /dev/tty, never command arguments.
-"$VENV/bin/python" "$ROOT/bootstrap.py" --root "$ROOT" --panel-env "$ENV_FILE" --panel-port "$PANEL_PORT" --portal-port "$PORTAL_PORT" --http-port "$HTTP_PORT"
+bootstrap_args=(--root "$ROOT" --panel-env "$ENV_FILE" --panel-port "$PANEL_PORT" --portal-port "$PORTAL_PORT" --http-port "$HTTP_PORT")
+[[ "$QUICK" == 1 ]] && bootstrap_args+=(--generate-token)
+"$VENV/bin/python" "$ROOT/bootstrap.py" "${bootstrap_args[@]}"
 [[ -x "$ROOT/acme-venv/bin/certbot" ]] || {
   python3 -m venv "$ROOT/acme-venv"
   "$ROOT/acme-venv/bin/python" -m pip install 'certbot==5.8.0'
@@ -549,6 +562,9 @@ printf 'MODE=%s\nPANEL_PORT=%s\nPORTAL_PORT=%s\nHTTP_PORT=%s\n' "$MODE" "$PANEL_
 printf '\nصفحه شروع: http://%s:%s/\nراه‌اندازی امن: https://%s:%s/setup\n' "$PUBLIC_IP" "$HTTP_PORT" "$PUBLIC_IP" "$SETUP_PORT"
 printf 'Bootstrap certificate SHA-256: %s\n' "$FINGERPRINT"
 printf 'Compare this fingerprint in the browser before entering the first-run token. The initial certificate is self-signed.\n'
+if [[ "$QUICK" == 1 ]]; then
+  "$VENV/bin/python" "$ROOT/bootstrap.py" --root "$ROOT" --panel-env "$ENV_FILE" --show-token
+fi
 printf 'WireGuard, owner credentials, domain and Telegram are configured in the browser. Port 443 is unchanged.\n'
 [[ "$HTTP_PORT" == 8768 ]] && printf 'Port 80 is occupied and was preserved. Automatic ACME requires routing its challenge path to this installation.\n'
 printf 'Server menu: wgportal\n'

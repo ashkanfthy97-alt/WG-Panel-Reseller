@@ -1,4 +1,4 @@
-"""Root-only first-run preparation; never prints or accepts the setup token in argv."""
+"""Root-only first-run preparation; setup tokens are displayed only through /dev/tty."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import secrets
 import subprocess
+import sys
 import tempfile
 from urllib.request import ProxyHandler, build_opener
 
@@ -42,14 +43,22 @@ def update_env(path: Path, values: dict[str, str]) -> None:
     atomic_private(path, update_env_text(source, values))
 
 
-def ensure_token(path: Path, prompt=None) -> str:
+def valid_token(token: str) -> bool:
+    return 32 <= len(token) <= 256 and token == token.strip() and not any(
+        ord(character) < 32 or ord(character) == 127 for character in token
+    )
+
+
+def ensure_token(path: Path, prompt=None, *, generate: bool = False) -> str:
     values = load_env(path)
     token = values.get("SETUP_TOKEN", "")
-    if token:
-        if not 32 <= len(token) <= 256 or token != token.strip() or any(c in token for c in '\r\n\0'):
-            raise ValueError("Existing SETUP_TOKEN is shorter than 32 characters; use controlled recovery rather than overwriting it")
+    if "SETUP_TOKEN" in values:
+        if not valid_token(token):
+            raise ValueError("Existing SETUP_TOKEN is invalid; use controlled recovery rather than overwriting it")
         return token
-    if prompt is None:
+    if generate:
+        token = secrets.token_urlsafe(48)
+    elif prompt is None:
         import warnings
         try:
             with warnings.catch_warnings():
@@ -62,10 +71,36 @@ def ensure_token(path: Path, prompt=None) -> str:
             ) from exc
     else:
         token = prompt()
-    if len(token) < 32 or len(token) > 256 or token != token.strip() or any(character in token for character in "\r\n\0"):
+    if not valid_token(token):
         raise ValueError("The first-run token must contain 32–256 characters")
     update_env(path, {"SETUP_TOKEN": token})
     return token
+
+
+def show_setup_token(path: Path, terminal=None) -> bool:
+    """Read an existing token without mutation; never send it to process output."""
+    if os.name != "nt" and os.geteuid() != 0:
+        raise ValueError("Showing the setup token requires root")
+    if not path.is_file():
+        raise ValueError("The panel environment file is missing; no setup token was created")
+    token = load_env(path).get("SETUP_TOKEN", "")
+    if not valid_token(token):
+        raise ValueError("Existing SETUP_TOKEN is missing or invalid; use controlled recovery")
+    owned_terminal = None
+    try:
+        if terminal is None:
+            owned_terminal = open("/dev/tty", "w", encoding="utf-8")
+            terminal = owned_terminal
+        terminal.write("کد نصب اولیه / First-run setup token:\n" + token + "\n")
+        terminal.flush()
+    except (OSError, ValueError):
+        print("No usable SSH terminal. Reconnect with a TTY and rerun --show-token. "
+              "The saved token was preserved. / با ترمینال SSH دوباره متصل شوید.", file=sys.stderr)
+        return False
+    finally:
+        if owned_terminal is not None:
+            owned_terminal.close()
+    return True
 
 
 def public_ipv4(value: str) -> str:
@@ -143,12 +178,12 @@ def bootstrap_certificate(runtime: Path, public_ip: str) -> tuple[Path, str]:
     return current, fingerprint
 
 
-def prepare(root: Path, panel_env: Path, panel_port: int, portal_port: int, http_port: int, public_ip: str = "") -> dict:
+def prepare(root: Path, panel_env: Path, panel_port: int, portal_port: int, http_port: int, public_ip: str = "", generate_token: bool = False) -> dict:
     from setup_state import SetupState
     runtime = root / "runtime"
     runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(runtime, 0o700)
-    token = ensure_token(panel_env)
+    token = ensure_token(panel_env, generate=generate_token)
     values = load_env(panel_env)
     if len(values.get("FLASK_SECRET_KEY", "")) < 32 or not values.get("API_KEY"):
         raise ValueError("Existing panel environment must provide a strong FLASK_SECRET_KEY and API_KEY")
@@ -203,14 +238,19 @@ def prepare(root: Path, panel_env: Path, panel_port: int, portal_port: int, http
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Secure first-run preparation / آماده‌سازی امن نصب اولیه")
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--panel-env", type=Path, required=True)
     parser.add_argument("--panel-port", type=int, default=8766)
     parser.add_argument("--portal-port", type=int, default=8765)
     parser.add_argument("--http-port", type=int, choices=(80, 8768), default=80)
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--generate-token", action="store_true", help="Generate a token only when missing / تولید کد اولیه در صورت نبودن")
+    action.add_argument("--show-token", action="store_true", help="Show the saved token only in /dev/tty; no setup changes / نمایش کد در ترمینال SSH")
     args = parser.parse_args()
     if os.name != "nt":
+        if os.geteuid() != 0:
+            parser.error("Root is required for privileged first-run preparation or token display")
         # Validate the guard module itself and its ancestry before importing any checkout code.
         import importlib.util
         import stat
@@ -229,8 +269,16 @@ def main() -> None:
         spec.loader.exec_module(module)
         module.assert_secure_checkout(root)
     try:
+        if args.show_token:
+            if not show_setup_token(args.panel_env):
+                import shlex
+                command = shlex.join([sys.executable, str(Path(__file__).resolve()), "--root", str(args.root),
+                                      "--panel-env", str(args.panel_env), "--show-token"])
+                print("After reconnecting as root with a TTY, run: " + command, file=sys.stderr)
+                print("Saved token file (root only): " + str(args.panel_env), file=sys.stderr)
+            return
         summary = prepare(args.root.resolve(), args.panel_env.resolve(), args.panel_port, args.portal_port,
-                          args.http_port, os.environ.get("WG_PORTAL_PUBLIC_IP", ""))
+                          args.http_port, os.environ.get("WG_PORTAL_PUBLIC_IP", ""), generate_token=args.generate_token)
     except (ValueError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")
     print(json.dumps(summary))
