@@ -27,7 +27,7 @@
   }).forEach(([key,value]) => dictionary.set(key,value));
   const originals = new WeakMap();
   const attributeOriginals = new WeakMap();
-  let language = "fa";
+  let language = document.documentElement.lang === "en" ? "en" : "fa";
   try { if(localStorage.getItem("wgportal-language") === "en") language = "en"; } catch { /* Storage is optional. */ }
   const selector = ".sb2-text,.sb2-section,.nx-workspace-picker a,.nx-workspace-picker summary span,.nx-mobile-nav a,.nx-breadcrumb span,.nx-breadcrumb b,.nx-search-trigger span,.account-signout,.auth-header .muted,.auth-card .hint,label,button[type=submit],h1,h2,#nx-dashboard :is(p,span,small,strong,b,th,dt,dd,button,a)";
   function localized(key) {
@@ -92,6 +92,34 @@
     const management = document.getElementById("portal-management-link");
     if(management) management.textContent = language === "fa" ? "مدیریت اتصال و سرویس‌ها" : "Secure management";
     try {localStorage.setItem("wgportal-language",language);} catch { /* This page still uses the selected language. */ }
+    document.cookie = "wgportal-language=" + language + "; Path=/; Max-Age=31536000; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : "");
+    renderResellerSummary();
+  }
+  let resellerSummary = null;
+  function renderResellerSummary() {
+    if (!resellerSummary) return;
+    const numbers = new Intl.NumberFormat(language === "fa" ? "fa-IR" : "en-GB");
+    [["portal-total-resellers", "total_resellers"], ["portal-subresellers", "subresellers"], ["portal-reseller-fees", "total_creation_fee_toman"]].forEach(([id, key]) => {
+      const node = document.getElementById(id), value = numbers.format(resellerSummary[key]);
+      if (node && node.textContent !== value) node.textContent = value;
+    });
+  }
+  async function loadResellerSummary() {
+    const state = document.getElementById("portal-reseller-summary-state");
+    if (!state) return;
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch("/resellers/api/summary", {credentials:"same-origin", cache:"no-store", headers:{Accept:"application/json"}, signal:controller.signal});
+      if (!response.ok) throw new Error("Reseller totals unavailable");
+      const data = (await response.json()).summary;
+      if (!data || ["total_resellers", "subresellers", "total_creation_fee_toman"].some((key) => !Number.isSafeInteger(data[key]) || data[key] < 0)) throw new Error("Invalid reseller totals");
+      resellerSummary = data;
+      state.dataset.portalFa = "هزینه‌ها فقط مبلغ ثبت‌شده هستند؛ پرداخت آنلاین هنوز فعال نیست.";
+      state.dataset.portalEn = "Fees are declared amounts only; online payment is not enabled.";
+    } catch (_) {
+      state.dataset.portalFa = "دریافت آمار نمایندگی ناموفق بود؛ برای بررسی، مدیریت نمایندگان را باز کنید.";
+      state.dataset.portalEn = "Reseller totals could not be loaded. Open Manage resellers to inspect them.";
+    } finally { clearTimeout(timer); apply(); }
   }
   function init() {
     if(document.getElementById("portal-language-toggle")) return;
@@ -121,6 +149,8 @@
     }
     apply();
     themeCharts();
+    loadResellerSummary();
+    document.getElementById("nx-refresh")?.addEventListener("click", loadResellerSummary);
     const dashboard = document.getElementById("nx-dashboard");
     if(dashboard){
       let queued=false;
@@ -134,5 +164,18 @@
     window.addEventListener("wg-theme-change",themeCharts);
     window.addEventListener("storage",(event)=>{if(event.key === "wgportal-language"){language=event.newValue === "en" ? "en" : "fa";apply();themeCharts();}});
   }
-  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded",init,{once:true});else init();
+  // This small local script is the first script in <head>. Translate each parsed
+  // chunk before paint, rather than waiting for later deferred dashboard code.
+  apply();
+  if(document.readyState === "loading") {
+    const earlyObserver = new MutationObserver(apply);
+    earlyObserver.observe(document.documentElement,{subtree:true,childList:true,characterData:true});
+    const ready = () => {
+      if(document.readyState === "loading") return;
+      earlyObserver.disconnect();
+      document.removeEventListener("readystatechange",ready);
+      init();
+    };
+    document.addEventListener("readystatechange",ready);
+  } else init();
 })();

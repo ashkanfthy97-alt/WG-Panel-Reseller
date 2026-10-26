@@ -1,10 +1,12 @@
 <!doctype html>
 <html
-  lang="en"
+  lang="{{ 'en' if request.cookies.get('wgportal-language') == 'en' else 'fa' }}"
+  dir="{{ 'ltr' if request.cookies.get('wgportal-language') == 'en' else 'rtl' }}"
   data-render-design="{{ 'legacy' if request.args.get('design', request.cookies.get('wg-design')) == 'legacy' else 'modern' }}"
 >
   <head>
     <meta charset="utf-8" />
+    <script src="{{ url_for('static', filename='js/portal-locale.js') }}?v=hierarchy1"></script>
     <title>{% block title %}WG Panel{% endblock %}</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
@@ -967,6 +969,6 @@
     ></script>
     {% block body_extras %}{% endblock %}
 
-    <script src="{{ url_for('static', filename='js/visual-preferences.js') }}?v=8"></script>
-  <script defer src="/static/js/portal-locale.js"></script></body>
+    <script defer src="{{ url_for('static', filename='js/visual-preferences.js') }}?v=8"></script>
+  </body>
 </html>

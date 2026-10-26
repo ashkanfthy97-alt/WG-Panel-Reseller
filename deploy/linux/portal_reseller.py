@@ -220,7 +220,9 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         session.clear()
         session.permanent = True
         session['reseller_identity'] = {'id': account['id'], 'version': account['auth_version']}
-        return jsonify(ok=True, account=account, csrf=csrf())
+        # Paused accounts may sign in to see their own panel status. Protected
+        # operations still require the effective account/ancestor access below.
+        return jsonify(ok=True, account=account, paused=not account['active'], csrf=csrf())
 
     @bp.post('/reseller/api/logout')
     def logout():
@@ -230,7 +232,51 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     @bp.get('/resellers/api/accounts')
     @require_owner
     def accounts():
-        return jsonify(accounts=store.all(), interfaces=interfaces(), audit=store.audit(), operations=store.operations(), csrf=csrf())
+        return jsonify(accounts=store.all(), interfaces=interfaces(), audit=store.audit(),
+                       operations=store.operations(), summary=store.summary(), csrf=csrf())
+
+    @bp.get('/resellers/api/summary')
+    @require_owner
+    def summary():
+        return jsonify(summary=store.summary())
+
+    def child_creation_fee():
+        return {'amount': 3000000, 'currency': 'toman', 'one_time': True,
+                'payment_gateway': False,
+                'message': 'هزینهٔ یک‌بارهٔ ساخت زیرنمایندگی ۳٬۰۰۰٬۰۰۰ تومان است؛ پرداخت آنلاین انجام نمی‌شود.'}
+
+    @bp.get('/reseller/api/accounts')
+    @require_reseller
+    def child_accounts():
+        allowed = set(g.reseller['interfaces'])
+        available = [{'id': row['id'], 'name': row['name']} for row in interfaces()
+                     if row['id'] in allowed]
+        return jsonify(accounts=store.children(g.reseller['id']), interfaces=available,
+                       creation_fee=child_creation_fee(), csrf=csrf())
+
+    @bp.post('/reseller/api/accounts')
+    @require_reseller
+    def create_child_account():
+        value = data()
+        # Ownership, fees and activation are server decisions. Refuse attempts
+        # to assign a parent, waive the fee, or grant immediate paid access.
+        if set(value) - {'username', 'password', 'interfaces', 'max_peers'}:
+            raise StoreError('فقط نام کاربری، رمز، Interfaceها و سقف مشتری قابل تعیین است.')
+        selected = value.get('interfaces', [])
+        if not isinstance(selected, list) or any(type(item) is not int for item in selected):
+            raise StoreError('شناسهٔ Interface نامعتبر است.')
+        own_interfaces = set(g.reseller['interfaces'])
+        native_interfaces = {row['id'] for row in interfaces()}
+        if not set(selected) <= own_interfaces & native_interfaces:
+            abort(403)
+        capacity = value.get('max_peers', min(100, g.reseller['max_peers']))
+        if type(capacity) is not int or not 1 <= capacity <= g.reseller['max_peers']:
+            raise StoreError('سقف مشتری زیرنماینده باید در محدودهٔ حساب شما باشد.')
+        account = store.create(str(value.get('username', '')), str(value.get('password', '')),
+                               selected, capacity, 'reseller:' + str(g.reseller['id']),
+                               parent_id=g.reseller['id'], creation_fee_toman=3000000)
+        return jsonify(account=account, signin_url='/reseller',
+                       creation_fee=child_creation_fee()), 201
 
     @bp.post('/resellers/api/accounts')
     @require_owner
@@ -247,7 +293,7 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
             raise StoreError('ظرفیت نامعتبر است.')
         account = store.create(str(value.get('username', '')), str(value.get('password', '')),
                                selected, capacity, g.reseller_owner)
-        return jsonify(account=account), 201
+        return jsonify(account=account, signin_url='/reseller'), 201
 
     @bp.post('/resellers/api/accounts/<int:account_id>/renew')
     @require_owner

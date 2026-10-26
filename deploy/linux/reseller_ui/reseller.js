@@ -3,7 +3,7 @@
   const $ = (selector) => document.querySelector(selector);
   const ownerView = location.pathname.replace(/\/$/, "") === "/resellers";
   const text = (fa, en) => language === "fa" ? fa : en;
-  let language = "fa", csrf = "", account = null, adminData = null, peerData = null, busy = false;
+  let language = "fa", csrf = "", account = null, adminData = null, peerData = null, childrenData = null, busy = false;
   const pending = new Map();
   try { if (localStorage.getItem("wgportal-language") === "en") language = "en"; } catch { /* Storage is optional. */ }
 
@@ -97,6 +97,7 @@
     } finally {
       busy = false; button.disabled = false; button.removeAttribute("aria-busy");
       if (button.closest("#peer-form") && $("#peer-form").dataset.locked) button.disabled = true;
+      if (button.closest("#child-form") && $("#child-form").dataset.locked) button.disabled = true;
     }
   }
   function translate(next) {
@@ -116,6 +117,7 @@
     if (adminData) renderAdmin(adminData);
     if (account) renderAccount();
     if (peerData && account?.active) renderPeers(peerData);
+    if (childrenData && account?.active) renderChildren(childrenData);
   }
   function ownerVisibility(authorized) {
     $("#admin-view").hidden = !authorized;
@@ -144,7 +146,7 @@
     $("#account-state").className = "pill" + (active ? "" : " paused");
     $("#paused-view").hidden = active;
     $("#active-view").hidden = !active;
-    if (!active) { peerData = null; $("#peer-rows").replaceChildren(); closeQR(); }
+    if (!active) { peerData = null; childrenData = null; $("#peer-rows").replaceChildren(); $("#child-rows").replaceChildren(); $("#add-child").disabled = true; $("#child-password").value = ""; if ($("#child-dialog").open) $("#child-dialog").close(); closeQR(); }
   }
   function renderAdmin(data) {
     adminData = data;
@@ -164,6 +166,8 @@
     $("#summary-active").textContent = number.format(accounts.filter((item) => item.active).length);
     $("#summary-expired").textContent = number.format(accounts.filter((item) => item.enabled && !item.active).length);
     $("#summary-suspended").textContent = number.format(accounts.filter((item) => !item.enabled).length);
+    $("#summary-subresellers").textContent = Number.isSafeInteger(data.summary?.subresellers) ? number.format(data.summary.subresellers) : "—";
+    $("#summary-creation-fees").textContent = Number.isSafeInteger(data.summary?.total_creation_fee_toman) ? number.format(data.summary.total_creation_fee_toman) : "—";
     for (const item of accounts) {
       const row = rows.insertRow();
       const identity = document.createElement("div"); identity.className = "account-identity";
@@ -174,6 +178,9 @@
       state.textContent = item.active ? text("فعال", "Active") : item.enabled ? text("اعتبار پایان‌یافته", "Expired") : text("متوقف توسط مدیر", "Suspended by owner");
       row.insertCell().append(state);
       cell(row, date(item.expires_at)); cell(row, item.max_peers);
+      cell(row, item.parent_username || text("مدیر اصلی", "Owner"));
+      cell(row, number.format(item.direct_child_count || 0) + " / " + number.format(item.descendant_count || 0));
+      cell(row, number.format(item.creation_fee_toman || 0));
       const actions = document.createElement("div"); actions.className = "actions";
       const days = document.createElement("input"); days.type = "number"; days.min = "1"; days.max = "366"; days.value = "30"; days.setAttribute("aria-label", text("روزهای تمدید برای ", "Renewal days for ") + item.username);
       const renew = document.createElement("button"); renew.type = "button"; renew.textContent = text("تمدید", "Renew");
@@ -191,9 +198,12 @@
         await api("/resellers/api/accounts/" + item.id + "/access", { method: "POST", payload: { enabled: !item.enabled } });
         notice(text("وضعیت دسترسی ذخیره شد؛ تاریخ اعتبار مستقل است.", "Access was updated; the validity date is independent."), "success"); await loadAdmin();
       }));
-      actions.append(days, renew, access); row.insertCell().append(actions);
+      const signin = document.createElement("button"); signin.type = "button"; signin.className = "secondary";
+      signin.textContent = text("لینک ورود نماینده", "Reseller sign-in link");
+      signin.addEventListener("click", () => showSignin("/reseller"));
+      actions.append(days, renew, access, signin); row.insertCell().append(actions);
     }
-    if (!accounts.length) empty(rows, text("هنوز نماینده‌ای ساخته نشده است.", "No reseller accounts yet."), 5);
+    if (!accounts.length) empty(rows, text("هنوز نماینده‌ای ساخته نشده است.", "No reseller accounts yet."), 8);
     $("#audit-list").replaceChildren(...(data.audit || []).slice(0, 30).map((event) => {
       const li = document.createElement("li"); li.textContent = date(event.created_at) + " · " + String(event.action || "—") + " · " + String(event.actor || "—"); return li;
     }));
@@ -203,6 +213,49 @@
     $("#operations-list").replaceChildren(...operations.map((item) => {
       const li = document.createElement("li"); li.textContent = "#" + item.id + " · " + text("نماینده ", "Reseller ") + item.reseller_id + " · " + String(item.state || "pending") + " · " + date(item.created_at); return li;
     }));
+  }
+  function showSignin(path = "/reseller") {
+    let url = new URL("/reseller", location.origin);
+    try { const supplied = new URL(path, location.origin); if (supplied.origin === location.origin && supplied.pathname === "/reseller") url = supplied; } catch { /* Use the known local sign-in route. */ }
+    $("#signin-url").value = url.href;
+    $("#open-signin-url").href = url.href;
+    $("#signin-copy-result").textContent = "";
+    $("#signin-delivery").hidden = false;
+  }
+  function renderChildren(data) {
+    childrenData = data;
+    const number = new Intl.NumberFormat(language === "fa" ? "fa-IR" : "en-GB");
+    const rows = $("#child-rows"); rows.replaceChildren();
+    const accounts = data.accounts || [];
+    $("#child-count").textContent = number.format(accounts.length) + text(" زیرنمایندهٔ مستقیم", " direct subresellers");
+    const fee = data.creation_fee?.amount;
+    $("#child-fee-amount").textContent = Number.isSafeInteger(fee) ? number.format(fee) + text(" تومان", " toman") : text("هزینه را از مدیر اصلی بپرسید.", "Ask the owner for the creation fee.");
+    if (Number.isSafeInteger(fee)) {
+      const copy = $("#child-dialog-copy");
+      copy.dataset.fa = `ثبت هر زیرنماینده ${new Intl.NumberFormat("fa-IR").format(fee)} تومان هزینهٔ یک‌باره دارد. اینجا پرداختی انجام نمی‌شود؛ فعال‌سازی با تمدید مدیر اصلی است.`;
+      copy.dataset.en = `Each subreseller has a one-time creation fee of ${new Intl.NumberFormat("en-GB").format(fee)} toman. No payment is collected here; owner renewal activates the account.`;
+      copy.textContent = copy.dataset[language];
+    }
+    for (const item of accounts) {
+      const row = rows.insertRow(); cell(row, item.username);
+      cell(row, item.active ? text("فعال", "Active") : !item.enabled ? text("متوقف", "Suspended") : !item.expires_at ? text("در انتظار تمدید مدیر", "Awaiting owner renewal") : text("اعتبار پایان یافته", "Expired"));
+      cell(row, date(item.expires_at));
+      cell(row, number.format(item.direct_child_count || 0) + " / " + number.format(item.descendant_count || 0));
+      cell(row, number.format(item.creation_fee_toman || 0));
+      const link = document.createElement("button"); link.type = "button"; link.className = "secondary"; link.textContent = text("لینک ورود", "Sign-in link");
+      link.addEventListener("click", () => showSignin(data.signin_url || "/reseller")); row.insertCell().append(link);
+    }
+    if (!accounts.length) empty(rows, text("هنوز زیرنماینده‌ای ثبت نکرده‌اید.", "You have not created a subreseller yet."), 6);
+    const selected = new Set(Array.from(document.querySelectorAll("#child-interface-options input:checked"), node => Number(node.value)));
+    $("#child-interface-options").replaceChildren(...(data.interfaces || []).map(iface => {
+      const label = document.createElement("label"), input = document.createElement("input"), span = document.createElement("span");
+      input.type = "checkbox"; input.value = iface.id; input.checked = selected.has(iface.id); span.textContent = iface.name; label.append(input, span); return label;
+    }));
+    $("#child-limit").max = String(account.max_peers);
+    if (Number($("#child-limit").value) > account.max_peers) $("#child-limit").value = String(account.max_peers);
+    $("#add-child").disabled = !(data.interfaces || []).length;
+    $("#child-load-state").textContent = text("فقط زیرنمایندگان مستقیم شما نمایش داده می‌شوند. فعال‌سازی و تمدید با مدیر اصلی است.", "Only your direct subresellers are shown. The owner manages activation and renewal.");
+    $("#child-load-state").removeAttribute("data-fa"); $("#child-load-state").removeAttribute("data-en");
   }
   function closeQR() {
     $("#qr-image").removeAttribute("src");
@@ -243,12 +296,22 @@
     catch (error) { ownerVisibility(false); throw error; }
   }
   async function loadPeers() { if (account?.active) renderPeers(await api("/reseller/api/peers")); }
+  async function loadChildren() {
+    if (!account?.active) return;
+    try { renderChildren(await api("/reseller/api/accounts")); }
+    catch (error) {
+      $("#add-child").disabled = true;
+      $("#child-load-state").textContent = text("دریافت زیرنمایندگان ناموفق بود؛ وضعیت را تازه کنید.", "Subresellers could not be loaded. Refresh status.");
+      $("#child-load-state").removeAttribute("data-fa"); $("#child-load-state").removeAttribute("data-en");
+      throw error;
+    }
+  }
   async function load() {
     $("#loading").hidden = false;
     try {
       const result = await api("/reseller/api/session"); account = result.account || null;
       if (ownerView) await loadAdmin();
-      else { renderAccount(); if (account?.active) await loadPeers(); }
+      else { renderAccount(); if (account?.active) await Promise.all([loadPeers(), loadChildren()]); }
     } catch (error) {
       if (ownerView) ownerVisibility(false);
       else if (error.status === 401 || error.status === 403) { peerData = null; $("#peer-rows").replaceChildren(); $("#active-view").hidden = true; }
@@ -278,7 +341,7 @@
   });
   $("#logout").addEventListener("click", () => action($("#logout"), null, async () => {
     await api("/reseller/api/logout", { method: "POST", payload: {} });
-    csrf = ""; account = null; peerData = null; closeQR(); $("#peer-rows").replaceChildren(); await load();
+    csrf = ""; account = null; peerData = null; childrenData = null; closeQR(); $("#peer-rows").replaceChildren(); $("#child-rows").replaceChildren(); await load();
   }));
   $("#account-form").addEventListener("submit", (event) => {
     event.preventDefault(); const payload = Object.fromEntries(new FormData(event.currentTarget));
@@ -286,12 +349,50 @@
     payload.max_peers = Number(payload.max_peers);
     if (!payload.interfaces.length) return formResult("#account-result", text("حداقل یک Interface انتخاب کنید.", "Select at least one interface."), true);
     action(event.submitter || event.currentTarget.querySelector('[type="submit"]'), "#account-result", async () => {
-      await api("/resellers/api/accounts", { method: "POST", payload });
+      const created = await api("/resellers/api/accounts", { method: "POST", payload });
       $("#account-password").value = "";
       $("#account-dialog").close();
       $("#account-form").reset();
+      showSignin(created.signin_url || "/reseller");
       notice(text("حساب ساخته شد. برای فعال‌شدن، اعتبار آن را از فهرست تمدید کنید.", "Account created. Renew its validity in the list to activate it."), "success");
       try { await loadAdmin(); } catch { notice(text("حساب ساخته شد، اما فهرست تازه دریافت نشد. وضعیت را تازه کنید.", "The account was created, but the list could not be refreshed. Refresh status.")); }
+    });
+  });
+  $("#copy-signin-url").addEventListener("click", async () => {
+    const input = $("#signin-url"); input.focus(); input.select();
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(input.value);
+      else if (!document.execCommand("copy")) throw new Error("manual copy required");
+      formResult("#signin-copy-result", text("لینک کپی شد.", "Link copied."));
+    } catch { formResult("#signin-copy-result", text("لینک انتخاب شد؛ آن را با Ctrl+C یا منوی کپی دستگاه کپی کنید.", "The link is selected. Copy it with Ctrl+C or your device’s copy menu.")); }
+  });
+  $("#add-child").addEventListener("click", () => {
+    if (!account?.active || !childrenData || busy) return;
+    $("#child-result").textContent = ""; $("#child-dialog").showModal(); $("#child-username").focus();
+  });
+  $("#close-child-dialog").addEventListener("click", () => $("#child-dialog").close());
+  $("#child-dialog").addEventListener("close", () => { $("#child-password").value = ""; $("#add-child").focus(); });
+  $("#child-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (event.currentTarget.dataset.locked) return;
+    const payload = Object.fromEntries(new FormData(event.currentTarget));
+    payload.interfaces = Array.from(document.querySelectorAll("#child-interface-options input:checked"), node => Number(node.value));
+    payload.max_peers = Number(payload.max_peers);
+    if (!payload.interfaces.length) return formResult("#child-result", text("حداقل یک Interface انتخاب کنید.", "Select at least one interface."), true);
+    action(event.submitter || event.currentTarget.querySelector('[type="submit"]'), "#child-result", async () => {
+      let created;
+      try { created = await api("/reseller/api/accounts", {method:"POST", payload}); }
+      catch (error) {
+        if (!error.status || error.status >= 500) {
+          $("#child-form").dataset.locked = "true";
+          error.message = text("نتیجهٔ ساخت قطعی نیست؛ پیش از درخواست تازه، فهرست را تازه کنید و از مدیر بخواهید وضعیت را بررسی کند.", "The creation outcome is uncertain. Refresh the list and ask the owner to verify it before a new request.");
+        }
+        throw error;
+      }
+      $("#child-password").value = ""; $("#child-dialog").close(); $("#child-form").reset();
+      showSignin(created.signin_url || "/reseller");
+      notice(text("زیرنماینده ثبت شد. هزینهٔ ثبت در داشبورد مدیر نمایش داده می‌شود؛ فعال‌سازی با تمدید مدیر اصلی است.", "Subreseller created. The declared fee is visible to the owner; owner renewal activates the account."), "success");
+      try { await loadChildren(); } catch { notice(text("حساب ثبت شد، اما فهرست تازه دریافت نشد. فقط وضعیت را تازه کنید؛ حساب را دوباره نسازید.", "The account was created, but the list could not be refreshed. Refresh status only; do not create it again.")); }
     });
   });
   $("#peer-form").addEventListener("submit", (event) => {
