@@ -5,7 +5,66 @@
   const text = (fa, en) => language === "fa" ? fa : en;
   let language = "fa", csrf = "", nativeCSRF = "", account = null, adminData = null, peerData = null, childrenData = null, botData = null, busy = false;
   const pending = new Map();
+  const sections = {
+    overview: ["نمای کلی", "Overview", "وضعیت حساب، اعتبار و دسترسی نمایندگی خود را ببینید.", "Review your reseller account, validity and access."],
+    "create-peer": ["ساخت سرویس مشتری", "Create customer service", "با تعیین نام، مدت و حجم، سرویس مشتری را بسازید.", "Create a customer service with its name, duration and volume."],
+    peers: ["مشتری‌ها و کانفیگ‌ها", "Customers and configs", "سرویس‌ها، لینک کاربر، کانفیگ و تمدید مشتری‌ها را مدیریت کنید.", "Manage customer services, user links, configs and renewals."],
+    children: ["نماینده‌های من", "My subresellers", "زیرنماینده اضافه کنید و Interface اختصاصی آن را راه‌اندازی کنید.", "Add subresellers and provision their dedicated interfaces."],
+    bot: ["بات تلگرام", "Telegram bot", "بات اختصاصی نمایندگی خود را متصل و مدیریت کنید.", "Connect and manage your dedicated reseller bot."]
+  };
+  function sectionFromHash() {
+    const value = location.hash.slice(1);
+    return value === "children-workspace" ? "children" : Object.hasOwn(sections, value) ? value : "overview";
+  }
+  let selectedSection = sectionFromHash();
   try { if (localStorage.getItem("wgportal-language") === "en") language = "en"; } catch { /* Storage is optional. */ }
+
+  function renderSection({focus = false} = {}) {
+    if (ownerView) return;
+    const enabled = Boolean(account?.active);
+    if (account && !enabled) {
+      selectedSection = "overview";
+    }
+    if (account && location.hash !== "#" + selectedSection) history.replaceState(null, "", "#" + selectedSection);
+    $("#reseller-navigation").hidden = !account;
+    document.querySelectorAll("[data-reseller-section]").forEach(link => {
+      const key = link.dataset.resellerSection;
+      link.hidden = !enabled && key !== "overview";
+      const active = key === selectedSection;
+      link.classList.toggle("active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
+    document.querySelectorAll("[data-reseller-panel]").forEach(panel => {
+      const key = panel.dataset.resellerPanel;
+      panel.hidden = !account || key !== selectedSection || (!enabled && key !== "overview");
+    });
+    const values = sections[selectedSection];
+    $("#page-title").textContent = text(values[0], values[1]);
+    $("#breadcrumb-title").textContent = text(values[0], values[1]);
+    $("#page-copy").textContent = text(values[2], values[3]);
+    document.title = text(values[0], values[1]) + " · WG Portal";
+    if (focus) $("#page-title").focus({preventScroll: true});
+  }
+  function changeSection() {
+    if (ownerView) return;
+    const previous = selectedSection;
+    selectedSection = sectionFromHash();
+    if (previous !== selectedSection) {
+      if (previous === "bot") $("#bot-token").value = "";
+      if (previous === "peers") {
+        for (const id of ["#peer-edit-dialog", "#user-link-dialog"]) if ($(id).open) $(id).close();
+        closeQR();
+      }
+      if (previous === "children") {
+        if ($("#child-dialog").open) $("#child-dialog").close();
+        $("#signin-delivery").hidden = true;
+      }
+      notice("");
+    }
+    renderSection({focus: true});
+  }
+  window.addEventListener("hashchange", changeSection);
 
   function notice(message, kind = "") {
     $("#notice").textContent = message || "";
@@ -125,6 +184,7 @@
     if (peerData && account?.active) renderPeers(peerData);
     if (childrenData && account?.active) renderChildren(childrenData);
     if (botData && account?.active) renderBot(botData);
+    renderSection();
   }
   function ownerVisibility(authorized) {
     $("#admin-view").hidden = !authorized;
@@ -156,6 +216,7 @@
     $("#paused-view").hidden = active || awaiting;
     $("#active-view").hidden = !active;
     if (!active) { peerData = null; childrenData = null; botData = null; nativeCSRF = ""; $("#bot-token").value = ""; $("#peer-rows").replaceChildren(); $("#child-rows").replaceChildren(); $("#add-child").disabled = true; $("#child-password").value = ""; if ($("#child-dialog").open) $("#child-dialog").close(); if ($("#user-link-dialog").open) $("#user-link-dialog").close(); if ($("#peer-edit-dialog").open) $("#peer-edit-dialog").close(); closeQR(); }
+    renderSection();
   }
   function renderAdmin(data) {
     adminData = data;
@@ -240,6 +301,7 @@
     }));
   }
   function showSignin() {
+    if (!ownerView && (!account?.active || selectedSection !== "children")) return;
     const url = new URL("/login", location.origin);
     $("#signin-url").value = url.href;
     $("#open-signin-url").href = url.href;
@@ -331,6 +393,7 @@
       const userLink = document.createElement("button"); userLink.type = "button"; userLink.className = "secondary peer-user-link"; userLink.textContent = text("لینک کاربر", "User link");
       userLink.addEventListener("click", () => action(userLink, null, async () => {
         const result = await api(`/reseller/api/peers/${Number(peer.id)}/user-link`);
+        if (!account?.active || selectedSection !== "peers") return;
         if (typeof result.url !== "string" || !result.url.trim()) throw new Error(text("لینک دریافت‌شده معتبر نیست.", "The returned link is invalid."));
         const url = new URL(result.url, location.origin);
         if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error(text("لینک دریافت‌شده معتبر نیست.", "The returned link is invalid."));

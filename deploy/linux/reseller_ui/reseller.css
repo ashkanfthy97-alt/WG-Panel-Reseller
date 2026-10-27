@@ -45,4 +45,23 @@ footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:w
 .portal-brand-logo{width:64px;height:64px;object-fit:contain;background:transparent;border:0;border-radius:0;filter:drop-shadow(0 4px 2px #000a) drop-shadow(0 0 9px #10d9ed55)}
 #peer-edit-dialog{width:min(600px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}#peer-edit-dialog form{display:grid;gap:10px}#peer-edit-dialog hr{border:0;border-top:1px solid #29485d;margin:22px 0}#peer-edit-dialog input{width:100%;box-sizing:border-box}.account-actions select{max-width:180px}
 
-#reseller-add-tab{align-self:flex-start;margin-block-end:16px}.accounts-card td .account-actions,.child-provision-actions{flex-wrap:wrap;min-width:250px;max-width:460px}.account-actions select{min-width:140px}.account-approval{white-space:normal}.child-provision-actions .child-port{width:110px;min-width:90px}#payment-pending-panel p{max-width:78ch}#payment-contact{direction:ltr}#user-link-dialog{width:min(600px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}#user-link-url,#bot-token,#bot-owner-id{direction:ltr;width:100%;box-sizing:border-box}#user-link-dialog .actions{margin-block-start:15px}.bot-commands{direction:ltr;text-align:start;unicode-bidi:plaintext;overflow-wrap:anywhere}#reseller-bot .fields>div{min-width:0}#bot-status{overflow-wrap:anywhere}.portal-summary-values{flex-wrap:wrap}
+.accounts-card td .account-actions,.child-provision-actions{flex-wrap:wrap;min-width:250px;max-width:460px}.account-actions select{min-width:140px}.account-approval{white-space:normal}.child-provision-actions .child-port{width:110px;min-width:90px}#payment-pending-panel p{max-width:78ch}#payment-contact{direction:ltr}#user-link-dialog{width:min(600px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}#user-link-url,#bot-token,#bot-owner-id{direction:ltr;width:100%;box-sizing:border-box}#user-link-dialog .actions{margin-block-start:15px}.bot-commands{direction:ltr;text-align:start;unicode-bidi:plaintext;overflow-wrap:anywhere}#reseller-bot .fields>div{min-width:0}#bot-status{overflow-wrap:anywhere}.portal-summary-values{flex-wrap:wrap}
+
+/* Reseller sections share their original forms and expose one workspace at a time. */
+#reseller-navigation{display:grid;gap:5px;min-width:0}
+#reseller-navigation .side-link{margin:0;width:100%;line-height:1.8}
+#reseller-navigation .side-link>span{flex-shrink:0}
+.account-toolbar{justify-content:flex-end;gap:9px;padding-block:4px 14px}
+.account-toolbar button{min-height:35px;font-size:10px}
+[data-reseller-panel]{min-width:0;animation:reseller-panel-in .16s ease-out}
+#reseller-create-peer .fields{grid-template-columns:repeat(3,minmax(0,1fr))}
+#reseller-peers .table-scroll,#children-workspace .table-scroll{max-width:100%;min-width:0}
+@keyframes reseller-panel-in{from{opacity:.45;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:760px){
+  .side-nav{max-width:100%;min-width:0;scrollbar-width:thin;overscroll-behavior-inline:contain}
+  #reseller-navigation{display:flex;gap:7px;width:max-content;max-width:none;flex-shrink:0}
+  #reseller-navigation .side-link{width:auto;flex-shrink:0;min-height:39px}
+  #reseller-navigation .side-link.active{border-color:#3f7993;background:#153c52}
+  #reseller-create-peer .fields{grid-template-columns:1fr}
+  .account-toolbar{justify-content:flex-start;padding-block:0 7px}
+}
