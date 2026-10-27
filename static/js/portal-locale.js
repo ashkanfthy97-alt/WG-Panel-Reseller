@@ -5,7 +5,8 @@
     "Dashboard":"داشبورد","Overview":"نمای کلی","Peers":"Peerها","Subscriptions":"اشتراک‌ها","Nodes":"سرورها","Panel Center":"مرکز عملیات","Activity logs":"گزارش فعالیت","Backup":"پشتیبان‌گیری","Settings":"تنظیمات","API Docs":"مستندات API","Main workspace":"فضای اصلی","Manage nodes":"مدیریت سرورها","Network overview":"نمای کلی شبکه","Peer workspace":"مدیریت Peerها","Create peer":"ساخت Peer","Refresh":"تازه‌سازی","Connected peers":"Peerهای متصل","Active subscriptions":"اشتراک‌های فعال","Telegram hub":"ربات تلگرام","Telegram":"تلگرام","Sign in":"ورود","Sign In":"ورود","Log in":"ورود","Login":"ورود","Register":"ثبت حساب","Create account":"ساخت حساب","Username":"نام کاربری","Email":"ایمیل","Password":"رمز عبور","Confirm password":"تکرار رمز عبور","Remember me":"مرا به خاطر بسپار","Sign out":"خروج","Password & security":"رمز و امنیت","Save profile":"ذخیرهٔ پروفایل","Navigation":"دسترسی‌ها","Management":"مدیریت","Secure management":"مدیریت اتصال و سرویس‌ها","Resellers":"نمایندگی‌ها"
   }));
   dictionary.set("Welcome back","خوش آمدید");
-  dictionary.set("Sign in to your WG Panel","وارد پنل خود شوید");
+  dictionary.set("Sign in to your WG Portal","وارد پنل خود شوید");
+  Object.entries({"Create peer":"ساخت Peer","Create Peer":"ساخت Peer","Profile defaults":"پیش‌فرض‌های پروفایل","Apply or save reusable peer defaults.":"پیش‌فرض‌های قابل استفادهٔ مجدد را اعمال یا ذخیره کنید.","Use profile":"استفاده از پروفایل","Identity":"مشخصات","Name and client address.":"نام و آدرس کلاینت.","Friendly Name":"نام سرویس","IP Address":"آدرس IP","Limits":"محدودیت‌ها","Traffic, timer, first-use, and unlimited rules.":"حجم، زمان، شروع در اولین اتصال و دسترسی نامحدود.","Traffic Limit":"سقف حجم","Unit":"واحد","Days":"روز","Hours":"ساعت","Start timer on first connection":"شروع زمان در اولین اتصال","Unlimited":"نامحدود","Contact":"اطلاعات تماس","Optional details for search and management.":"اطلاعات اختیاری برای جستجو و مدیریت.","Phone Number":"شماره تلفن","Telegram ID":"شناسهٔ تلگرام","WireGuard config":"تنظیمات WireGuard","Routing, endpoints, DNS, keepalive, and MTU.":"مسیرها، Endpoint، DNS، Keepalive و MTU.","Server endpoint":"Endpoint سرور","Interface default":"پیش‌فرض Interface","Not configured":"تنظیم نشده","Saved endpoint presets":"Endpointهای ذخیره‌شده","Fixed client endpoint":"Endpoint ثابت کلاینت","Optional":"اختیاری","Allowed IPs":"مسیرهای مجاز","Include private networks":"شامل شبکه‌های خصوصی","Default":"پیش‌فرض","Add":"افزودن","Cancel":"انصراف","Create interface":"ساخت Interface","New interface":"Interface جدید","Interface name":"نام Interface","Server address":"آدرس سرور","Listen port":"پورت اتصال","Client DNS":"DNS کلاینت","Start after creation":"فعال‌سازی پس از ساخت","Bring the new interface online immediately.":"Interface جدید بلافاصله فعال شود.","Set the name, WireGuard defaults, limits, and contact details in one clean form.":"نام، تنظیمات وایرگارد، محدودیت‌ها و اطلاعات تماس سرویس را مشخص کنید.","Choose from the free addresses on the selected interface.":"یک آدرس آزاد از Interface انتخاب‌شده تعیین کنید.","Leave empty to use interface default":"برای استفاده از پیش‌فرض Interface خالی بگذارید","Leave empty for roaming clients":"برای کلاینت‌های سیار خالی بگذارید","e.g. azumi":"مثلاً سرویس مشتری","e.g. 10":"مثلاً ۱۰","optional":"اختیاری"}).forEach(([key,value]) => dictionary.set(key,value));
   dictionary.set("Create Admin Account","ساخت حساب مدیر");
   dictionary.set("Setup token","کد نصب");
   dictionary.set("Set up your administrator credentials.","نام کاربری و رمز مدیر اصلی را تنظیم کنید.");
@@ -29,7 +30,7 @@
   const attributeOriginals = new WeakMap();
   let language = document.documentElement.lang === "en" ? "en" : "fa";
   try { if(localStorage.getItem("wgportal-language") === "en") language = "en"; } catch { /* Storage is optional. */ }
-  const selector = ".sb2-text,.sb2-section,.nx-workspace-picker a,.nx-workspace-picker summary span,.nx-mobile-nav a,.nx-breadcrumb span,.nx-breadcrumb b,.nx-search-trigger span,.account-signout,.auth-header .muted,.auth-card .hint,label,button[type=submit],h1,h2,#nx-dashboard :is(p,span,small,strong,b,th,dt,dd,button,a)";
+  const selector = ".sb2-text,.sb2-section,.nx-workspace-picker a,.nx-workspace-picker summary span,.nx-mobile-nav a,.nx-breadcrumb span,.nx-breadcrumb b,.nx-search-trigger span,.account-signout,.auth-header .muted,.auth-card .hint,label,button[type=submit],h1,h2,#nx-dashboard :is(p,span,small,strong,b,th,dt,dd,button,a),.peerx-form-modal :is(p,span,small,strong,b,legend,label,button),#iface-create-modal :is(p,span,small,strong,b,legend,label,button),.portal-interface-defaults :is(p,span,small,strong,b,label,button)";
   function localized(key) {
     if (dictionary.has(key)) return dictionary.get(key);
     const patterns = [
@@ -161,6 +162,12 @@
       observer.observe(dashboard,{subtree:true,childList:true,characterData:true});
       window.addEventListener("pagehide",()=>observer.disconnect(),{once:true});
     }
+    document.querySelectorAll('.peerx-form-modal,#iface-create-modal,.portal-interface-defaults').forEach(modal => {
+      let queued = false;
+      const observer = new MutationObserver(() => {if (queued) return;queued = true;requestAnimationFrame(() => {queued = false;apply();});});
+      observer.observe(modal,{subtree:true,childList:true,characterData:true});
+      window.addEventListener('pagehide', () => observer.disconnect(), {once:true});
+    });
     window.addEventListener("wg-theme-change",themeCharts);
     window.addEventListener("storage",(event)=>{if(event.key === "wgportal-language"){language=event.newValue === "en" ? "en" : "fa";apply();themeCharts();}});
   }

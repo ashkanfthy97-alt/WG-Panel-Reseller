@@ -36,9 +36,46 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
         await page.waitForFunction(() => document.getElementById('portal-total-resellers')?.textContent.match(/[4۴]/));
       } finally {release();await context.close();}
     }
+    for (const language of ['fa', 'en']) {
+      for (const width of [1920, 390]) {
+        const context = await browser.newContext({viewport:{width,height:1000}});
+        await context.addInitScript(value => localStorage.setItem('wgportal-language', value), language);
+        await context.route('**/*', route => {
+          const url = new URL(route.request().url());
+          if (url.pathname === '/users') return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(rendered,'users.html'),'utf8')});
+          if (url.pathname.endsWith('/portal-locale.js')) return route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'static/js/portal-locale.js'),'utf8')});
+          if (url.pathname.endsWith('.js')) return route.fulfill({contentType:'text/javascript',body:''});
+          if (url.pathname.startsWith('/static/') && url.pathname.endsWith('.css')) {
+            const target = path.join(root, url.pathname.slice(1));
+            if (fs.existsSync(target)) return route.fulfill({contentType:'text/css',body:fs.readFileSync(target,'utf8')});
+          }
+          return route.fulfill({body:''});
+        });
+        const page = await context.newPage();
+        await page.goto('http://panel.test/users');
+        await page.evaluate(() => {
+          const modal = document.getElementById('peer-modal');
+          modal.classList.add('open'); modal.setAttribute('aria-hidden','false');
+          document.body.classList.add('modal-open');
+        });
+        for (const collapsed of [false,true]) {
+          await page.evaluate(value => document.querySelector('.sidebar.sb2')?.classList.toggle('is-collapsed',value), collapsed);
+          const modal = page.locator('#peer-modal .modal-content');
+          await modal.waitFor({state:'visible'});
+          const bounds = await modal.boundingBox();
+          assert(bounds.x >= -1 && bounds.x + bounds.width <= width + 1, `Peer modal clipped for ${language}/${width}/${collapsed}: ${JSON.stringify(bounds)}`);
+          const close = await page.locator('#modal-close').boundingBox();
+          assert(close.x >= 0 && close.x + close.width <= width, 'Close button must stay visible');
+        }
+        assert.equal(await page.locator('#peer-modal').evaluate(node => node.parentElement === document.body), true, 'Desktop and mobile modal must be outside transformed/sidebar layout');
+        await context.close();
+      }
+    }
     const context = await browser.newContext();
     let signedIn = false;
     const children = [];
+    const peers = [];
+    let peerPayload, renamePayload, renewalPayload;
     let childPayload;
     await context.route('**/*', route => {
       const url = new URL(route.request().url());
@@ -46,7 +83,23 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
       if (url.pathname === '/reseller' || url.pathname === '/resellers') return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/index.html'),'utf8')});
       if (url.pathname === '/reseller/api/session') return route.fulfill({json:{csrf:'browser-test-csrf',account:signedIn?account:null}});
       if (url.pathname === '/reseller/api/login') {signedIn = true;return route.fulfill({json:{ok:true,csrf:'browser-test-csrf',account}});}
-      if (url.pathname === '/reseller/api/peers') return route.fulfill({json:{peers:[],interfaces:[{id:1,name:'wg0'}]}});
+      if (url.pathname === '/reseller/api/peers') {
+        if (route.request().method() === 'POST') {
+          peerPayload = route.request().postDataJSON();
+          peers.push({id:1,name:peerPayload.name,status:'online',used_bytes:30});
+          return route.fulfill({status:201,json:{ok:true,id:1}});
+        }
+        return route.fulfill({json:{peers,assigned_interface:{id:1,name:'wg0'}}});
+      }
+      if (url.pathname === '/reseller/api/peers/1/edit') {
+        renamePayload=route.request().postDataJSON();peers[0].name=renamePayload.name;
+        return route.fulfill({json:{ok:true}});
+      }
+      if (url.pathname === '/reseller/api/peers/1/renew') {
+        renewalPayload=route.request().postDataJSON();
+        assert(route.request().headers()['idempotency-key']);
+        return route.fulfill({json:{ok:true}});
+      }
       if (url.pathname === '/reseller/api/accounts') {
         if (route.request().method() === 'POST') {
           childPayload = route.request().postDataJSON();
@@ -70,15 +123,30 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     await page.locator('#login-form button[type=submit]').click();
     await page.locator('#active-view').waitFor({state:'visible'});
     assert.equal(await page.locator('#account-name').textContent(), 'dealer');
+    assert.equal(await page.locator('#peer-interface').count(),0,'Reseller must not select an interface');
+    await page.locator('#peer-name').fill('limited-customer');
+    await page.locator('#peer-form button[type=submit]').click();
+    await page.waitForFunction(() => document.getElementById('peer-rows')?.textContent.includes('limited-customer'));
+    assert.deepEqual(Object.keys(peerPayload).sort(),['days','name','volume_gb']);
+    await page.locator('#peer-rows button').last().click();
+    await page.locator('#peer-edit-name').fill('renamed-customer');
+    await page.locator('#peer-edit-form button[type=submit]').click();
+    await page.waitForFunction(() => document.getElementById('peer-rows')?.textContent.includes('renamed-customer'));
+    assert.deepEqual(renamePayload,{name:'renamed-customer'});
+    await page.locator('#peer-renew-days').fill('10');
+    await page.locator('#peer-renew-volume').fill('20');
+    await page.locator('#peer-renew').click();
+    await page.waitForFunction(() => document.getElementById('peer-edit-result')?.textContent.length>0);
+    assert.deepEqual(renewalPayload,{days:10,volume_gb:20});
+    await page.locator('#peer-edit-close').click();
     await page.locator('#add-child').click();
     assert.match(await page.locator('#child-fee-amount').textContent(), /[3۳]/);
     await page.locator('#child-username').fill('child-dealer');
     await page.locator('#child-password').fill('a-safe-child-password');
     await page.locator('#child-limit').fill('2');
-    await page.locator('#child-interface-options input').first().check();
     await page.locator('#child-form button[type=submit]').click();
     await page.waitForFunction(() => document.getElementById('child-rows')?.textContent.includes('child-dealer'));
-    assert.deepEqual(Object.keys(childPayload).sort(), ['interfaces','max_peers','password','username']);
+    assert.deepEqual(Object.keys(childPayload).sort(), ['max_peers','password','username']);
     assert.match(await page.locator('#signin-url').inputValue(), /\/reseller$/);
     await page.goto('http://panel.test/resellers');
     await page.waitForFunction(() => document.getElementById('account-rows')?.textContent.includes('child-dealer'));

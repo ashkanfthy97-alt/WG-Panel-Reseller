@@ -2018,7 +2018,7 @@ function subscriptionCurrentLogState(s){
     return {cls:'connected', label:'Connected', icon:'fa-signal', detail:connection.detail || 'Recent WireGuard activity detected.'};
   }
   if(connection.cls === 'unknown'){
-    return {cls:'unknown', label:'Status unavailable', icon:'fa-circle-question', detail:connection.detail || 'WG Panel could not read the WireGuard runtime.'};
+    return {cls:'unknown', label:'Status unavailable', icon:'fa-circle-question', detail:connection.detail || 'WG Portal could not read the WireGuard runtime.'};
   }
   return {cls:'idle', label:'Connection idle', icon:'fa-circle-pause', detail:connection.detail || 'No recent WireGuard activity.'};
 }

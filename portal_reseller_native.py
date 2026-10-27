@@ -102,6 +102,7 @@ class NativeApplicationCore:
     def call(self, method, path, payload=None, *, cookie=None):
         allowed = (
             method == 'GET' and path in {'/api/admin', '/api/get-interfaces', '/api/peers'}
+            or method == 'GET' and re.fullmatch(r'/api/iface/[1-9][0-9]*/peer-defaults', path)
             or method == 'GET' and re.fullmatch(r'/api/peer/[A-Za-z0-9%_+\-=]+/(?:config_qr|config\?download=1)', path)
             or method == 'POST' and path in {'/api/peers', '/api/portal/owned-peer-action'}
         )

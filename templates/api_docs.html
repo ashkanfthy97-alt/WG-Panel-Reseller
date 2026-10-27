@@ -1361,8 +1361,8 @@ https://panel.example.com/settings" type="button"><i class="fa-regular fa-copy">
   -H "Content-Type: application/json" \
   --data '{}'</code></pre><button class="copy-btn" data-copy="curl -X POST &quot;https://panel.example.com/api/traffic-control/apply&quot;
   -H &quot;Authorization: Bearer &lt;PANEL_API_KEY&gt;&quot; -H &quot;Content-Type: application/json&quot; --data &#x27;{}&#x27;" type="button"><i class="fa-regular fa-copy"></i> Copy</button></div></div></div></article><article class="route-row" data-text="traffic control get /api/traffic-control/status traffic_control_status returns local nftables capability, whether the wg panel traffic table is loaded, and per-rule packet/byte counters.">
-<button aria-expanded="false" class="route-main" type="button"><span class="method m-get">GET</span><code class="route-path">/api/traffic-control/status</code><span class="route-desc">Returns local nftables capability, whether the WG Panel traffic table is loaded, and per-rule packet/byte counters.</span><span class="auth-pill">Login session</span><span class="chev"><i class="fa-solid fa-chevron-down"></i></span></button>
-<div class="route-detail"><div class="detail-grid"><div class="detail-card"><div class="detail-title">What it does</div><p>Returns local nftables capability, whether the WG Panel traffic table is loaded, and per-rule packet/byte counters.</p><div class="meta-line"><span>app.py</span><span>handler: <code>traffic_control_status</code></span></div></div>
+<button aria-expanded="false" class="route-main" type="button"><span class="method m-get">GET</span><code class="route-path">/api/traffic-control/status</code><span class="route-desc">Returns local nftables capability, whether the WG Portal traffic table is loaded, and per-rule packet/byte counters.</span><span class="auth-pill">Login session</span><span class="chev"><i class="fa-solid fa-chevron-down"></i></span></button>
+<div class="route-detail"><div class="detail-grid"><div class="detail-card"><div class="detail-title">What it does</div><p>Returns local nftables capability, whether the WG Portal traffic table is loaded, and per-rule packet/byte counters.</p><div class="meta-line"><span>app.py</span><span>handler: <code>traffic_control_status</code></span></div></div>
 <div class="detail-card command-card"><div class="detail-title">Example command</div><pre><code>curl -X GET "https://panel.example.com/api/traffic-control/status"
   -H "Authorization: Bearer &lt;PANEL_API_KEY&gt;"</code></pre><button class="copy-btn" data-copy="curl -X GET &quot;https://panel.example.com/api/traffic-control/status&quot;
   -H &quot;Authorization: Bearer &lt;PANEL_API_KEY&gt;&quot;" type="button"><i class="fa-regular fa-copy"></i> Copy</button></div></div></div></article><article class="route-row" data-text="traffic control post /api/traffic-control/test traffic_control_test checks one saved policy against the live nftables/wireguard state and returns diagnostic checks plus real hit counters.">
@@ -3211,7 +3211,7 @@ https://panel.example.com/users" type="button"><i class="fa-regular fa-copy"></i
 <button aria-expanded="false" class="route-main" type="button">
 <span class="method m-post">POST</span>
 <code class="route-path">/api/nodes/&lt;int:nid&gt;/peer/&lt;path:pub&gt;/reset_timer</code>
-<span class="route-desc">Resets the remote peer timer through the panel. If the peer belongs to a subscription, WG Panel resets the shared subscription timer and synchronizes every attached config.</span>
+<span class="route-desc">Resets the remote peer timer through the panel. If the peer belongs to a subscription, WG Portal resets the shared subscription timer and synchronizes every attached config.</span>
 <span class="auth-pill">Login session</span>
 <span class="chev"><i class="fa-solid fa-chevron-down"></i></span>
 </button>
@@ -3219,7 +3219,7 @@ https://panel.example.com/users" type="button"><i class="fa-regular fa-copy"></i
 <div class="detail-grid">
 <div class="detail-card">
 <div class="detail-title">What it does</div>
-<p>Resets the remote peer timer through the panel. If the peer belongs to a subscription, WG Panel resets the shared subscription timer and synchronizes every attached config.</p>
+<p>Resets the remote peer timer through the panel. If the peer belongs to a subscription, WG Portal resets the shared subscription timer and synchronizes every attached config.</p>
 <div class="meta-line"><span>app.py</span><span>handler: <code>node_reset_peer_timer_only</code></span></div>
 </div>
 <div class="detail-card command-card">

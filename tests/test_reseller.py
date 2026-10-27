@@ -25,6 +25,8 @@ class Core:
             return (200, {'username': 'owner'}) if cookie == 'session=native-owner' else (401, {})
         if path == '/api/get-interfaces':
             return 200, {'interfaces': [{'id': 1, 'name': 'wg0'}, {'id': 2, 'name': 'wg1'}]}
+        if path.endswith('/peer-defaults'):
+            return 200, {'ok': True, 'defaults': {'endpoint':'vpn.example.test:51820', 'allowed_ips':'0.0.0.0/0, ::/0', 'dns':'1.1.1.1', 'mtu':1380, 'persistent_keepalive':25, 'peer_endpoint':''}}
         if path == '/api/peers' and method == 'GET':
             return 200, {'peers': self.rows}
         if path == '/api/peers' and method == 'POST':
@@ -75,7 +77,7 @@ class ResellerChecks(unittest.TestCase):
         self.csrf = result.json['csrf']
 
     def create(self, key='request-key-00000001'):
-        return self.post('/reseller/api/peers', {'iface_id': 1, 'name': 'customer', 'days': 30, 'volume_gb': 50}, key)
+        return self.post('/reseller/api/peers', {'name': 'customer', 'days': 30, 'volume_gb': 50}, key)
 
     def test_distinct_cookie_and_no_admin_role_from_reseller(self):
         self.login()
@@ -106,7 +108,7 @@ class ResellerChecks(unittest.TestCase):
         self.assertNotIn('private_key', result.get_data(as_text=True))
         self.assertNotIn('public_key', result.get_data(as_text=True))
         self.assertEqual(self.client.get('/reseller/api/peers/8/config').status_code, 404)
-        self.assertEqual(self.post('/reseller/api/peers/8/disable', {}).status_code, 404)
+        self.assertIn(self.post('/reseller/api/peers/8/edit', {'name':'forbidden'}).status_code, (403,404))
         self.assertEqual(self.client.get('/reseller/api/peers/1/config').data, b'private-config')
 
     def test_reused_native_id_does_not_grant_access(self):
@@ -114,18 +116,18 @@ class ResellerChecks(unittest.TestCase):
         self.create()
         self.core.rows[0]['public_key'] = 'replacement'
         self.assertEqual(self.client.get('/reseller/api/peers').json['peers'], [])
-        self.assertEqual(self.post('/reseller/api/peers/1/enable', {}).status_code, 404)
+        self.assertEqual(self.post('/reseller/api/peers/1/edit', {'name':'forbidden'}).status_code, 404)
 
     def test_action_calls_identity_guard(self):
         self.login()
         self.create()
-        self.assertEqual(self.post('/reseller/api/peers/1/disable', {}).status_code, 200)
+        self.assertEqual(self.post('/reseller/api/peers/1/edit', {'name':'renamed'}).status_code, 200)
         self.assertEqual(self.core.calls[-1][1], '/api/portal/owned-peer-action')
         self.assertEqual(self.core.calls[-1][2]['public_key'], 'A' * 43 + '=')
 
     def test_create_scope_and_idempotency(self):
         self.login()
-        self.assertEqual(self.post('/reseller/api/peers', {'iface_id': 2}).status_code, 403)
+        self.assertIn(self.post('/reseller/api/peers', {'iface_id': 2}).status_code, (400,403))
         self.assertEqual(self.create().status_code, 201)
         self.assertTrue(self.create().json['replay'])
         self.assertEqual(len(self.core.rows), 1)

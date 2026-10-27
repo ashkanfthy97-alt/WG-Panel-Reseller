@@ -463,7 +463,7 @@
         pre: ['Confirm the .env file exists', 'Check current permissions without reading its contents'],
         run: ['Remove group/other access', 'Keep the current owner permissions'],
         verify: ['Read the new permission mode', 'Confirm the file is no longer group/world-readable'],
-        safety: 'WG Panel changes permission bits only. Secret values are never read or returned to the browser.'
+        safety: 'WG Portal changes permission bits only. Secret values are never read or returned to the browser.'
       },
       install_wireguard_tools: {
         pre: ['Detect the package manager', 'Confirm WireGuard tools are missing'],
@@ -487,11 +487,11 @@
         pre: ['Confirm this server is being used for routing', 'Read the current forwarding value'],
         run: ['Persist net.ipv4.ip_forward=1', 'Enable forwarding in the running kernel'],
         verify: ['Read the kernel value again', 'Confirm IPv4 forwarding is enabled'],
-        safety: 'This is a host-wide setting. WG Panel does not change firewall rules as part of this repair.'
+        safety: 'This is a host-wide setting. WG Portal does not change firewall rules as part of this repair.'
       },
       start_interface: {
-        pre: ['Confirm the interface exists in WG Panel', 'Validate the interface name and config file'],
-        run: ['Use WG Panel’s existing interface start routine', 'Apply the stored interface configuration'],
+        pre: ['Confirm the interface exists in WG Portal', 'Validate the interface name and config file'],
+        run: ['Use WG Portal’s existing interface start routine', 'Apply the stored interface configuration'],
         verify: ['Run wg show for the interface', 'Confirm the interface is active'],
         safety: 'Review PostUp/PostDown hooks before approving. Keys and configuration files are not regenerated.'
       }
@@ -515,7 +515,7 @@
       return [
         {
           title: primary.label || 'Open the related setting',
-          text: primary.hint || 'WG Panel opens the exact related page or control.',
+          text: primary.hint || 'WG Portal opens the exact related page or control.',
           action: { type: 'link', path: primary.path, label: primary.label || 'Open related settings', icon: primary.icon || 'fa-gear' }
         },
         {
@@ -581,23 +581,23 @@
   function recommendationFor(finding, repair, action) {
     if (repair?.risk === 'low') return {
       icon: 'fa-wand-magic-sparkles',
-      title: 'Recommended: let WG Panel repair this',
-      text: 'This fix is on the predefined allowlist. WG Panel will run safety checks first, make only the listed change, and verify the result automatically.'
+      title: 'Recommended: let WG Portal repair this',
+      text: 'This fix is on the predefined allowlist. WG Portal will run safety checks first, make only the listed change, and verify the result automatically.'
     };
     if (repair) return {
       icon: 'fa-user-shield',
       title: 'Recommended: review the repair before approving it',
-      text: 'This change can affect the host or network. WG Panel will show you exactly what it intends to do and will not proceed without your confirmation.'
+      text: 'This change can affect the host or network. WG Portal will show you exactly what it intends to do and will not proceed without your confirmation.'
     };
     if (action?.path) return {
       icon: 'fa-arrow-up-right-from-square',
       title: `Recommended: ${action.label || 'open the related setting'}`,
-      text: action.hint || 'Use the shortcut below. WG Panel will open the correct tab and highlight the control related to this finding.'
+      text: action.hint || 'Use the shortcut below. WG Portal will open the correct tab and highlight the control related to this finding.'
     };
     return {
       icon: 'fa-route',
       title: 'Recommended: follow the guided manual path',
-      text: 'This is a host-level or deployment-specific change, so WG Panel will not guess. Follow the short steps below, then run verification.'
+      text: 'This is a host-level or deployment-specific change, so WG Portal will not guess. Follow the short steps below, then run verification.'
     };
   }
 
@@ -647,7 +647,7 @@
       body.innerHTML = `<div class="ops2-resolution-empty">
         <span class="ops2-resolution-empty-icon"><i class="fas fa-route"></i></span>
         <strong>Your recovery plan appears here</strong>
-        <p>Select a finding after the diagnostic. WG Panel will show what it found, the safest fix, and how to verify it.</p>
+        <p>Select a finding after the diagnostic. WG Portal will show what it found, the safest fix, and how to verify it.</p>
         <div class="ops2-resolution-empty-points">
           <span><i class="fas fa-screwdriver-wrench"></i> Safe automatic repair when supported</span>
           <span><i class="fas fa-arrow-up-right-from-square"></i> Direct link to the related setting when available</span>
@@ -698,7 +698,7 @@
     const autoCard = repair ? `
       <section class="ops2-auto-card ${repair.risk === 'medium' ? 'is-medium' : ''}">
         <div class="ops2-auto-head">
-          <div class="ops2-auto-title"><span class="ops2-auto-icon"><i class="fas fa-screwdriver-wrench"></i></span><span><strong>${safe ? 'Automatic repair (recommended)' : 'Automatic repair (review required)'}</strong><p>${esc(repair.note || 'WG Panel will run a predefined repair and verify the result.')}</p><small>Last attempt: ${esc(lastAttempt)}</small></span></div>
+          <div class="ops2-auto-title"><span class="ops2-auto-icon"><i class="fas fa-screwdriver-wrench"></i></span><span><strong>${safe ? 'Automatic repair (recommended)' : 'Automatic repair (review required)'}</strong><p>${esc(repair.note || 'WG Portal will run a predefined repair and verify the result.')}</p><small>Last attempt: ${esc(lastAttempt)}</small></span></div>
           <button type="button" class="btn ops2-auto-fix ${repair.risk === 'medium' ? 'medium' : ''}" data-repair-action="${esc(repair.action)}"><i class="fas fa-screwdriver-wrench"></i> ${safe ? 'Fix automatically' : 'Review & fix'}</button>
         </div>
         <div class="ops2-auto-plan">
@@ -708,7 +708,7 @@
         </div>
         <div class="ops2-auto-safety"><i class="fas fa-shield-halved"></i><span>${esc(workflow.safety)}</span></div>
       </section>` : `
-      <section class="ops2-guidance-banner"><span><i class="fas fa-route"></i></span><div><strong>Manual recovery recommended</strong><p>This finding depends on your deployment, so WG Panel will not make an automatic change.</p></div></section>`;
+      <section class="ops2-guidance-banner"><span><i class="fas fa-route"></i></span><div><strong>Manual recovery recommended</strong><p>This finding depends on your deployment, so WG Portal will not make an automatic change.</p></div></section>`;
 
     body.innerHTML = `
       <section class="ops2-resolution-issue">
@@ -720,7 +720,7 @@
       </section>
 
       <section class="ops2-facts-grid ops2-facts-grid-3">
-        <div class="ops2-fact-card"><span><i class="fas fa-file-lines"></i></span><div><strong>What WG Panel found</strong><p>${esc(finding.evidence || 'The diagnostic found a condition that needs review.')}</p></div></div>
+        <div class="ops2-fact-card"><span><i class="fas fa-file-lines"></i></span><div><strong>What WG Portal found</strong><p>${esc(finding.evidence || 'The diagnostic found a condition that needs review.')}</p></div></div>
         <div class="ops2-fact-card"><span><i class="fas fa-circle-question"></i></span><div><strong>Likely cause</strong><p>${esc(finding.cause || finding.guide || 'The diagnostic could not establish a more specific cause.')}</p></div></div>
         <div class="ops2-fact-card"><span><i class="fas fa-shield-halved"></i></span><div><strong>Why it matters</strong><p>${esc(impactText(finding))}</p></div></div>
       </section>
@@ -820,7 +820,7 @@
     const plan = repairWorkflow(repair, finding);
     const confirmed = await ask({
       title: repair.label || 'Automatic repair',
-      intro: repair.note || 'WG Panel will run a predefined allowlisted repair and verify the result.',
+      intro: repair.note || 'WG Portal will run a predefined allowlisted repair and verify the result.',
       confirmText: risk === 'low' ? 'Fix and verify' : 'Approve repair',
       confirmIcon: 'fa-screwdriver-wrench',
       tone: risk === 'low' ? 'safe' : 'warning',
@@ -900,7 +900,7 @@
     if (!list.length) return;
     const confirmed = await ask({
       title: 'Fix safe issues',
-      intro: `WG Panel found ${list.length} low-risk repair${list.length === 1 ? '' : 's'} that can be safely automated.`,
+      intro: `WG Portal found ${list.length} low-risk repair${list.length === 1 ? '' : 's'} that can be safely automated.`,
       confirmText: 'Fix safe issues',
       confirmIcon: 'fa-screwdriver-wrench',
       tone: 'safe',
@@ -909,7 +909,7 @@
         return { title: item.finding.title, detail: `${item.repair.label} · Verify: ${plan.verify[0] || 'fresh diagnostic'}` };
       }),
       safety: 'Only low-risk allowlisted repairs are included. Medium-risk and deployment-dependent changes are excluded.',
-      notice: 'Repairs run one at a time. WG Panel performs one fresh verification after the batch.'
+      notice: 'Repairs run one at a time. WG Portal performs one fresh verification after the batch.'
     });
     if (!confirmed) return;
 
@@ -1115,7 +1115,7 @@
         const token = rollbackButton.dataset.rollbackToken || '';
         const confirmed = await ask({
           title: 'Restore previous state?',
-          intro: 'WG Panel will restore the server state captured immediately before this repair.',
+          intro: 'WG Portal will restore the server state captured immediately before this repair.',
           confirmText: 'Restore previous state',
           confirmIcon: 'fa-rotate-left',
           tone: 'warning',

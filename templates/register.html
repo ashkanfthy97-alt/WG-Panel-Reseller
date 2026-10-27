@@ -3,7 +3,7 @@
   <head>
     <script src="{{ url_for('static', filename='js/auth-appearance.js') }}"></script>
     <meta charset="utf-8" />
-    <title>WG Panel — Register</title>
+    <title>WG Portal — Register</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
 
     <link
@@ -12,7 +12,7 @@
     />
     <link
       rel="preload"
-      href="{{ url_for('static', filename='img/wireguard-badge.svg') }}"
+      href="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
       as="image"
     />
     <link
@@ -663,14 +663,14 @@
         <div class="brand">
           <img
             class="auth-legacy-mark"
-            src="{{ url_for('static', filename='img/wireguard-badge.svg') }}"
+            src="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
             alt=""
           /><img
             class="auth-modern-mark"
-            src="{{ url_for('static', filename='img/workspace-mark.svg') }}"
-            alt="WG Panel"
+            src="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
+            alt="WG Portal"
           />
-          <div class="t">WG Panel</div>
+          <div class="t">WG Portal</div>
         </div>
 
         <h2>Create Admin Account</h2>
@@ -1106,7 +1106,7 @@
             if (!r.ok) throw new Error("init failed");
             const j = await r.json();
 
-            const issuer = j.issuer || "WG Panel";
+            const issuer = j.issuer || "WG Portal";
             let uri = j.otp_uri || "";
 
             if (!uri && j.secret) {

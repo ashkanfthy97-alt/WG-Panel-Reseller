@@ -68,6 +68,10 @@ class NativeResellerChecks(unittest.TestCase):
         def config(key):
             return 'native-config', 200, {'Content-Type': 'text/plain'}
 
+        @self.app.get('/api/iface/<int:iid>/peer-defaults')
+        def peer_defaults(iid):
+            return jsonify(ok=True, defaults={'endpoint':'vpn.example.test:51820', 'allowed_ips':'0.0.0.0/0, ::/0', 'dns':'1.1.1.1', 'mtu':1380, 'persistent_keepalive':25, 'peer_endpoint':''})
+
         self.csrf_guard = Mock()
         with patch.dict(os.environ, {'WG_PANEL_RESELLER_DB': str(self.database)}):
             install_reseller(self.app, self.csrf_guard)
@@ -156,7 +160,7 @@ class NativeResellerChecks(unittest.TestCase):
         self.account()
         self.login()
         with patch('requests.Session', side_effect=AssertionError('No HTTP self-call allowed')):
-            response = self.post('/reseller/api/peers', {'iface_id': 1, 'name': 'customer', 'days': 30, 'volume_gb': 10})
+            response = self.post('/reseller/api/peers', {'name': 'customer', 'days': 30, 'volume_gb': 10})
             self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
             peers = self.client.get('/reseller/api/peers')
             self.assertEqual(peers.status_code, 200)

@@ -83,7 +83,7 @@
         card.dataset.latestRevision = latestRevision;
         card.setAttribute(
           'aria-label',
-          'WG Panel update status could not be verified'
+          'WG Portal update status could not be verified'
         );
       }
       return;
@@ -112,8 +112,8 @@
         card.setAttribute(
           'aria-label',
           latestRevision
-            ? `WG Panel update available, main revision ${latestRevision}`
-            : 'WG Panel update available'
+            ? `WG Portal update available, main revision ${latestRevision}`
+            : 'WG Portal update available'
         );
       }
 
@@ -141,7 +141,7 @@
       card.dataset.latestRevision = latestRevision;
       card.setAttribute(
         'aria-label',
-        'WG Panel is current'
+        'WG Portal is current'
       );
     }
   }

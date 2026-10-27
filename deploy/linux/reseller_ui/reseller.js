@@ -154,7 +154,7 @@
     const selected = new Set(Array.from(document.querySelectorAll("#interface-options input:checked"), (node) => Number(node.value)));
     $("#interface-options").replaceChildren(...(data.interfaces || []).map((iface) => {
       const label = document.createElement("label"), input = document.createElement("input"), caption = document.createElement("span");
-      input.type = "checkbox"; input.value = iface.id; input.checked = selected.has(iface.id); caption.textContent = iface.name;
+      input.type = "radio"; input.name = "assigned-interface"; input.value = iface.id; input.checked = selected.has(iface.id); caption.textContent = iface.name;
       label.append(input, caption); return label;
     }));
     if (!(data.interfaces || []).length) $("#interface-options").textContent = text("ابتدا یک Interface از پنل اصلی بسازید.", "Create an interface in the native panel first.");
@@ -182,6 +182,12 @@
       cell(row, number.format(item.direct_child_count || 0) + " / " + number.format(item.descendant_count || 0));
       cell(row, number.format(item.creation_fee_toman || 0));
       const actions = document.createElement("div"); actions.className = "actions";
+      const assigned = document.createElement("select"); assigned.setAttribute("aria-label", text("Interface اختصاصی نماینده", "Assigned reseller interface"));
+      const missing = document.createElement("option"); missing.value = ""; missing.textContent = text("Interface را تعیین کنید", "Assign an interface"); assigned.append(missing);
+      for (const iface of data.interfaces || []) {const option = document.createElement("option"); option.value = iface.id; option.textContent = iface.name; option.selected = (item.interfaces || []).length === 1 && Number(item.interfaces[0]) === Number(iface.id); assigned.append(option);}
+      const assign = document.createElement("button"); assign.type = "button"; assign.className = "secondary"; assign.textContent = text("تعیین Interface", "Assign interface");
+      assign.addEventListener("click", () => action(assign, null, async () => {if (!assigned.value) throw new Error(text("یک Interface انتخاب کنید.", "Choose one interface.")); await api(`/resellers/api/accounts/${Number(item.id)}/interface`, {method:"POST",payload:{iface_id:Number(assigned.value)}}); await loadAdmin();}));
+      actions.append(assigned, assign);
       const days = document.createElement("input"); days.type = "number"; days.min = "1"; days.max = "366"; days.value = "30"; days.setAttribute("aria-label", text("روزهای تمدید برای ", "Renewal days for ") + item.username);
       const renew = document.createElement("button"); renew.type = "button"; renew.textContent = text("تمدید", "Renew");
       renew.addEventListener("click", () => action(renew, null, async () => {
@@ -246,14 +252,9 @@
       link.addEventListener("click", () => showSignin(data.signin_url || "/reseller")); row.insertCell().append(link);
     }
     if (!accounts.length) empty(rows, text("هنوز زیرنماینده‌ای ثبت نکرده‌اید.", "You have not created a subreseller yet."), 6);
-    const selected = new Set(Array.from(document.querySelectorAll("#child-interface-options input:checked"), node => Number(node.value)));
-    $("#child-interface-options").replaceChildren(...(data.interfaces || []).map(iface => {
-      const label = document.createElement("label"), input = document.createElement("input"), span = document.createElement("span");
-      input.type = "checkbox"; input.value = iface.id; input.checked = selected.has(iface.id); span.textContent = iface.name; label.append(input, span); return label;
-    }));
     $("#child-limit").max = String(account.max_peers);
     if (Number($("#child-limit").value) > account.max_peers) $("#child-limit").value = String(account.max_peers);
-    $("#add-child").disabled = !(data.interfaces || []).length;
+    $("#add-child").disabled = (account.interfaces || []).length !== 1;
     $("#child-load-state").textContent = text("فقط زیرنمایندگان مستقیم شما نمایش داده می‌شوند. فعال‌سازی و تمدید با مدیر اصلی است.", "Only your direct subresellers are shown. The owner manages activation and renewal.");
     $("#child-load-state").removeAttribute("data-fa"); $("#child-load-state").removeAttribute("data-en");
   }
@@ -263,11 +264,6 @@
   }
   function renderPeers(data) {
     peerData = data;
-    const select = $("#peer-interface"), previous = select.value;
-    select.replaceChildren(...(data.interfaces || []).map((item) => {
-      const option = document.createElement("option"); option.value = item.id; option.textContent = item.name; return option;
-    }));
-    if (Array.from(select.options).some((option) => option.value === previous)) select.value = previous;
     const rows = $("#peer-rows"); rows.replaceChildren();
     for (const peer of data.peers || []) {
       const row = rows.insertRow(); cell(row, peer.name);
@@ -280,14 +276,14 @@
       const config = document.createElement("a"); config.className = "button secondary"; config.href = "/reseller/api/peers/" + Number(peer.id) + "/config"; config.textContent = text("کانفیگ", "Config"); config.setAttribute("download", "");
       const qr = document.createElement("button"); qr.type = "button"; qr.className = "secondary"; qr.textContent = "QR";
       qr.addEventListener("click", () => { $("#qr-image").src = "/reseller/api/peers/" + Number(peer.id) + "/qr"; $("#qr-dialog").showModal(); });
-      const toggle = document.createElement("button"); toggle.type = "button"; toggle.className = "secondary";
-      const enabled = ["online", "enabled", "active"].includes(state.toLowerCase());
-      toggle.textContent = enabled ? text("غیرفعال", "Disable") : text("فعال", "Enable");
-      toggle.addEventListener("click", () => action(toggle, null, async () => {
-        await api("/reseller/api/peers/" + Number(peer.id) + "/" + (enabled ? "disable" : "enable"), { method: "POST", payload: {} });
-        notice(text("وضعیت سرویس تغییر کرد.", "The service access was updated."), "success"); await loadPeers();
-      }));
-      actions.append(config, qr, toggle); row.insertCell().append(actions);
+      const edit = document.createElement("button"); edit.type = "button"; edit.className = "secondary"; edit.textContent = text("نام / تمدید", "Name / renew");
+      edit.addEventListener("click", () => {
+        $("#peer-edit-form").dataset.peerId = String(peer.id);
+        $("#peer-edit-name").value = peer.name || "";
+        $("#peer-edit-result").textContent = "";
+        $("#peer-edit-dialog").showModal();
+      });
+      actions.append(config, qr, edit); row.insertCell().append(actions);
     }
     if (!(data.peers || []).length) empty(rows, text("هنوز سرویسی برای این حساب وجود ندارد.", "No services belong to this account yet."), 5);
   }
@@ -376,9 +372,7 @@
     event.preventDefault();
     if (event.currentTarget.dataset.locked) return;
     const payload = Object.fromEntries(new FormData(event.currentTarget));
-    payload.interfaces = Array.from(document.querySelectorAll("#child-interface-options input:checked"), node => Number(node.value));
     payload.max_peers = Number(payload.max_peers);
-    if (!payload.interfaces.length) return formResult("#child-result", text("حداقل یک Interface انتخاب کنید.", "Select at least one interface."), true);
     action(event.submitter || event.currentTarget.querySelector('[type="submit"]'), "#child-result", async () => {
       let created;
       try { created = await api("/reseller/api/accounts", {method:"POST", payload}); }
@@ -399,7 +393,7 @@
     event.preventDefault();
     if (event.currentTarget.dataset.locked) return;
     const payload = Object.fromEntries(new FormData(event.currentTarget));
-    ["iface_id", "days", "volume_gb"].forEach((key) => { payload[key] = Number(payload[key]); });
+    ["days", "volume_gb"].forEach((key) => { payload[key] = Number(payload[key]); });
     action(event.submitter || event.currentTarget.querySelector('[type="submit"]'), "#peer-result", async () => {
       const operation = await receipt("create-peer:" + account.id, payload);
       try {
@@ -413,6 +407,24 @@
       }
     });
   });
+  $("#peer-edit-close").addEventListener("click", () => $("#peer-edit-dialog").close());
+  $("#peer-edit-form").addEventListener("submit", event => {
+    event.preventDefault();
+    const peerId = Number(event.currentTarget.dataset.peerId);
+    action(event.submitter, "#peer-edit-result", async () => {
+      await api(`/reseller/api/peers/${peerId}/edit`, {method:"POST",payload:{name:$("#peer-edit-name").value.trim()}});
+      formResult("#peer-edit-result", text("نام ذخیره شد.", "Name saved.")); await loadPeers();
+    });
+  });
+  $("#peer-renew").addEventListener("click", () => action($("#peer-renew"), "#peer-edit-result", async () => {
+    const peerId = Number($("#peer-edit-form").dataset.peerId);
+    const payload = {days:Number($("#peer-renew-days").value),volume_gb:Number($("#peer-renew-volume").value)};
+    if (!Number.isInteger(payload.days) || payload.days < 1 || payload.days > 366 || !Number.isInteger(payload.volume_gb) || payload.volume_gb < 1 || payload.volume_gb > 100000) throw new Error(text("مدت و حجم تمدید را بررسی کنید.", "Check renewal duration and volume."));
+    const operation = await receipt("renew-peer:" + peerId, payload);
+    await api(`/reseller/api/peers/${peerId}/renew`, {method:"POST",payload,key:operation.key});
+    finishReceipt(operation);
+    formResult("#peer-edit-result", text("زمان و حجم اضافه شد؛ مصرف و تنظیمات فنی قبلی حفظ شدند.", "Time and volume added; usage and technical settings were preserved.")); await loadPeers();
+  }));
   $("#qr-dialog").addEventListener("close", () => $("#qr-image").removeAttribute("src"));
   $("#qr-image").addEventListener("error", () => { closeQR(); notice(text("تصویر QR دریافت نشد؛ وضعیت حساب و سرویس را تازه کنید.", "The QR image could not be loaded. Refresh your account and service status."), "error"); });
   translate(language); load();

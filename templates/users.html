@@ -124,6 +124,7 @@
         <button id="create-iface-btn" class="btn secondary" type="button">
             <i class="fas fa-diagram-project"></i> New interface
         </button>
+        <button id="portal-interface-defaults-open" class="btn secondary" type="button" data-portal-fa="تنظیمات Peerهای این Interface" data-portal-en="Interface peer defaults">Interface peer defaults</button>
         <button id="peer-template-open" class="btn secondary" type="button" title="Peer page template"><i class="fas fa-palette" aria-hidden="true"></i> Template</button>
     </div>
 </section>
@@ -164,6 +165,10 @@
                     <label for="iface-new-mtu">MTU</label>
                     <input id="iface-new-mtu" name="mtu" class="input" type="number" min="576" max="9000" placeholder="optional">
                 </div>
+                <div class="form-group wide"><label for="iface-new-endpoint" data-portal-fa="Endpoint پیش‌فرض سرور" data-portal-en="Default server endpoint">Default server endpoint</label><input id="iface-new-endpoint" name="peer_endpoint_default" class="input" dir="ltr" placeholder="vpn.example.com:51820"><small data-portal-fa="در کانفیگ همهٔ Peerهای این Interface استفاده می‌شود؛ نماینده نمی‌تواند آن را تغییر دهد." data-portal-en="Used in this interface’s client configs; resellers cannot override it.">Used in this interface’s client configs; resellers cannot override it.</small></div>
+                <div class="form-group"><label for="iface-new-allowed-ips" data-portal-fa="مسیرهای مجاز کلاینت" data-portal-en="Client allowed IPs">Client allowed IPs</label><input id="iface-new-allowed-ips" name="peer_allowed_ips" class="input" dir="ltr" value="0.0.0.0/0, ::/0"></div>
+                <div class="form-group"><label for="iface-new-keepalive" data-portal-fa="Keepalive (ثانیه)" data-portal-en="Keepalive (seconds)">Keepalive (seconds)</label><input id="iface-new-keepalive" name="peer_keepalive" class="input" type="number" min="0" max="65535" placeholder="25"></div>
+                <div class="form-group wide"><label for="iface-new-client-endpoint" data-portal-fa="Endpoint ثابت کلاینت (اختیاری)" data-portal-en="Fixed client endpoint (optional)">Fixed client endpoint (optional)</label><input id="iface-new-client-endpoint" name="peer_client_endpoint" class="input" dir="ltr" placeholder="client.example.com:51820"><small data-portal-fa="فقط برای کلاینت‌هایی که Endpoint ثابت دارند؛ برای کاربران سیار خالی بگذارید." data-portal-en="Leave empty for roaming clients.">Leave empty for roaming clients.</small></div>
                 <div class="form-group wide iface-auto-up-row">
                     <label class="iface-auto-up iface-auto-up-toggle compact-inline" for="iface-new-auto-up">
                         <input id="iface-new-auto-up" name="auto_up" type="checkbox" checked>
@@ -181,6 +186,22 @@
 </div>
 
 <div id="spinner-peers" class="spinner overlay" style="display:none"></div>
+<dialog id="portal-interface-defaults-dialog" class="portal-interface-defaults" aria-labelledby="portal-interface-defaults-title">
+  <form id="portal-interface-defaults-form">
+    <header><h2 id="portal-interface-defaults-title" data-portal-fa="پیش‌فرض فنی Peerهای Interface" data-portal-en="Interface peer defaults">Interface peer defaults</h2><button id="portal-interface-defaults-close" type="button" aria-label="Close">×</button></header>
+    <p id="portal-interface-defaults-status" role="status"></p>
+    <p data-portal-fa="این تنظیمات برای ساخت Peerهای جدید است؛ کانفیگ Peerهای موجود خودکار بازنویسی نمی‌شود." data-portal-en="These defaults apply to new peers; existing peer configurations are not rewritten automatically.">These defaults apply to new peers; existing peer configurations are not rewritten automatically.</p>
+    <div class="iface-create-grid">
+      <label class="form-group wide"><span data-portal-fa="Endpoint سرور" data-portal-en="Server endpoint">Server endpoint</span><input id="policy-endpoint" class="input" dir="ltr" placeholder="vpn.example.com:51820"></label>
+      <label class="form-group wide"><span data-portal-fa="مسیرهای مجاز" data-portal-en="Allowed IPs">Allowed IPs</span><input id="policy-allowed-ips" class="input" dir="ltr" value="0.0.0.0/0, ::/0"></label>
+      <label class="form-group"><span>DNS</span><input id="policy-dns" class="input" dir="ltr" placeholder="1.1.1.1, 1.0.0.1"></label>
+      <label class="form-group"><span>MTU</span><input id="policy-mtu" class="input" type="number" min="576" max="9000"></label>
+      <label class="form-group"><span data-portal-fa="Keepalive (ثانیه)" data-portal-en="Keepalive (seconds)">Keepalive (seconds)</span><input id="policy-keepalive" class="input" type="number" min="0" max="65535"></label>
+      <label class="form-group wide"><span data-portal-fa="Endpoint ثابت کلاینت (اختیاری)" data-portal-en="Fixed client endpoint (optional)">Fixed client endpoint (optional)</span><input id="policy-client-endpoint" class="input" dir="ltr"></label>
+    </div>
+    <button class="btn" type="submit" data-portal-fa="ذخیرهٔ پیش‌فرض‌ها" data-portal-en="Save defaults">Save defaults</button>
+  </form>
+</dialog>
 <div class="peers-container"></div>
 <div id="peer-modal" class="modal peerx-form-modal" aria-hidden="true" aria-labelledby="peer-modal-title" role="dialog">
     <div class="modal-backdrop" tabindex="-1"></div>
@@ -783,7 +804,6 @@
 <script>
 
 (() => {
-  const mq = window.matchMedia('(max-width: 760px)');
   const ids = ['peer-modal', 'edit-peer-modal', 'bulk-modal', 'iface-create-modal'];
   const homes = new Map();
 
@@ -797,12 +817,9 @@
       }
 
       const home = homes.get(el);
-      if (mq.matches) {
-        if (el.parentNode !== document.body) document.body.appendChild(el);
-      } else if (home && el.parentNode !== home.parent) {
-        if (home.next && home.next.parentNode === home.parent) home.parent.insertBefore(el, home.next);
-        else home.parent.appendChild(el);
-      }
+      // A transformed main container otherwise becomes a fixed-position
+      // containing block and lets the mirrored sidebar clip the RTL modal.
+      if (el.parentNode !== document.body) document.body.appendChild(el);
     });
   }
 
@@ -811,8 +828,6 @@
   } else {
     syncPeerModalPortal();
   }
-  if (mq.addEventListener) mq.addEventListener('change', syncPeerModalPortal);
-  else mq.addListener(syncPeerModalPortal);
 })();
 </script>
 <script defer src="{{ url_for('static', filename='js/peer-diagnose.js') }}"></script>

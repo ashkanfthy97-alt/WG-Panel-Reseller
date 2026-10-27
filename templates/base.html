@@ -7,18 +7,18 @@
   <head>
     <meta charset="utf-8" />
     <script src="{{ url_for('static', filename='js/portal-locale.js') }}?v=hierarchy1"></script>
-    <title>{% block title %}WG Panel{% endblock %}</title>
+    <title>{% block title %}WG Portal{% endblock %}</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
 
     <link
       rel="icon"
-      href="{{ url_for('static', filename='img/wireguard-badge.svg') }}"
-      type="image/svg+xml"
+      href="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
+      type="image/png"
     />
     <link
       rel="mask-icon"
-      href="{{ url_for('static', filename='img/wireguard-badge.svg') }}"
+      href="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
       color="#6ee7b7"
     />
     <meta name="theme-color" content="#0b1020" />
@@ -74,7 +74,7 @@
     <link
       rel="preload"
       as="image"
-      href="{{ url_for('static', filename='img/wireguard-badge.svg') }}"
+      href="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
     />
 
     {% block preload_flags %}{% endblock %} {% if not preview|default(false) %}
@@ -260,15 +260,15 @@
       </button>
       <div class="wg-mobile-brand" aria-hidden="true">
         <img
-          src="{{ url_for('static', filename='img/wireguard-badge.svg') }}"
+          src="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
           class="legacy-only"
           alt=""
         /><img
-          src="{{ url_for('static', filename='img/workspace-mark.svg') }}"
+          src="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
           class="nx-logo modern-only"
           alt=""
         />
-        <strong>WG Panel</strong>
+        <strong>WG Portal</strong>
       </div>
     </header>
     <button
@@ -279,17 +279,17 @@
       aria-hidden="true"
     ></button>
     <aside class="sidebar sb2" id="panel-sidebar" aria-label="Sidebar">
-      <div class="logo" data-tip="WG Panel">
+      <div class="logo" data-tip="WG Portal">
         <img
-          src="{{ url_for('static', filename='img/wireguard-badge.svg') }}"
+          src="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
           alt="WireGuard badge"
           class="wg-logo-img legacy-only"
         /><img
-          src="{{ url_for('static', filename='img/workspace-mark.svg') }}"
+          src="{{ url_for('static', filename='img/wg-portal-logo.png') }}"
           class="nx-logo modern-only"
           alt=""
         />
-        <span class="brand-title">WG Panel</span>
+        <span class="brand-title">WG Portal</span>
         <span class="brand-abbr" aria-hidden="true">WG</span>
       </div>
 

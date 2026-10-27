@@ -258,6 +258,19 @@ class ResellerStore:
                        (reseller_id, action, actor, int(time.time())))
         return self.get(reseller_id)
 
+    def assign_interface(self, reseller_id, iface_id, actor='admin'):
+        if type(iface_id) is not int or iface_id < 1:
+            raise StoreError('Interface نامعتبر است.')
+        with self.db(write=True) as db:
+            row = db.execute('SELECT * FROM resellers WHERE id=?', (reseller_id,)).fetchone()
+            if not row:
+                raise StoreError('نماینده پیدا نشد.')
+            db.execute('UPDATE resellers SET interfaces=?,auth_version=auth_version+1 WHERE id=?',
+                       (json.dumps([iface_id]), reseller_id))
+            db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)',
+                       (reseller_id, 'interface:' + str(iface_id), actor, int(time.time())))
+        return self.get(reseller_id)
+
     def ownership(self, reseller_id):
         with self.db() as db:
             return {row['peer_id']: row['public_key'] for row in db.execute(

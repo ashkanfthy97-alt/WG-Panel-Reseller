@@ -6805,6 +6805,35 @@
           throw err;
         }
 
+        if (!scopeId) {
+          const iid = j.interface?.id || j.id;
+          try {
+            const defaults = {
+              endpoint: String(fd.get("peer_endpoint_default") || "").trim(),
+              allowed_ips: String(fd.get("peer_allowed_ips") || "0.0.0.0/0, ::/0").trim(),
+              dns: payload.dns, mtu: payload.mtu,
+              persistent_keepalive: String(fd.get("peer_keepalive") || "").trim() ? Number(fd.get("peer_keepalive")) : null,
+              peer_endpoint: String(fd.get("peer_client_endpoint") || "").trim(),
+            };
+            let savedId = iid;
+            if (!savedId) {
+              const listed = await fetch("/api/get-interfaces", {credentials:"same-origin",cache:"no-store"});
+              const data = await listed.json();
+              savedId = (data.interfaces || []).find(item => item.name === payload.name)?.id;
+            }
+            if (!savedId) throw new Error("The created interface ID could not be resolved");
+            const saved = await fetch(`/api/iface/${Number(savedId)}/peer-defaults`, {
+              method:"PUT",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRFToken":getCookie("csrf_token")},body:JSON.stringify(defaults),
+            });
+            const result = await saved.json();
+            if (!saved.ok) throw new Error(result.detail || result.error || "Defaults could not be saved");
+          } catch (error) {
+            // The interface itself already exists. Never invite a duplicate
+            // create when only the additive policy write failed.
+            toastSafe(`Interface created; peer defaults were not saved: ${error.message}. Open Interface peer defaults to retry.`, "warn", true);
+          }
+        }
+
         if (j.up_error) {
           toastSafe(
             `Interface created, but could not start: ${j.up_error}`,
@@ -6900,6 +6929,41 @@
       }
     }
 
+    const defaultsDialog = document.getElementById("portal-interface-defaults-dialog");
+    const defaultsStatus = document.getElementById("portal-interface-defaults-status");
+    const defaultsForm = document.getElementById("portal-interface-defaults-form");
+    document.getElementById("portal-interface-defaults-open")?.addEventListener("click", async () => {
+      const fa = document.documentElement.lang === "fa";
+      if (getScopeId() || !SELECTED_IFACE_ID) {
+        toastSafe(fa ? "یک Interface محلی انتخاب کنید." : "Select a local interface first.", "warn"); return;
+      }
+      defaultsDialog.dataset.ifaceId = String(SELECTED_IFACE_ID);
+      defaultsStatus.textContent = fa ? "در حال دریافت تنظیمات…" : "Loading defaults…";
+      defaultsDialog.showModal();
+      defaultsForm.querySelector('button[type="submit"]').disabled = true;
+      try {
+        const response = await fetch(`/api/iface/${Number(SELECTED_IFACE_ID)}/peer-defaults`, {credentials:"same-origin",cache:"no-store"});
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.detail || value.error || "Defaults unavailable");
+        const data = value.defaults || {};
+        for (const [key,id] of Object.entries({endpoint:"policy-endpoint",allowed_ips:"policy-allowed-ips",dns:"policy-dns",mtu:"policy-mtu",persistent_keepalive:"policy-keepalive",peer_endpoint:"policy-client-endpoint"})) document.getElementById(id).value = data[key] ?? "";
+        defaultsStatus.textContent = String(SELECTED_IFACE_NAME || "");
+        defaultsForm.querySelector('button[type="submit"]').disabled = false;
+      } catch(error) { defaultsStatus.textContent = error.message; }
+    });
+    document.getElementById("portal-interface-defaults-close")?.addEventListener("click", () => defaultsDialog.close());
+    defaultsForm?.addEventListener("submit", async event => {
+      event.preventDefault();
+      const button = defaultsForm.querySelector('button[type="submit"]'); button.disabled = true;
+      const value = id => document.getElementById(id).value.trim();
+      const body = {endpoint:value("policy-endpoint"),allowed_ips:value("policy-allowed-ips"),dns:value("policy-dns"),peer_endpoint:value("policy-client-endpoint"),mtu:value("policy-mtu") ? Number(value("policy-mtu")) : null,persistent_keepalive:value("policy-keepalive") ? Number(value("policy-keepalive")) : null};
+      try {
+        const response = await fetch(`/api/iface/${Number(defaultsDialog.dataset.ifaceId)}/peer-defaults`, {method:"PUT",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRFToken":getCookie("csrf_token")},body:JSON.stringify(body)});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || data.error || "Defaults were not saved");
+        defaultsStatus.textContent = document.documentElement.lang === "fa" ? "تنظیمات ذخیره شد؛ برای Peerهای جدید اعمال می‌شود." : "Defaults saved for new peers.";
+      } catch(error) {defaultsStatus.textContent = error.message;} finally {button.disabled = false;}
+    });
     const ifaceCreateBtn = document.getElementById("create-iface-btn");
 
     const ifaceCreateModal = document.getElementById("iface-create-modal");

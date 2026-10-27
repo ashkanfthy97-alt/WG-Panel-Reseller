@@ -140,6 +140,15 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
                 if peer.get('id') in ownership and peer.get('public_key') == ownership[peer['id']]
                 and peer.get('iface_id') in account['interfaces']]
 
+    def assigned_interface(account):
+        selected = account.get('interfaces', [])
+        if len(selected) != 1:
+            raise StoreError('مدیر اصلی باید دقیقاً یک Interface برای این حساب تعیین کند.')
+        row = next((item for item in interfaces() if item.get('id') == selected[0]), None)
+        if row is None:
+            raise StoreError('Interface تعیین‌شده در دسترس نیست؛ با مدیر اصلی تماس بگیرید.')
+        return row
+
     def owned_peer(account, peer_id):
         peer = next((p for p in owned_peers(account) if p['id'] == peer_id), None)
         if not peer:
@@ -248,10 +257,8 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     @bp.get('/reseller/api/accounts')
     @require_reseller
     def child_accounts():
-        allowed = set(g.reseller['interfaces'])
-        available = [{'id': row['id'], 'name': row['name']} for row in interfaces()
-                     if row['id'] in allowed]
-        return jsonify(accounts=store.children(g.reseller['id']), interfaces=available,
+        assigned_interface(g.reseller)
+        return jsonify(accounts=store.children(g.reseller['id']),
                        creation_fee=child_creation_fee(), csrf=csrf())
 
     @bp.post('/reseller/api/accounts')
@@ -260,15 +267,9 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         value = data()
         # Ownership, fees and activation are server decisions. Refuse attempts
         # to assign a parent, waive the fee, or grant immediate paid access.
-        if set(value) - {'username', 'password', 'interfaces', 'max_peers'}:
-            raise StoreError('فقط نام کاربری، رمز، Interfaceها و سقف مشتری قابل تعیین است.')
-        selected = value.get('interfaces', [])
-        if not isinstance(selected, list) or any(type(item) is not int for item in selected):
-            raise StoreError('شناسهٔ Interface نامعتبر است.')
-        own_interfaces = set(g.reseller['interfaces'])
-        native_interfaces = {row['id'] for row in interfaces()}
-        if not set(selected) <= own_interfaces & native_interfaces:
-            abort(403)
+        if set(value) - {'username', 'password', 'max_peers'}:
+            raise StoreError('Interface زیرنماینده فقط توسط مدیر اصلی تعیین می‌شود.')
+        selected = [assigned_interface(g.reseller)['id']]
         capacity = value.get('max_peers', min(100, g.reseller['max_peers']))
         if type(capacity) is not int or not 1 <= capacity <= g.reseller['max_peers']:
             raise StoreError('سقف مشتری زیرنماینده باید در محدودهٔ حساب شما باشد.')
@@ -283,8 +284,8 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     def create_account():
         value = data()
         selected = value.get('interfaces', [])
-        if not isinstance(selected, list) or any(type(i) is not int for i in selected):
-            raise StoreError('شناسهٔ Interface نامعتبر است.')
+        if not isinstance(selected, list) or len(selected) != 1 or any(type(i) is not int for i in selected):
+            raise StoreError('دقیقاً یک Interface برای نماینده تعیین کنید.')
         allowed = {row['id'] for row in interfaces()}
         if not set(selected) <= allowed:
             raise StoreError('Interface انتخاب‌شده وجود ندارد.')
@@ -294,6 +295,18 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         account = store.create(str(value.get('username', '')), str(value.get('password', '')),
                                selected, capacity, g.reseller_owner)
         return jsonify(account=account, signin_url='/reseller'), 201
+
+    @bp.post('/resellers/api/accounts/<int:account_id>/interface')
+    @require_owner
+    def assign_account_interface(account_id):
+        value = data()
+        if set(value) != {'iface_id'} or type(value.get('iface_id')) is not int:
+            raise StoreError('شناسهٔ Interface نامعتبر است.')
+        if value['iface_id'] not in {row['id'] for row in interfaces()}:
+            raise StoreError('Interface انتخاب‌شده وجود ندارد.')
+        account = store.assign_interface(account_id, value['iface_id'], g.reseller_owner)
+        return jsonify(account=account, signin_required=True,
+                       message='Interface تعیین شد؛ نماینده دوباره وارد شود. Peerهای قبلی حذف یا جابه‌جا نشدند.')
 
     @bp.post('/resellers/api/accounts/<int:account_id>/renew')
     @require_owner
@@ -311,17 +324,18 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     @bp.get('/reseller/api/peers')
     @require_reseller
     def peers():
+        iface = assigned_interface(g.reseller)
         fields = {'id','name','iface','status','panel_status','conn_status','used_bytes','data_limit','limit_unit','ttl_seconds'}
         return jsonify(peers=[{k: v for k, v in p.items() if k in fields} for p in owned_peers(g.reseller)],
-                       interfaces=[{'id': i['id'], 'name': i['name']} for i in interfaces() if i['id'] in g.reseller['interfaces']])
+                       assigned_interface={'id': iface['id'], 'name': iface['name']})
 
     @bp.post('/reseller/api/peers')
     @require_reseller
     def create_peer():
         value = data()
-        iface_id = value.get('iface_id')
-        if type(iface_id) is not int or iface_id not in g.reseller['interfaces']:
-            abort(403)
+        if set(value) - {'name', 'days', 'volume_gb'}:
+            raise StoreError('فقط نام، زمان و حجم مجاز است؛ تنظیمات فنی با مدیر اصلی است.')
+        iface_id = assigned_interface(g.reseller)['id']
         name = str(value.get('name', '')).strip()
         days, volume = value.get('days', 30), value.get('volume_gb', 50)
         if not 1 <= len(name) <= 64 or any(ord(c) < 32 or ord(c) == 127 for c in name) or type(days) is not int or not 1 <= days <= 366 or type(volume) is not int or not 1 <= volume <= 100000:
@@ -329,13 +343,17 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         request_id = request.headers.get('Idempotency-Key', '')
         if not re.fullmatch(r'[A-Za-z0-9_-]{16,80}', request_id):
             raise StoreError('شناسهٔ یکتای درخواست الزامی است.')
+        policy_code, policy = native().json('GET', '/api/iface/' + str(iface_id) + '/peer-defaults')
+        if policy_code != 200 or not isinstance(policy, dict) or not isinstance(policy.get('defaults'), dict):
+            raise CoreError('Administrator interface defaults are unavailable')
+        technical = {key: policy['defaults'][key] for key in ('endpoint', 'allowed_ips', 'dns', 'persistent_keepalive', 'mtu', 'peer_endpoint') if key in policy['defaults']}
         operation = store.reserve(g.reseller['id'], request_id)
         if operation['state'] != 'new':
             if operation['state'] == 'complete':
                 return jsonify(ok=True, id=operation['peer_id'], replay=True)
             return jsonify(error='operation_not_repeatable', message='وضعیت این درخواست نیازمند بررسی مدیر است.'), 409
         try:
-            code, result = native().json('POST', '/api/peers', {'iface_id': iface_id, 'scope': 'local', 'name': name,
+            code, result = native().json('POST', '/api/peers', {**technical, 'iface_id': iface_id, 'scope': 'local', 'name': name,
                 'time_limit_days': days, 'data_limit_value': volume, 'data_limit_unit': 'Gi', 'unlimited': False})
             if code != 200 or not isinstance(result, dict) or not result.get('id') or not result.get('public_key'):
                 store.failed(operation['id'], uncertain=True)
@@ -349,16 +367,33 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     @bp.post('/reseller/api/peers/<int:peer_id>/<action>')
     @require_reseller
     def peer_action(peer_id, action):
-        if action not in {'enable', 'disable'}:
+        if action not in {'edit', 'renew'}:
             abort(404)
         peer = owned_peer(g.reseller, peer_id)
+        value = data()
+        if action == 'edit':
+            if set(value) != {'name'} or not isinstance(value.get('name'), str):
+                raise StoreError('فقط نام Peer قابل ویرایش است.')
+            name = value['name'].strip()
+            if not 1 <= len(name) <= 64 or any(ord(c) < 32 or ord(c) == 127 for c in name):
+                raise StoreError('نام Peer نامعتبر است.')
+            changes = {'action': 'rename', 'name': name}
+        else:
+            if set(value) != {'days', 'volume_gb'} or type(value.get('days')) is not int or not 1 <= value['days'] <= 366 or type(value.get('volume_gb')) is not int or not 1 <= value['volume_gb'] <= 100000:
+                raise StoreError('مدت و حجم تمدید نامعتبر است.')
+            request_id = request.headers.get('Idempotency-Key', '')
+            if not re.fullmatch(r'[A-Za-z0-9_-]{16,80}', request_id):
+                raise StoreError('شناسهٔ یکتای تمدید الزامی است.')
+            changes = {'action': 'renew', 'days': value['days'], 'volume_gb': value['volume_gb'],
+                       'request_id': 'r' + str(g.reseller['id']) + ':' + request_id}
         # Native id-based mutators have a TOCTOU boundary if another admin deletes
         # and recreates the same id. Use the atomic key-checked product endpoint.
         code, result = native().json('POST', '/api/portal/owned-peer-action',
-                                    {'id': peer_id, 'public_key': store.ownership(g.reseller['id'])[peer_id], 'action': action})
+                                    {'id': peer_id, 'public_key': store.ownership(g.reseller['id'])[peer_id], **changes})
         if code != 200:
             return jsonify(error='native_action_failed'), 409
-        return jsonify(ok=True)
+        return jsonify(ok=True, replay=bool(result.get('replay')) if isinstance(result, dict) else False,
+                       data_reset=False)
 
     @bp.get('/reseller/api/peers/<int:peer_id>/<kind>')
     @require_reseller

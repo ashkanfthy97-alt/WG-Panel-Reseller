@@ -31964,6 +31964,8 @@ from portal_security import install_security
 install_security(app, csrf)
 from portal_peer_guard import install_peer_guard
 install_peer_guard(app, csrf, globals())
+from interface_peer_defaults import install_interface_defaults
+install_interface_defaults(app, globals())
 from portal_reseller_native import install_reseller
 install_reseller(app, csrf)
 
