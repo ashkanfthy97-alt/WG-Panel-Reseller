@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import re
 
-from flask import request
+from flask import request, redirect, render_template, flash, session, jsonify
 from flask.sessions import SecureCookieSessionInterface
 from itsdangerous import BadSignature
 from werkzeug.http import parse_cookie
@@ -17,6 +17,16 @@ from werkzeug.test import Client
 from werkzeug.wrappers import Response
 
 from deploy.linux.portal_reseller import CoreError, reseller_blueprint
+
+
+def reseller_username_taken(app, username):
+    database = app.extensions.get('portal_reseller_database')
+    if not database or not Path(database).is_file():
+        return False
+    from deploy.linux.reseller_store import ResellerStore
+    with ResellerStore(database).db() as connection:
+        return connection.execute('SELECT 1 FROM resellers WHERE username=? COLLATE NOCASE',
+                                  (username.strip(),)).fetchone() is not None
 
 
 def _reseller_path(path):
@@ -103,8 +113,8 @@ class NativeApplicationCore:
         allowed = (
             method == 'GET' and path in {'/api/admin', '/api/get-interfaces', '/api/peers'}
             or method == 'GET' and re.fullmatch(r'/api/iface/[1-9][0-9]*/peer-defaults', path)
-            or method == 'GET' and re.fullmatch(r'/api/peer/[A-Za-z0-9%_+\-=]+/(?:config_qr|config\?download=1)', path)
-            or method == 'POST' and path in {'/api/peers', '/api/portal/owned-peer-action'}
+            or method == 'GET' and re.fullmatch(r'/api/peer/[A-Za-z0-9%_+\-=]+/(?:shortlink|config_qr|config\?download=1)', path)
+            or method == 'POST' and path in {'/api/peers', '/api/portal/owned-peer-action', '/api/portal/provision-child-interface'}
         )
         if not allowed or (cookie is not None and path != '/api/admin'):
             raise CoreError('Unsupported native reseller operation')
@@ -144,7 +154,7 @@ class NativeApplicationCore:
             raise CoreError('Native API returned an unexpected response') from exc
 
 
-def install_reseller(app, csrf):
+def install_reseller(app, csrf, *, native_admin_lookup=None):
     if 'reseller' in app.blueprints:
         return
     root = Path(app.root_path)
@@ -152,6 +162,15 @@ def install_reseller(app, csrf):
     configured = os.environ.get('WG_PANEL_RESELLER_DB')
     database = Path(configured) if configured else (
         legacy if legacy.is_file() else Path(app.instance_path) / 'resellers.sqlite3')
+    app.extensions['portal_reseller_database'] = database
+    from deploy.linux.reseller_store import ResellerStore
+    store = ResellerStore(database)
+    def admin_lookup(username):
+        if native_admin_lookup is not None:
+            return native_admin_lookup(username)
+        from models import AdminAccount
+        return any(str(row.username).casefold() == username.casefold() for row in AdminAccount.query.all())
+    app.extensions['portal_native_admin_lookup'] = admin_lookup
     native_sessions = app.session_interface
     native_name = native_sessions.get_cookie_name(app)
     remember_name = app.config.get('REMEMBER_COOKIE_NAME', 'remember_token')
@@ -162,3 +181,52 @@ def install_reseller(app, csrf):
         native_scheme=True)
     csrf.exempt(bp)
     app.register_blueprint(bp)
+
+    @app.before_request
+    def unified_login():
+        if request.method == 'POST' and request.path in {'/register', '/api/admin/rename'}:
+            value = request.get_json(silent=True) if request.path.startswith('/api/') else request.form
+            username = str((value or {}).get('username') or '').strip()
+            if username and any(row['username'].casefold() == username.casefold() for row in store.all()):
+                if request.path.startswith('/api/'):
+                    return jsonify(error='taken'), 400
+                flash('That username is already taken.', 'error')
+                return render_template('register.html', require_token=True), 400
+        if request.path != '/login' or request.method != 'POST':
+            return None
+        # Native Flask-WTF protection remains applicable to this common form.
+        csrf.protect()
+        username = str(request.form.get('username') or '').strip()
+        password = str(request.form.get('password') or '')
+        if admin_lookup(username):
+            return None  # Preserve native password, 2FA, audit and rate limits.
+        if len(username) > 64 or len(password) > 1024:
+            account, limited = None, False
+        else:
+            account, limited = store.authenticate(username, password, request.remote_addr or '')
+        if not account:
+            flash('کمی بعد دوباره تلاش کنید.' if limited else 'Invalid username or password', 'error')
+            return render_template('login.html'), 429 if limited else 200
+        session.clear()
+        value = {'reseller_identity': {'id': account['id'], 'version': account['auth_version']},
+                 '_permanent': True}
+        signed = app.session_interface.get_signing_serializer(app).dumps(value)
+        response = redirect('/reseller')
+        response.set_cookie(ResellerSessions.cookie_name, signed,
+            max_age=int(ResellerSessions.lifetime.total_seconds()), secure=request.is_secure,
+            httponly=True, samesite='Strict', path='/')
+        response.delete_cookie(native_name, path=app.config.get('SESSION_COOKIE_PATH') or '/',
+                               domain=app.config.get('SESSION_COOKIE_DOMAIN'))
+        response.delete_cookie(remember_name, path=app.config.get('REMEMBER_COOKIE_PATH') or '/',
+                               domain=app.config.get('REMEMBER_COOKIE_DOMAIN'))
+        return response
+
+    @app.after_request
+    def clear_old_reseller_login(response):
+        if request.path == '/login' and request.method == 'POST' and response.status_code in {302, 303}:
+            if response.headers.get('Location') != '/reseller':
+                response.delete_cookie(ResellerSessions.cookie_name, path='/')
+        return response
+
+    from portal_reseller_bot import install_reseller_bot
+    install_reseller_bot(app, csrf, database)

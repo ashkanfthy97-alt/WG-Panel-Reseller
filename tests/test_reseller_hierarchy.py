@@ -20,33 +20,33 @@ class HierarchyStoreChecks(unittest.TestCase):
         self.path = Path(self.temp.name) / 'resellers.sqlite3'
         self.store = ResellerStore(self.path)
         self.parent = self.store.create('parent', 'safe-password-long', [1], 10)
-        self.store.update(self.parent['id'], days=30)
+        self.store.approve(self.parent['id'], days=30)
 
     def child(self, username='child', parent=None):
         return self.store.create(username, 'safe-password-long', [1], 3,
             parent_id=parent or self.parent['id'], creation_fee_toman=3000000)
 
-    def test_child_pending_until_mother_renewal(self):
+    def test_child_pending_until_mother_approval(self):
         child = self.child()
         self.assertFalse(child['active'])
         self.assertEqual(child['parent_id'], self.parent['id'])
         self.assertEqual(child['creation_fee_toman'], 3000000)
-        self.assertTrue(self.store.update(child['id'], days=30)['active'])
+        self.assertTrue(self.store.approve(child['id'], days=30)['active'])
 
     def test_recursive_counts_and_fees_do_not_double_count(self):
         child = self.child('child-one')
         self.child('child-two')
-        self.store.update(child['id'], days=30)
+        self.store.approve(child['id'], days=30)
         self.child('grandchild', child['id'])
         root = self.store.get(self.parent['id'])
         self.assertEqual(root['direct_child_count'], 2)
         self.assertEqual(root['descendant_count'], 3)
         self.assertEqual(len(self.store.children(root['id'])), 2)
-        self.assertEqual(self.store.summary(), dict(total_resellers=4, subresellers=3, total_creation_fee_toman=9000000))
+        self.assertEqual(self.store.summary(), dict(total_resellers=4, subresellers=3, total_creation_fee_toman=9000000, pending_approvals=2))
 
     def test_ancestor_pause_expiry_renewal_preserve_child(self):
         child = self.child()
-        self.store.update(child['id'], days=30)
+        self.store.approve(child['id'], days=30)
         self.store.update(self.parent['id'], enabled=False)
         self.assertFalse(self.store.get(child['id'])['active'])
         with self.assertRaises(StoreError):
@@ -92,7 +92,7 @@ class HierarchyStoreChecks(unittest.TestCase):
         self.assertEqual(account['auth_version'], 3)
         with closing(sqlite3.connect(path)) as db:
             self.assertEqual(db.execute('SELECT password_hash FROM resellers WHERE id=7').fetchone()[0], 'hash-preserved')
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 3)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 4)
 
     def test_concurrent_v2_migration(self):
         path = self.legacy()
@@ -122,7 +122,7 @@ class HierarchyNativeChecks(unittest.TestCase):
         result = self.post('/reseller/api/accounts', dict(username='child', password='safe-password-long', max_peers=2))
         self.assertEqual(result.status_code, 201, result.get_data(as_text=True))
         child = result.json['account']
-        self.assertEqual(result.json['signin_url'], '/reseller')
+        self.assertEqual(result.json['signin_url'], '/login')
         self.assertEqual(child['parent_id'], parent['id'])
         self.assertEqual(child['creation_fee_toman'], 3000000)
         self.assertFalse(child['active'])
@@ -150,7 +150,7 @@ class HierarchyNativeChecks(unittest.TestCase):
     def test_direct_children_are_private_to_parent(self):
         parent = self.account()
         other = self.store.create('unrelated', 'safe-password-long', [1], 3)
-        self.store.update(other['id'], days=30)
+        self.store.approve(other['id'], days=30)
         self.store.create('unrelated-child', 'safe-password-long', [1], 2, parent_id=other['id'], creation_fee_toman=3000000)
         self.store.create('my-child', 'safe-password-long', [1], 2, parent_id=parent['id'], creation_fee_toman=3000000)
         self.login()

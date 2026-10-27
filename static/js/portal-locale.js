@@ -6,6 +6,7 @@
   }));
   dictionary.set("Welcome back","خوش آمدید");
   dictionary.set("Sign in to your WG Portal","وارد پنل خود شوید");
+  dictionary.set("Your username","نام کاربری شما");
   Object.entries({"Create peer":"ساخت Peer","Create Peer":"ساخت Peer","Profile defaults":"پیش‌فرض‌های پروفایل","Apply or save reusable peer defaults.":"پیش‌فرض‌های قابل استفادهٔ مجدد را اعمال یا ذخیره کنید.","Use profile":"استفاده از پروفایل","Identity":"مشخصات","Name and client address.":"نام و آدرس کلاینت.","Friendly Name":"نام سرویس","IP Address":"آدرس IP","Limits":"محدودیت‌ها","Traffic, timer, first-use, and unlimited rules.":"حجم، زمان، شروع در اولین اتصال و دسترسی نامحدود.","Traffic Limit":"سقف حجم","Unit":"واحد","Days":"روز","Hours":"ساعت","Start timer on first connection":"شروع زمان در اولین اتصال","Unlimited":"نامحدود","Contact":"اطلاعات تماس","Optional details for search and management.":"اطلاعات اختیاری برای جستجو و مدیریت.","Phone Number":"شماره تلفن","Telegram ID":"شناسهٔ تلگرام","WireGuard config":"تنظیمات WireGuard","Routing, endpoints, DNS, keepalive, and MTU.":"مسیرها، Endpoint، DNS، Keepalive و MTU.","Server endpoint":"Endpoint سرور","Interface default":"پیش‌فرض Interface","Not configured":"تنظیم نشده","Saved endpoint presets":"Endpointهای ذخیره‌شده","Fixed client endpoint":"Endpoint ثابت کلاینت","Optional":"اختیاری","Allowed IPs":"مسیرهای مجاز","Include private networks":"شامل شبکه‌های خصوصی","Default":"پیش‌فرض","Add":"افزودن","Cancel":"انصراف","Create interface":"ساخت Interface","New interface":"Interface جدید","Interface name":"نام Interface","Server address":"آدرس سرور","Listen port":"پورت اتصال","Client DNS":"DNS کلاینت","Start after creation":"فعال‌سازی پس از ساخت","Bring the new interface online immediately.":"Interface جدید بلافاصله فعال شود.","Set the name, WireGuard defaults, limits, and contact details in one clean form.":"نام، تنظیمات وایرگارد، محدودیت‌ها و اطلاعات تماس سرویس را مشخص کنید.","Choose from the free addresses on the selected interface.":"یک آدرس آزاد از Interface انتخاب‌شده تعیین کنید.","Leave empty to use interface default":"برای استفاده از پیش‌فرض Interface خالی بگذارید","Leave empty for roaming clients":"برای کلاینت‌های سیار خالی بگذارید","e.g. azumi":"مثلاً سرویس مشتری","e.g. 10":"مثلاً ۱۰","optional":"اختیاری"}).forEach(([key,value]) => dictionary.set(key,value));
   dictionary.set("Create Admin Account","ساخت حساب مدیر");
   dictionary.set("Setup token","کد نصب");
@@ -100,7 +101,7 @@
   function renderResellerSummary() {
     if (!resellerSummary) return;
     const numbers = new Intl.NumberFormat(language === "fa" ? "fa-IR" : "en-GB");
-    [["portal-total-resellers", "total_resellers"], ["portal-subresellers", "subresellers"], ["portal-reseller-fees", "total_creation_fee_toman"]].forEach(([id, key]) => {
+    [["portal-total-resellers", "total_resellers"], ["portal-subresellers", "subresellers"], ["portal-reseller-fees", "total_creation_fee_toman"], ["portal-pending-approvals", "pending_approvals"]].forEach(([id, key]) => {
       const node = document.getElementById(id), value = numbers.format(resellerSummary[key]);
       if (node && node.textContent !== value) node.textContent = value;
     });
@@ -113,7 +114,7 @@
       const response = await fetch("/resellers/api/summary", {credentials:"same-origin", cache:"no-store", headers:{Accept:"application/json"}, signal:controller.signal});
       if (!response.ok) throw new Error("Reseller totals unavailable");
       const data = (await response.json()).summary;
-      if (!data || ["total_resellers", "subresellers", "total_creation_fee_toman"].some((key) => !Number.isSafeInteger(data[key]) || data[key] < 0)) throw new Error("Invalid reseller totals");
+      if (!data || ["total_resellers", "subresellers", "total_creation_fee_toman", "pending_approvals"].some((key) => !Number.isSafeInteger(data[key]) || data[key] < 0)) throw new Error("Invalid reseller totals");
       resellerSummary = data;
       state.dataset.portalFa = "هزینه‌ها فقط مبلغ ثبت‌شده هستند؛ پرداخت آنلاین هنوز فعال نیست.";
       state.dataset.portalEn = "Fees are declared amounts only; online payment is not enabled.";

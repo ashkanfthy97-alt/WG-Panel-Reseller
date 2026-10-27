@@ -4,7 +4,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 const [root, rendered] = process.argv.slice(2);
-const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:4102444800, max_peers:10, interfaces:[1]};
+const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:4102444800, max_peers:10, interfaces:[1], approval_status:'approved'};
 (async () => {
   const browser = await chromium.launch({headless:true, executablePath:process.env.PORTAL_BROWSER_PATH || undefined});
   try {
@@ -23,7 +23,7 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
         if (url.pathname === '/') return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(rendered,'dashboard-modern.html'),'utf8')});
         if (url.pathname.endsWith('/modern.js')) {await deferred;return route.fulfill({contentType:'text/javascript',body:''});}
         if (url.pathname.endsWith('/portal-locale.js')) return route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'static/js/portal-locale.js'),'utf8')});
-        if (url.pathname === '/resellers/api/summary') return route.fulfill({json:{summary:{total_resellers:4,subresellers:3,total_creation_fee_toman:9000000}}});
+        if (url.pathname === '/resellers/api/summary') return route.fulfill({json:{summary:{total_resellers:4,subresellers:3,total_creation_fee_toman:9000000,pending_approvals:2}}});
         if (url.pathname.endsWith('.js')) return route.fulfill({contentType:'text/javascript',body:''});
         return route.fulfill({body:''});
       });
@@ -79,10 +79,19 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     let childPayload;
     await context.route('**/*', route => {
       const url = new URL(route.request().url());
+      if (url.pathname === '/login' && route.request().method() === 'POST') {signedIn=true;return route.fulfill({status:302,headers:{location:'/reseller'}});}
       if (url.pathname === '/login') return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(rendered,'login.html'),'utf8')});
       if (url.pathname === '/reseller' || url.pathname === '/resellers') return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/index.html'),'utf8')});
       if (url.pathname === '/reseller/api/session') return route.fulfill({json:{csrf:'browser-test-csrf',account:signedIn?account:null}});
       if (url.pathname === '/reseller/api/login') {signedIn = true;return route.fulfill({json:{ok:true,csrf:'browser-test-csrf',account}});}
+      if (url.pathname === '/reseller/api/bot') {
+        if (route.request().method() === 'POST') {assert.equal(route.request().headers()['x-csrftoken'],'browser-native-csrf');assert.equal(route.request().postDataJSON().owner_id,'987654321');return route.fulfill({json:{native_csrf:'browser-native-csrf',bot:{configured:true,enabled:true,username:'dealer_config_bot',owner_id:987654321,status:'starting'}}});}
+        return route.fulfill({json:{native_csrf:'browser-native-csrf',bot:{configured:false,enabled:false,status:'not_configured'}}});
+      }
+      if (url.pathname === '/reseller/api/peers/1/user-link') return route.fulfill({json:{url:'http://panel.test/u/customer-token'}});
+      if (url.pathname === '/reseller/api/accounts/2/interface-port') return route.fulfill({json:{port:23456}});
+      if (url.pathname === '/reseller/api/accounts/2/interface') {assert.deepEqual(route.request().postDataJSON(),{port:23456});children[0].interfaces=[3];children[0].assigned_interfaces=[{id:3,name:'wg_r2',listen_port:23456}];children[0].interface_provision={state:'complete',port:23456};return route.fulfill({status:201,json:{account:children[0],interface:{id:3,name:'wg_r2',listen_port:23456}}});}
+      if (url.pathname === '/resellers/api/accounts/2/approval') {assert.deepEqual(route.request().postDataJSON(),{approved:true,days:30});children[0].approval_status='approved';return route.fulfill({json:{account:children[0]}});}
       if (url.pathname === '/reseller/api/peers') {
         if (route.request().method() === 'POST') {
           peerPayload = route.request().postDataJSON();
@@ -103,13 +112,13 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
       if (url.pathname === '/reseller/api/accounts') {
         if (route.request().method() === 'POST') {
           childPayload = route.request().postDataJSON();
-          const child = {...childPayload,id:2,parent_id:1,active:false,enabled:true,expires_at:0,creation_fee_toman:3000000};
+          const child = {...childPayload,id:2,parent_id:1,active:false,enabled:true,expires_at:0,creation_fee_toman:3000000,interfaces:[],approval_status:'pending'};
           children.push(child);
-          return route.fulfill({status:201,json:{account:child,signin_url:'/reseller'}});
+          return route.fulfill({status:201,json:{account:child,signin_url:'/login'}});
         }
         return route.fulfill({json:{accounts:children,interfaces:[{id:1,name:'wg0'}],creation_fee:{amount:3000000,currency:'toman',one_time:true,payment_gateway:false}}});
       }
-      if (url.pathname === '/resellers/api/accounts') return route.fulfill({json:{accounts:[{...account,direct_child_count:1,descendant_count:1},...children],interfaces:[{id:1,name:'wg0'}],audit:[],operations:[],summary:{total_resellers:2,subresellers:1,total_creation_fee_toman:3000000}}});
+      if (url.pathname === '/resellers/api/accounts') return route.fulfill({json:{accounts:[{...account,direct_child_count:1,descendant_count:1},...children],interfaces:[{id:1,name:'wg0'}],audit:[],operations:[],summary:{total_resellers:2,subresellers:1,total_creation_fee_toman:3000000,pending_approvals:1}}});
       const file = url.pathname === '/reseller/assets/reseller.js' ? 'deploy/linux/reseller_ui/reseller.js' : url.pathname.endsWith('/portal-locale.js') ? 'static/js/portal-locale.js' : null;
       if (file) return route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,file),'utf8')});
       if (url.pathname.endsWith('.js')) return route.fulfill({contentType:'text/javascript',body:''});
@@ -117,10 +126,11 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     });
     const page = await context.newPage();
     await page.goto('http://panel.test/login');
-    await page.locator('#portal-reseller-login').click();
-    await page.locator('#login-username').fill('dealer');
-    await page.locator('#login-password').fill('a-safe-test-password');
-    await page.locator('#login-form button[type=submit]').click();
+    assert.equal(await page.locator('#portal-reseller-login').count(),0);
+    assert.equal(await page.locator('form').count(),1);
+    await page.locator('#username').fill('dealer');
+    await page.locator('#password').fill('a-safe-test-password');
+    await page.locator('#submit-btn').click();
     await page.locator('#active-view').waitFor({state:'visible'});
     assert.equal(await page.locator('#account-name').textContent(), 'dealer');
     assert.equal(await page.locator('#peer-interface').count(),0,'Reseller must not select an interface');
@@ -139,6 +149,15 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     await page.waitForFunction(() => document.getElementById('peer-edit-result')?.textContent.length>0);
     assert.deepEqual(renewalPayload,{days:10,volume_gb:20});
     await page.locator('#peer-edit-close').click();
+    await page.locator('.peer-user-link').click();
+    await page.locator('#user-link-dialog').waitFor({state:'visible'});
+    assert.equal(await page.locator('#user-link-url').inputValue(),'http://panel.test/u/customer-token');
+    await page.locator('#user-link-close').click();
+    await page.locator('#bot-owner-id').fill('987654321');
+    await page.locator('#bot-token').fill('123456:'+ 'A'.repeat(35));
+    await page.locator('#bot-form button[type=submit]').click();
+    await page.waitForFunction(() => document.getElementById('bot-token').value==='');
+    assert.equal(await page.locator('#bot-disable').isVisible(),true);
     await page.locator('#add-child').click();
     assert.match(await page.locator('#child-fee-amount').textContent(), /[3۳]/);
     await page.locator('#child-username').fill('child-dealer');
@@ -147,10 +166,16 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     await page.locator('#child-form button[type=submit]').click();
     await page.waitForFunction(() => document.getElementById('child-rows')?.textContent.includes('child-dealer'));
     assert.deepEqual(Object.keys(childPayload).sort(), ['max_peers','password','username']);
-    assert.match(await page.locator('#signin-url').inputValue(), /\/reseller$/);
+    assert.match(await page.locator('#signin-url').inputValue(), /\/login$/);
+    await page.locator('.child-port-propose').click();
+    await page.waitForFunction(() => document.querySelector('.child-port')?.value==='23456');
+    await page.locator('.child-interface-create').click();
+    await page.waitForFunction(() => !document.querySelector('.child-interface-create'));
     await page.goto('http://panel.test/resellers');
     await page.waitForFunction(() => document.getElementById('account-rows')?.textContent.includes('child-dealer'));
     assert.match(await page.locator('#summary-creation-fees').textContent(), /[3۳]/);
+    await page.locator('.account-approval').last().click();
+    await page.waitForFunction(() => document.getElementById('account-rows')?.textContent.includes('child-dealer'));
     await context.close();
     process.stdout.write('Locale rendered before delayed scripts in Persian/English/storage-disabled; reseller entry and login passed.\n');
   } finally {await browser.close();}

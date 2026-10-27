@@ -104,7 +104,8 @@ class RestrictedResellerChecks(unittest.TestCase):
 
     def test_legacy_multiple_interfaces_require_admin_choice(self):
         account = self.store.create('dealer','a-safe-test-password',[1,2],3)
-        self.store.update(account['id'], days=30)
+        with self.store.db(write=True) as db:
+            db.execute("UPDATE resellers SET approval_status='approved', approved_at=created_at, expires_at=4102444800 WHERE id=?", (account['id'],))
         self.login()
         result = self.post('/reseller/api/peers', dict(name='customer',days=30,volume_gb=10))
         self.assertIn(result.status_code, (400,409))

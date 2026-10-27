@@ -344,11 +344,7 @@
           <div class="muted">Sign in to your WG Portal</div>
         </header>
 
-        <nav class="portal-login-roles" aria-label="نوع حساب / Account type">
-          <a href="{{ url_for('login') }}" aria-current="page" data-portal-fa="ورود مدیر اصلی" data-portal-en="Owner sign in">ورود مدیر اصلی</a>
-          <a id="portal-reseller-login" href="/reseller" data-portal-fa="ورود نماینده" data-portal-en="Reseller sign in">ورود نماینده</a>
-        </nav>
-        <p class="portal-login-hint" data-portal-fa="این فرم مخصوص مدیر اصلی است. اگر حساب نمایندگی دارید، «ورود نماینده» را انتخاب کنید." data-portal-en="This form is for the panel owner. For a reseller account, choose Reseller sign in.">این فرم مخصوص مدیر اصلی است. اگر حساب نمایندگی دارید، «ورود نماینده» را انتخاب کنید.</p>
+        <p class="portal-login-hint" data-portal-fa="با نام کاربری و رمز خود وارد شوید؛ داشبورد متناسب با حساب شما باز می‌شود." data-portal-en="Sign in with your username and password. Your account’s dashboard opens automatically.">با نام کاربری و رمز خود وارد شوید؛ داشبورد متناسب با حساب شما باز می‌شود.</p>
 
         {% with msgs = get_flashed_messages(with_categories=true) %} {% if msgs
         %} {% for category, message in msgs %}
@@ -373,7 +369,7 @@
                 id="username"
                 name="username"
                 type="text"
-                placeholder="Your admin username"
+                placeholder="Your username"
                 autocomplete="username"
                 required
               />

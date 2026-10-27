@@ -18760,7 +18760,7 @@ def register():
         if len(p1) > 1024:
             flash('Password too long.', 'error')
             return render_template('register.html', require_token=require_token)
-        if AdminAccount.query.filter_by(username=u).first():
+        if reseller_username_taken(app, u) or AdminAccount.query.filter_by(username=u).first():
             flash('That username is already taken.', 'error')
             return render_template('register.html', require_token=require_token)
 
@@ -18838,7 +18838,7 @@ def admin_rename():
     if not newu:
         return jsonify(error="empty_username"), 400
     # multi-admin later
-    if AdminAccount.query.filter_by(username=newu).first():
+    if reseller_username_taken(app, newu) or AdminAccount.query.filter_by(username=newu).first():
         return jsonify(error="taken"), 400
     acc = AdminAccount.query.first()
     acc.username = newu
@@ -21608,8 +21608,11 @@ def _wg_firewall_rules(
 
     return post_up, post_down
 
+from portal_provisioning import interface_port_guard
+
 @app.post("/api/interfaces")
 @login_required
+@interface_port_guard
 def create_local_interface():
     data = request.get_json(silent=True)
 
@@ -31966,8 +31969,10 @@ from portal_peer_guard import install_peer_guard
 install_peer_guard(app, csrf, globals())
 from interface_peer_defaults import install_interface_defaults
 install_interface_defaults(app, globals())
-from portal_reseller_native import install_reseller
+from portal_reseller_native import install_reseller, reseller_username_taken
 install_reseller(app, csrf)
+from portal_provisioning import install_provisioning
+install_provisioning(app, csrf, globals())
 
 if __name__ == "__main__":
 
@@ -32058,6 +32063,7 @@ if __name__ == "__main__":
             http_base = rt_port if rt_port else http_port
             chosen_port = int(os.getenv("DEV_PORT", str(_valid_port(http_base, 8000))))
 
+        app.extensions['reseller_bots'].ensure_started()
         app.run(
             host=os.getenv("DEV_HOST", "127.0.0.1"),
             port=chosen_port,
@@ -32140,6 +32146,7 @@ if __name__ == "__main__":
         "loglevel": loglevel,
         "preload_app": False,
         "capture_output": True,
+        "post_worker_init": lambda worker: app.extensions['reseller_bots'].ensure_started(),
     }
 
     if tls_enabled:

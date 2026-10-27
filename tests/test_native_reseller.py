@@ -68,13 +68,20 @@ class NativeResellerChecks(unittest.TestCase):
         def config(key):
             return 'native-config', 200, {'Content-Type': 'text/plain'}
 
+        @self.app.get('/api/peer/<path:key>/shortlink')
+        def shortlink(key):
+            if request.headers.get('X-API-KEY') != self.app.config['API_KEY']:
+                return jsonify(error='denied'), 401
+            return jsonify(url='http://localhost/u/opaque-user-token')
+
         @self.app.get('/api/iface/<int:iid>/peer-defaults')
         def peer_defaults(iid):
             return jsonify(ok=True, defaults={'endpoint':'vpn.example.test:51820', 'allowed_ips':'0.0.0.0/0, ::/0', 'dns':'1.1.1.1', 'mtu':1380, 'persistent_keepalive':25, 'peer_endpoint':''})
 
         self.csrf_guard = Mock()
         with patch.dict(os.environ, {'WG_PANEL_RESELLER_DB': str(self.database)}):
-            install_reseller(self.app, self.csrf_guard)
+            install_reseller(self.app, self.csrf_guard, native_admin_lookup=lambda username: username.casefold() == "mother")
+        self.app.config['RESELLER_NATIVE_CSRF_FACTORY'] = lambda: 'native-fixture-csrf'
         self.client = self.app.test_client()
         self.csrf = self.client.get('/reseller/api/session').json['csrf']
         self.store = ResellerStore(self.database)
@@ -86,7 +93,7 @@ class NativeResellerChecks(unittest.TestCase):
 
     def account(self, username='dealer'):
         value = self.store.create(username, 'a-safe-test-password', [1], 3)
-        self.store.update(value['id'], days=30)
+        self.store.approve(value['id'], days=30)
         return value
 
     def login(self, client=None, csrf=None):
@@ -103,7 +110,8 @@ class NativeResellerChecks(unittest.TestCase):
         response = self.post('/resellers/api/accounts', dict(username='new-dealer', password='a-safe-test-password', interfaces=[1], max_peers=3))
         self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
         account_id = response.json['account']['id']
-        response = self.post(f'/resellers/api/accounts/{account_id}/renew', {'days': 30})
+        self.assertFalse(self.store.get(account_id)['active'])
+        response = self.post(f'/resellers/api/accounts/{account_id}/approval', {'approved': True, 'days': 30})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertTrue(self.store.get(account_id)['active'])
         calls = [item for item in self.native_calls if item[0] == '/api/admin']
@@ -192,7 +200,7 @@ class NativeResellerChecks(unittest.TestCase):
             preserved = ResellerStore(legacy)
             account = preserved.create('preserved-dealer', 'a-safe-test-password', [1], 2)
             app = Flask('legacy-fixture', root_path=str(root), instance_path=str(root / 'instance'))
-            app.config.update(TESTING=True, SECRET_KEY='legacy-secret-' * 4)
+            app.config.update(TESTING=True, SECRET_KEY='legacy-secret-' * 4, RESELLER_NATIVE_CSRF_FACTORY=lambda:'native-fixture-csrf')
             with patch.dict(os.environ, {'WG_PANEL_RESELLER_DB': ''}):
                 install_reseller(app, Mock())
             app.test_client().get('/reseller/api/session')

@@ -103,7 +103,7 @@ class GatewayChecks(unittest.TestCase):
     def test_reseller_assets_and_separate_session_are_reachable(self):
         for path in ('/reseller', '/resellers', '/reseller/assets/reseller.js', '/reseller/assets/reseller.css'):
             with self.client.get(path) as response:
-                self.assertEqual(response.status_code, 200, path)
+                self.assertEqual(response.status_code, 302 if path == "/reseller" else 200, path)
         with self.client.get('/reseller/api/session') as response:
             self.assertIsNone(response.json['account'])
             cookie = response.headers.get('Set-Cookie', '')
