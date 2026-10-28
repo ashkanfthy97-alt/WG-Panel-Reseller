@@ -243,6 +243,19 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
             'telegram_url': 'https://t.me/AshkanfathiOfficial',
             'telegram_username': 'AshkanfathiOfficial'}, native_csrf=factory() if factory else '')
 
+    @bp.get('/reseller/api/credit')
+    def credit():
+        # A paused or pending account may inspect its own validity and capacity;
+        # operational routes still require require_reseller's active check.
+        identity = session.get('reseller_identity') or {}
+        if (not isinstance(identity, dict) or type(identity.get('id')) is not int
+                or type(identity.get('version')) is not int):
+            return jsonify(error='login_required'), 401
+        value = store.credit(identity['id'], auth_version=identity['version'])
+        if value is None:
+            return jsonify(error='login_required'), 401
+        return jsonify(credit=value)
+
     @bp.post('/reseller/api/login')
     def login():
         value = data()

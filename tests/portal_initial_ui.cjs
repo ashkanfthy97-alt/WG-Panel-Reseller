@@ -77,15 +77,21 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     const peers = [];
     let peerPayload, renamePayload, renewalPayload;
     let childPayload, delayUserLink=false, releaseUserLink, observeUserLink;
+    let reservedCapacity=2, httpsBotValidated=false, botSaveError=null;
     await context.route('**/*', route => {
       const url = new URL(route.request().url());
       if (url.pathname === '/login' && route.request().method() === 'POST') {signedIn=true;return route.fulfill({status:302,headers:{location:'/reseller'}});}
       if (url.pathname === '/login') return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(rendered,'login.html'),'utf8')});
-      if (url.pathname === '/reseller' || url.pathname === '/resellers') return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/index.html'),'utf8')});
+      if (url.pathname === '/reseller' || url.pathname === '/resellers') return route.fulfill({headers:{'Referrer-Policy':'no-referrer'},contentType:'text/html',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/index.html'),'utf8')});
       if (url.pathname === '/reseller/api/session') return route.fulfill({json:{csrf:'browser-test-csrf',account:signedIn?account:null}});
+      if (url.pathname === '/reseller/api/credit') {const now=Math.floor(Date.now()/1000);return route.fulfill({json:{credit:{server_time:now,expires_at:account.expires_at,effective_expires_at:account.expires_at,remaining_seconds:184320,max_peers:10,used_peers:peers.length,reserved_peers:reservedCapacity,remaining_peers:Math.max(0,10-peers.length-reservedCapacity),active:account.active,approval_status:account.approval_status,enabled:account.enabled}}});}
       if (url.pathname === '/reseller/api/login') {signedIn = true;return route.fulfill({json:{ok:true,csrf:'browser-test-csrf',account}});}
       if (url.pathname === '/reseller/api/bot') {
-        if (route.request().method() === 'POST') {assert.equal(route.request().headers()['x-csrftoken'],'browser-native-csrf');assert.equal(route.request().postDataJSON().owner_id,'987654321');return route.fulfill({json:{native_csrf:'browser-native-csrf',bot:{configured:true,enabled:true,username:'dealer_config_bot',owner_id:987654321,status:'starting'}}});}
+        if (route.request().method() === 'POST') {
+          if(url.protocol==='https:'){assert.equal(route.request().headers()['referer'],'https://panel.test/reseller');assert.equal(route.request().headers()['origin'],'https://panel.test');httpsBotValidated=true;}
+          if(botSaveError)return route.fulfill({status:400,json:{error:botSaveError}});
+          assert.equal(route.request().headers()['x-reseller-csrf'],'browser-test-csrf');
+          assert.equal(route.request().headers()['x-csrftoken'],'browser-native-csrf');assert.equal(route.request().postDataJSON().owner_id,'987654321');return route.fulfill({json:{native_csrf:'browser-native-csrf',bot:{configured:true,enabled:true,username:'dealer_config_bot',owner_id:987654321,status:'starting'}}});}
         return route.fulfill({json:{native_csrf:'browser-native-csrf',bot:{configured:false,enabled:false,status:'not_configured'}}});
       }
       if (url.pathname === '/reseller/api/peers/1/user-link') {
@@ -137,14 +143,16 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     await page.locator('#password').fill('a-safe-test-password');
     await page.locator('#submit-btn').click();
     await page.locator('#account-name').waitFor({state:'visible'});
-    await page.locator('[data-reseller-section="create-peer"]').click();
+    await page.locator('[data-reseller-section="services"]').click();
     assert.equal(await page.locator('#account-name').textContent(), 'dealer');
     assert.equal(await page.locator('#peer-interface').count(),0,'Reseller must not select an interface');
+    assert.equal(await page.locator('#peer-form').isVisible(),true);
+    assert.equal(await page.locator('#reseller-peers').isVisible(),true,'Create and customers share one services panel');
     await page.locator('#peer-name').fill('limited-customer');
     await page.locator('#peer-form button[type=submit]').click();
     await page.waitForFunction(() => document.getElementById('peer-rows')?.textContent.includes('limited-customer'));
     assert.deepEqual(Object.keys(peerPayload).sort(),['days','name','volume_gb']);
-    await page.locator('[data-reseller-section="peers"]').click();
+    await page.locator('[data-reseller-section="services"]').click();
     await page.locator('#peer-rows button').last().click();
     await page.locator('#peer-edit-name').fill('renamed-customer');
     await page.locator('#peer-edit-form button[type=submit]').click();
@@ -207,7 +215,7 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
         assert(language==='fa'?side.x>main.x:side.x<main.x,'Sidebar follows Persian/English direction');
       }
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No page overflow');
-      for(const section of ['create-peer','peers','children','bot','overview']) {
+      for(const section of ['services','children','bot','overview']) {
         const link=page.locator(`[data-reseller-section="${section}"]`);
         await link.click();
         await page.waitForFunction(value=>location.hash==='#'+value,section);
@@ -215,15 +223,15 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
         assert.equal(await page.locator('[data-reseller-panel]:visible').count(),1,section);
       }
       if(language==='fa' && process.env.PORTAL_SCREENSHOTS) {
-        await page.locator('[data-reseller-section="peers"]').click();
+        await page.locator('[data-reseller-section="services"]').click();
         await page.screenshot({path:path.join(process.env.PORTAL_SCREENSHOTS,`sidebar-${width}.png`),fullPage:true});
       }
-      await page.locator('[data-reseller-section="create-peer"]').focus();
+      await page.locator('[data-reseller-section="services"]').focus();
       await page.keyboard.press('Enter');
       await page.locator('#peer-name').fill('unsaved-customer');
       await page.locator('[data-reseller-section="bot"]').click();
       await page.locator('#bot-token').fill('temporary-unsaved-token');
-      await page.locator('[data-reseller-section="peers"]').click();
+      await page.locator('[data-reseller-section="services"]').click();
       assert.equal(await page.locator('#bot-token').inputValue(),'','Leaving bot clears its token');
       await page.goBack();
       await page.locator('#bot-form').waitFor({state:'visible'});
@@ -235,6 +243,11 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
       await page.reload();
       await page.locator('#bot-form').waitFor({state:'visible'});
       await page.locator('#reseller-refresh').click();
+      await page.locator('#credit-values').waitFor({state:'visible'});
+      assert.match(await page.locator('#credit-remaining-peers').textContent(),/[7۷]/);
+      assert.match(await page.locator('#credit-reserved-peers').textContent(),/[2۲]/);
+      assert.match(await page.locator('#credit-remaining-time').textContent(),/[2۲].*(روز|days)/);
+      await page.locator('#credit-close').click();
       assert.equal(await page.locator('[data-reseller-section="bot"]').getAttribute('aria-current'),'page');
       await page.locator('#language-toggle').click();
       assert.equal(await page.locator('#bot-form').isVisible(),true,'Language switch preserves section');
@@ -242,6 +255,33 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
       await page.locator('#add-child').waitFor({state:'visible'});
       await page.goto('http://panel.test/reseller#unknown-section');
       await page.locator('[data-reseller-section="overview"][aria-current="page"]').waitFor();
+    }
+    // HTTPS settings must keep strict native CSRF despite the document no-referrer policy.
+    await page.goto('https://panel.test/reseller#bot');
+    await page.locator('#bot-form').waitFor({state:'visible'});
+    await page.locator('#bot-owner-id').fill('987654321');
+    await page.locator('#bot-token').fill('123456:'+'A'.repeat(35));
+    await page.locator('#bot-form button[type=submit]').click();
+    await page.waitForFunction(()=>document.getElementById('bot-token').value==='');
+    assert.equal(httpsBotValidated,true,'HTTPS requests must carry same-origin Referer');
+    botSaveError='telegram_invalid_token';
+    await page.locator('#bot-token').fill('123456:'+'A'.repeat(35));
+    await page.locator('#bot-form button[type=submit]').click();
+    await page.waitForFunction(()=>document.getElementById('bot-result').textContent.includes('توکن'));
+    assert(!(await page.locator('#bot-result').textContent()).includes('عملیات انجام نشد. اطلاعات'));
+    botSaveError=null;
+    await page.locator('#reseller-refresh').click();
+    await page.locator('#credit-values').waitFor({state:'visible'});
+    reservedCapacity=1;
+    await page.locator('#credit-refresh').click();
+    await page.waitForFunction(()=>/[8۸]/.test(document.getElementById('credit-remaining-peers').textContent));
+    await page.locator('#credit-close').click();
+    reservedCapacity=2;
+    for(const alias of ['create-peer','peers']) {
+      await page.goto('https://panel.test/reseller#'+alias);
+      await page.locator('[data-reseller-section="services"][aria-current="page"]').waitFor();
+      assert.equal(await page.locator('#peer-form').isVisible(),true);
+      assert.equal(await page.locator('#reseller-peers').isVisible(),true);
     }
     // An arbitrary hash must not expose operational panels while access is paused.
     for (const approval of ['pending','approved']) {

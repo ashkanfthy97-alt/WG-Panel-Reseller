@@ -5,15 +5,16 @@
   const text = (fa, en) => language === "fa" ? fa : en;
   let language = "fa", csrf = "", nativeCSRF = "", account = null, adminData = null, peerData = null, childrenData = null, botData = null, busy = false;
   const pending = new Map();
+  let creditData = null, creditRequest = 0, botStatusTimer = null, botStatusBusy = false;
   const sections = {
     overview: ["نمای کلی", "Overview", "وضعیت حساب، اعتبار و دسترسی نمایندگی خود را ببینید.", "Review your reseller account, validity and access."],
-    "create-peer": ["ساخت سرویس مشتری", "Create customer service", "با تعیین نام، مدت و حجم، سرویس مشتری را بسازید.", "Create a customer service with its name, duration and volume."],
-    peers: ["مشتری‌ها و کانفیگ‌ها", "Customers and configs", "سرویس‌ها، لینک کاربر، کانفیگ و تمدید مشتری‌ها را مدیریت کنید.", "Manage customer services, user links, configs and renewals."],
+    services: ["سرویس‌ها و کانفیگ‌ها", "Services and configs", "سرویس بسازید و کانفیگ، لینک کاربر و تمدید مشتری‌ها را از همین بخش مدیریت کنید.", "Create services and manage customer configs, user links and renewals in one place."],
     children: ["نماینده‌های من", "My subresellers", "زیرنماینده اضافه کنید و Interface اختصاصی آن را راه‌اندازی کنید.", "Add subresellers and provision their dedicated interfaces."],
     bot: ["بات تلگرام", "Telegram bot", "بات اختصاصی نمایندگی خود را متصل و مدیریت کنید.", "Connect and manage your dedicated reseller bot."]
   };
   function sectionFromHash() {
     const value = location.hash.slice(1);
+    if (value === "create-peer" || value === "peers") return "services";
     return value === "children-workspace" ? "children" : Object.hasOwn(sections, value) ? value : "overview";
   }
   let selectedSection = sectionFromHash();
@@ -45,6 +46,7 @@
     $("#page-copy").textContent = text(values[2], values[3]);
     document.title = text(values[0], values[1]) + " · WG Portal";
     if (focus) $("#page-title").focus({preventScroll: true});
+    scheduleBotStatus();
   }
   function changeSection() {
     if (ownerView) return;
@@ -52,7 +54,7 @@
     selectedSection = sectionFromHash();
     if (previous !== selectedSection) {
       if (previous === "bot") $("#bot-token").value = "";
-      if (previous === "peers") {
+      if (previous === "services") {
         for (const id of ["#peer-edit-dialog", "#user-link-dialog"]) if ($(id).open) $(id).close();
         closeQR();
       }
@@ -102,13 +104,32 @@
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 90000);
     try {
-      const response = await fetch(path, { method, headers, credentials: "same-origin", cache: "no-store", redirect: "error", signal: controller.signal, ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}) });
+      const response = await fetch(path, { method, headers, ...(path === "/reseller/api/bot" ? {referrerPolicy:"same-origin"} : {}), credentials: "same-origin", cache: "no-store", redirect: "error", signal: controller.signal, ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}) });
       let data = {};
-      if ((response.headers.get("Content-Type") || "").includes("application/json")) data = await response.json();
+      const jsonResponse = (response.headers.get("Content-Type") || "").includes("application/json");
+      if (jsonResponse) data = await response.json();
+      else if (path === "/reseller/api/bot" && response.status === 400) data.error = "bot_csrf_rejected";
       if (data.csrf) csrf = data.csrf;
       if (data.native_csrf && path === "/reseller/api/bot") nativeCSRF = data.native_csrf;
       if (!response.ok || data.error || data.ok === false) {
         const known = {
+          bot_invalid_token: text("توکن بات معتبر نیست؛ توکن کامل BotFather را دوباره وارد کنید.", "Invalid bot token. Enter the complete token from BotFather."),
+          invalid_bot_token: text("توکن بات معتبر نیست؛ توکن کامل BotFather را دوباره وارد کنید.", "Invalid bot token. Enter the complete token from BotFather."),
+          invalid_owner_id: text("شناسهٔ عددی حساب تلگرام خودتان را وارد کنید؛ نام کاربری یا شمارهٔ بات کافی نیست.", "Enter your personal numeric Telegram ID, not a username or bot ID."),
+          telegram_invalid_token: text("تلگرام توکن را نپذیرفت؛ توکن بات را بررسی کنید.", "Telegram rejected the token. Check your bot credentials."),
+          telegram_connection_failed: text("سرور به تلگرام وصل نشد؛ دسترسی خروجی VPS به تلگرام را بررسی کنید.", "The server could not reach Telegram. Check outbound access from your VPS."),
+          telegram_unavailable: text("ارتباط سرور با تلگرام کامل نشد؛ کمی بعد دوباره تلاش کنید.", "The Telegram request did not complete. Try again shortly."),
+          telegram_response_invalid: text("پاسخ معتبر از تلگرام دریافت نشد؛ دسترسی شبکهٔ سرور را بررسی کنید.", "Telegram returned an invalid response; check the server network."),
+          invalid_csrf: text("نشست یا مبدأ درخواست معتبر نیست؛ صفحه را تازه کنید و از نشانی اصلی پنل استفاده کنید.", "The session or request origin is invalid. Reload and use the panel’s original address."),
+          invalid_bot_settings: text("توکن و شناسهٔ عددی مالک بات را کامل وارد کنید.", "Enter both the bot token and its owner’s numeric ID."),
+          invalid_panel_url: text("نشانی عمومی پنل معتبر نیست؛ مدیر باید نشانی پنل را بررسی کند.", "The public panel address is invalid; ask the owner to check it."),
+          telegram_conflict: text("این بات در جای دیگری در حال اجراست؛ اجرای قبلی همین بات را متوقف کنید.", "This bot is already running elsewhere. Stop its previous runner."),
+          telegram_rate_limited: text("تلگرام موقتاً درخواست‌ها را محدود کرده؛ کمی بعد دوباره تلاش کنید.", "Telegram is temporarily limiting requests. Try again shortly."),
+          native_bot_conflict: text("این توکن به بات اصلی پنل وصل است؛ برای نماینده یک بات مستقل در BotFather بسازید.", "This token belongs to the panel’s main bot. Create a separate BotFather bot for the reseller."),
+          bot_webhook_in_use: text("این بات به سرویس دیگری با Webhook متصل است؛ ابتدا اتصال قبلی آن را بردارید.", "This bot uses another service’s webhook. Disconnect that integration first."),
+          bot_already_assigned: text("این بات قبلاً به نمایندهٔ دیگری متصل شده است؛ هر نماینده باید بات خودش را داشته باشد.", "This bot is assigned to another reseller. Each reseller needs its own bot."),
+          bot_csrf_rejected: text("نشست امنیتی بات معتبر نیست؛ صفحه را تازه کنید و دوباره مشخصات بات را ذخیره کنید.", "The bot security session is invalid. Reload this page and save the bot credentials again."),
+          bot_configuration_failed: text("ذخیرهٔ بات در سرور کامل نشد؛ تنظیمات کلید رمزگذاری و دسترسی ذخیره‌سازی را بررسی کنید.", "The server could not save the bot. Check its encryption key and storage access."),
           invalid_credentials: text("نام کاربری یا رمز درست نیست.", "The username or password is incorrect."),
           panel_paused: text("اعتبار پنل تمام شده یا دسترسی متوقف است.", "The panel has expired or access is suspended."),
           rate_limited: text("تعداد تلاش‌ها زیاد است؛ کمی بعد دوباره تلاش کنید.", "Too many attempts. Try again later."),
@@ -184,6 +205,7 @@
     if (peerData && account?.active) renderPeers(peerData);
     if (childrenData && account?.active) renderChildren(childrenData);
     if (botData && account?.active) renderBot(botData);
+    if (creditData && $("#credit-dialog").open) renderCredit(creditData);
     renderSection();
   }
   function ownerVisibility(authorized) {
@@ -215,7 +237,7 @@
     $("#payment-pending-panel").hidden = !awaiting;
     $("#paused-view").hidden = active || awaiting;
     $("#active-view").hidden = !active;
-    if (!active) { peerData = null; childrenData = null; botData = null; nativeCSRF = ""; $("#bot-token").value = ""; $("#peer-rows").replaceChildren(); $("#child-rows").replaceChildren(); $("#add-child").disabled = true; $("#child-password").value = ""; if ($("#child-dialog").open) $("#child-dialog").close(); if ($("#user-link-dialog").open) $("#user-link-dialog").close(); if ($("#peer-edit-dialog").open) $("#peer-edit-dialog").close(); closeQR(); }
+    if (!active) { stopBotStatus(); peerData = null; childrenData = null; botData = null; nativeCSRF = ""; $("#bot-token").value = ""; $("#peer-rows").replaceChildren(); $("#child-rows").replaceChildren(); $("#add-child").disabled = true; $("#child-password").value = ""; if ($("#child-dialog").open) $("#child-dialog").close(); if ($("#user-link-dialog").open) $("#user-link-dialog").close(); if ($("#peer-edit-dialog").open) $("#peer-edit-dialog").close(); closeQR(); }
     renderSection();
   }
   function renderAdmin(data) {
@@ -393,7 +415,7 @@
       const userLink = document.createElement("button"); userLink.type = "button"; userLink.className = "secondary peer-user-link"; userLink.textContent = text("لینک کاربر", "User link");
       userLink.addEventListener("click", () => action(userLink, null, async () => {
         const result = await api(`/reseller/api/peers/${Number(peer.id)}/user-link`);
-        if (!account?.active || selectedSection !== "peers") return;
+        if (!account?.active || selectedSection !== "services") return;
         if (typeof result.url !== "string" || !result.url.trim()) throw new Error(text("لینک دریافت‌شده معتبر نیست.", "The returned link is invalid."));
         const url = new URL(result.url, location.origin);
         if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error(text("لینک دریافت‌شده معتبر نیست.", "The returned link is invalid."));
@@ -408,7 +430,44 @@
     catch (error) { ownerVisibility(false); throw error; }
   }
   async function loadPeers() { if (account?.active) renderPeers(await api("/reseller/api/peers")); }
-  function renderBot(data) {
+  function renderCredit(value) {
+    const numbers = ["server_time", "expires_at", "remaining_seconds", "max_peers", "used_peers", "reserved_peers", "remaining_peers"];
+    if (!value || numbers.some(key => !Number.isSafeInteger(value[key]) || value[key] < 0) || typeof value.active !== "boolean") {
+      throw new Error(text("پاسخ اعتبار معتبر نیست؛ دوباره بررسی کنید.", "The credit response is invalid; check again."));
+    }
+    creditData = value;
+    const number = new Intl.NumberFormat(language === "fa" ? "fa-IR" : "en-GB");
+    const seconds = value.remaining_seconds;
+    const days = Math.floor(seconds / 86400), hours = Math.floor(seconds % 86400 / 3600), minutes = Math.floor(seconds % 3600 / 60);
+    $("#credit-remaining-time").textContent = seconds === 0 ? text("اعتبار زمانی پایان یافته", "No validity remaining") : seconds < 60 ? text("کمتر از یک دقیقه", "Less than one minute") :
+      `${number.format(days)} ${text("روز", "days")} · ${number.format(hours)} ${text("ساعت", "hours")} · ${number.format(minutes)} ${text("دقیقه", "minutes")}`;
+    for (const [id, key] of [["remaining-peers", "remaining_peers"], ["max-peers", "max_peers"], ["used-peers", "used_peers"], ["reserved-peers", "reserved_peers"]]) {
+      $("#credit-" + id).textContent = number.format(value[key]);
+    }
+    $("#credit-expiry").textContent = date(value.expires_at);
+    $("#credit-state").textContent = value.approval_status !== "approved" ? text("حساب در انتظار تأیید مدیر است.", "The account awaits owner approval.") : !value.active ? text("دسترسی حساب یا والد متوقف است؛ با مدیر تماس بگیرید.", "This account or its parent is paused; contact the owner.") : value.remaining_peers === 0 ? text("ظرفیت Peer تکمیل شده است.", "Peer capacity is full.") : text("حساب فعال است؛ اعتبار و ظرفیت فعلی در زیر آمده است.", "The account is active; current validity and capacity are shown below.");
+    $("#credit-values").hidden = false;
+  }
+  async function loadCredit() {
+    const serial = ++creditRequest, identity = account?.id;
+    $("#credit-values").hidden = true;
+    $("#credit-state").textContent = text("در حال بررسی اعتبار…", "Checking credit…");
+    $("#credit-result").textContent = "";
+    try {
+      const result = await api("/reseller/api/credit");
+      if (serial !== creditRequest || !$("#credit-dialog").open || identity !== account?.id) return;
+      renderCredit(result.credit);
+      account = {...account, active:result.credit.active, enabled:result.credit.enabled,
+        approval_status:result.credit.approval_status, expires_at:result.credit.expires_at};
+      renderAccount();
+    } catch (error) {
+      if (serial !== creditRequest || !$("#credit-dialog").open) return;
+      creditData = null;
+      $("#credit-state").textContent = text("اعتبار دریافت نشد؛ دوباره تلاش کنید.", "Credit could not be loaded; try again.");
+      throw error;
+    }
+  }
+  function renderBot(data, {updateOwner = false} = {}) {
     botData = data;
     const bot = data.bot || {};
     const states = {
@@ -419,17 +478,35 @@
       connection_error:text("اتصال به تلگرام ناموفق است؛ دسترسی شبکهٔ سرور را بررسی کنید.", "Telegram connection failed; check the server network."),
       credential_error:text("توکن قابل بازیابی نیست؛ مشخصات بات را دوباره ذخیره کنید.", "The token could not be recovered; save your bot credentials again."),
       panel_paused:text("بات به دلیل اعتبار یا وضعیت تأیید پنل متوقف است.", "The bot is paused by panel expiry or approval status."),
-      conflict:text("بات در جای دیگری اجرا می‌شود؛ اجرای قبلی را متوقف کنید.", "The bot is running elsewhere; stop the previous runner.")
+      conflict:text("بات در جای دیگری اجرا می‌شود؛ اجرای قبلی را متوقف کنید.", "The bot is running elsewhere; stop the previous runner."),
+      telegram_conflict:text("این بات در جای دیگری در حال اجراست؛ اجرای قبلی را متوقف کنید.", "This bot is running elsewhere; stop its previous runner."),
+      telegram_invalid_token:text("توکن از طرف تلگرام رد شده؛ مشخصات بات را دوباره ذخیره کنید.", "Telegram rejected the token; save your bot credentials again."),
+      telegram_rate_limited:text("تلگرام موقتاً درخواست‌ها را محدود کرده؛ اتصال خودکار دوباره تلاش می‌کند.", "Telegram is temporarily limiting requests; the runner will retry."),
+      telegram_connection_failed:text("ارتباط سرور با تلگرام برقرار نیست؛ اتصال خودکار دوباره تلاش می‌کند.", "The server cannot reach Telegram; the runner will retry.")
     };
     $("#bot-status").textContent = bot.configured ? (bot.username ? "@" + String(bot.username) + " · " : "") + (states[bot.status] || (bot.enabled ? text("در حال راه‌اندازی", "Starting") : text("غیرفعال", "Disabled"))) : text("هنوز باتی متصل نشده است.", "No bot connected yet.");
     $("#bot-disable").hidden = !bot.configured;
-    if (bot.owner_id) $("#bot-owner-id").value = String(bot.owner_id);
+    if (bot.owner_id && (updateOwner || !$("#bot-owner-id").value)) $("#bot-owner-id").value = String(bot.owner_id);
+  }
+  function stopBotStatus() {
+    if (botStatusTimer !== null) clearTimeout(botStatusTimer);
+    botStatusTimer = null;
+  }
+  function scheduleBotStatus() {
+    stopBotStatus();
+    if (ownerView || !account?.active || selectedSection !== "bot" || document.hidden || botStatusBusy) return;
+    botStatusTimer = setTimeout(() => {botStatusTimer = null; loadBot();}, 10000);
   }
   async function loadBot() {
-    if (!account?.active || ownerView) return;
+    if (!account?.active || ownerView || botStatusBusy) return;
+    botStatusBusy = true;
     try {renderBot(await api("/reseller/api/bot"));}
-    catch (error) {$("#bot-status").textContent = text("دریافت وضعیت بات ناموفق بود. وضعیت حساب را تازه کنید.", "Bot status could not be loaded. Refresh account status.");}
+    catch (error) {$("#bot-status").textContent = error.message || text("دریافت وضعیت بات ناموفق بود؛ کمی بعد دوباره بررسی می‌شود.", "Bot status could not be loaded; it will be checked again shortly.");}
+    finally {botStatusBusy = false; scheduleBotStatus();}
   }
+  document.addEventListener("visibilitychange", scheduleBotStatus);
+  window.addEventListener("pagehide", stopBotStatus);
+  window.addEventListener("pageshow", scheduleBotStatus);
   async function loadChildren() {
     if (!account?.active) return;
     try { renderChildren(await api("/reseller/api/accounts")); }
@@ -465,10 +542,18 @@
   });
   $("#language-toggle").addEventListener("click", () => translate(language === "fa" ? "en" : "fa"));
   $("#admin-refresh").addEventListener("click", () => action($("#admin-refresh"), null, load));
-  $("#reseller-refresh").addEventListener("click", () => action($("#reseller-refresh"), null, load));
+  $("#reseller-refresh").addEventListener("click", () => {
+    if (!account || busy) return;
+    $("#credit-dialog").showModal();
+    action($("#reseller-refresh"), "#credit-result", loadCredit);
+  });
+  $("#credit-refresh").addEventListener("click", () => action($("#credit-refresh"), "#credit-result", loadCredit));
+  $("#credit-close").addEventListener("click", () => $("#credit-dialog").close());
+  $("#credit-dialog").addEventListener("close", () => {creditRequest += 1; $("#reseller-refresh").focus();});
+  $("#account-refresh").addEventListener("click", () => action($("#account-refresh"), "#credit-result", async () => {await load(); await loadCredit();}));
   $("#logout").addEventListener("click", () => action($("#logout"), null, async () => {
     await api("/reseller/api/logout", { method: "POST", payload: {} });
-    csrf = ""; account = null; peerData = null; childrenData = null; closeQR(); $("#peer-rows").replaceChildren(); $("#child-rows").replaceChildren(); await load();
+    stopBotStatus(); creditRequest += 1; creditData = null; if ($("#credit-dialog").open) $("#credit-dialog").close(); csrf = ""; nativeCSRF = ""; account = null; peerData = null; childrenData = null; closeQR(); $("#peer-rows").replaceChildren(); $("#child-rows").replaceChildren(); await load();
   }));
   $("#account-form").addEventListener("submit", (event) => {
     event.preventDefault(); const payload = Object.fromEntries(new FormData(event.currentTarget));
@@ -572,13 +657,14 @@
     const payload = {owner_id:$("#bot-owner-id").value.trim(),token:$("#bot-token").value.trim()};
     action(event.submitter || event.currentTarget.querySelector('[type="submit"]'), "#bot-result", async () => {
       try {
-        renderBot(await api("/reseller/api/bot", {method:"POST",payload}));
+        renderBot(await api("/reseller/api/bot", {method:"POST",payload}), {updateOwner:true});
+        scheduleBotStatus();
         formResult("#bot-result", text("بات ذخیره شد و راه‌اندازی خودکار آغاز شد. در تلگرام Start بزنید.", "Bot saved and automatic startup requested. Press Start in Telegram."));
       } finally {$("#bot-token").value = ""; payload.token = "";}
     });
   });
   $("#bot-disable").addEventListener("click", () => action($("#bot-disable"), "#bot-result", async () => {
-    const result = await api("/reseller/api/bot", {method:"DELETE"}); renderBot(result);
+    const result = await api("/reseller/api/bot", {method:"DELETE"}); renderBot(result); scheduleBotStatus();
     $("#bot-token").value = ""; formResult("#bot-result", text("بات غیرفعال شد.", "Bot disabled."));
   }));
   $("#qr-image").addEventListener("error", () => { closeQR(); notice(text("تصویر QR دریافت نشد؛ وضعیت حساب و سرویس را تازه کنید.", "The QR image could not be loaded. Refresh your account and service status."), "error"); });

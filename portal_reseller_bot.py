@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import hashlib
 import hmac
 import io
+import json
 import logging
 import os
 from pathlib import Path
@@ -40,7 +41,8 @@ def protect_transport_logs():
     # Filters on origin loggers run before propagation to native debug handlers.
     # Do not change global logger levels while several bots are making requests.
     for name in ('urllib3.connectionpool', 'urllib3.util.retry', 'urllib3.poolmanager',
-                 'urllib3.connection', 'requests.packages.urllib3.connectionpool'):
+                 'urllib3.connection', 'requests.packages.urllib3.connectionpool',
+                 'httpx', 'httpcore.connection', 'httpcore.http11', 'httpcore.http2'):
         logger = logging.getLogger(name)
         if not any(isinstance(item, TelegramTokenFilter) for item in logger.filters):
             logger.addFilter(TelegramTokenFilter())
@@ -48,30 +50,60 @@ def protect_transport_logs():
 
 class BotError(ValueError):
     """A deliberately secret-free error suitable for the panel."""
+    def __init__(self, code, *, retry_after=0):
+        super().__init__(code)
+        self.code = code
+        self.retry_after = min(3600, max(0, int(retry_after or 0)))
+
+
+def telegram_result(status, value):
+    if not isinstance(value, dict):
+        raise BotError('telegram_response_invalid')
+    if status == 200 and value.get('ok') is True:
+        return value.get('result')
+    code = value.get('error_code', status)
+    if code in {401, 404}:
+        raise BotError('telegram_invalid_token')
+    if code == 409:
+        raise BotError('telegram_conflict')
+    if code == 429:
+        parameters = value.get('parameters') or {}
+        raise BotError('telegram_rate_limited', retry_after=parameters.get('retry_after', 30))
+    raise BotError('telegram_unavailable')
+
+
+TELEGRAM_METHODS = {'getMe', 'getWebhookInfo', 'getUpdates', 'sendMessage',
+                    'sendDocument', 'sendPhoto', 'answerCallbackQuery'}
+
+
+def telegram_payload(payload):
+    return {key: json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value
+            for key, value in (payload or {}).items()}
 
 
 class TelegramTransport:
-    def call(self, token, method, payload=None, *, document=None):
+    def call(self, token, method, payload=None, *, document=None, photo=None):
         protect_transport_logs()
-        if method not in {'getMe', 'getWebhookInfo', 'getUpdates', 'sendMessage', 'sendDocument'}:
+        if method not in TELEGRAM_METHODS:
             raise BotError('unsupported_telegram_operation')
         try:
             with requests.Session() as client:
                 client.trust_env = False
+                files = ({'document': ('wireguard.conf', io.BytesIO(document), 'text/plain')}
+                         if document is not None else {'photo': ('wireguard.png', io.BytesIO(photo), 'image/png')}
+                         if photo is not None else None)
                 result = client.post('https://api.telegram.org/bot' + token + '/' + method,
-                    data=payload or {}, files=({'document': ('wireguard.conf', io.BytesIO(document),
-                    'text/plain')} if document is not None else None),
+                    data=telegram_payload(payload), files=files,
                     timeout=(5, 40 if method == 'getUpdates' else 15), allow_redirects=False)
                 if len(result.content) > 4 * 1024 * 1024:
                     raise BotError('telegram_response_invalid')
-                value = result.json()
-                if result.status_code != 200 or not isinstance(value, dict) or value.get('ok') is not True:
-                    # Never forward Telegram's body or requests exceptions: they
-                    # can contain a credential-bearing URL.
-                    raise BotError('telegram_unavailable')
-                return value.get('result')
-        except (requests.RequestException, ValueError, TypeError):
-            raise BotError('telegram_unavailable') from None
+                return telegram_result(result.status_code, result.json())
+        except BotError:
+            raise
+        except requests.RequestException:
+            raise BotError('telegram_connection_failed') from None
+        except (ValueError, TypeError):
+            raise BotError('telegram_response_invalid') from None
 
 
 class BotStore:
@@ -171,6 +203,8 @@ class BotManager:
                               fernet_key=os.environ.get('FERNET_KEY'))
         self.started = False
         self.start_lock = threading.Lock()
+        self.prompts = {}
+        self.prompt_lock = threading.Lock()
 
     def transport(self):
         return self.app.config.get('RESELLER_BOT_TRANSPORT') or TelegramTransport()
@@ -215,40 +249,126 @@ class BotManager:
             finally:
                 response.close()
 
+    @staticmethod
+    def private_message(row, update):
+        callback = update.get('callback_query') or {}
+        message = callback.get('message') or update.get('message') or {}
+        sender = callback.get('from') or message.get('from') or {}
+        chat = message.get('chat') or {}
+        return (message if chat.get('type') == 'private' and chat.get('id') == row['owner_id']
+                and sender.get('id') == row['owner_id'] and not sender.get('is_bot') else None)
+
+    def callback_id(self, row, update):
+        callback = update.get('callback_query') or {}
+        value = callback.get('id')
+        return value if self.private_message(row, update) and isinstance(value, str) and len(value) <= 256 else None
+
+    @staticmethod
+    def peer_keyboard(peer_id):
+        return {'inline_keyboard': [[
+            {'text': 'کانفیگ / Config', 'callback_data': 'config:' + str(peer_id)},
+            {'text': 'QR', 'callback_data': 'qr:' + str(peer_id)}], [
+            {'text': 'لینک کاربر / User link', 'callback_data': 'link:' + str(peer_id)},
+            {'text': 'نام / تمدید', 'callback_data': 'manage:' + str(peer_id)}]]}
+
+    def peer_exists(self, row, peer_id):
+        code, value, _ = self.dispatch(row, 'GET', '/reseller/api/peers')
+        return code == 200 and isinstance(value, dict) and any(
+            peer.get('id') == peer_id for peer in value.get('peers', []))
+
     def command(self, row, update):
-        message = update.get('message') or {}
-        chat, sender = message.get('chat') or {}, message.get('from') or {}
-        if (chat.get('type') != 'private' or chat.get('id') != row['owner_id'] or
-                sender.get('id') != row['owner_id'] or sender.get('is_bot')):
+        message = self.private_message(row, update)
+        if message is None:
             return None
         if not self.account(row) or not self.current(row):
             return ('text', 'پنل شما غیرفعال است؛ با مدیر تماس بگیرید. / Panel access is paused.')
+        callback = update.get('callback_query') or {}
         text = str(message.get('text') or '').strip()
+        prompt_key = (row['reseller_id'], row['revision'])
+        with self.prompt_lock:
+            now = time.monotonic()
+            for key, prompt in list(self.prompts.items()):
+                if prompt[2] <= now or (key[0] == row['reseller_id'] and key != prompt_key):
+                    self.prompts.pop(key, None)
+            if callback or text.startswith('/'):
+                self.prompts.pop(prompt_key, None)
+        if callback:
+            value = callback.get('data') or ''
+            if value == 'credit':
+                text = '/credit'
+            elif re.fullmatch(r'page:[0-9]{1,6}', value):
+                text = '/peers ' + value.split(':')[1]
+            else:
+                matched = re.fullmatch(r'(config|qr|link|manage|rename|renew):([1-9][0-9]{0,12})', value)
+                if not matched:
+                    return ('text', '/help')
+                action, peer_id = matched[1], int(matched[2])
+                if not self.peer_exists(row, peer_id):
+                    return ('text', 'مشتری در دسترس نیست. / Peer unavailable.')
+                if action == 'manage':
+                    return ('messages', [{'text': 'نام یا تمدید / Name or renewal', 'reply_markup': {
+                        'inline_keyboard': [[{'text': 'تغییر نام / Rename', 'callback_data': 'rename:' + str(peer_id)},
+                                             {'text': 'تمدید / Renew', 'callback_data': 'renew:' + str(peer_id)}]]}}])
+                if action in {'rename', 'renew'}:
+                    with self.prompt_lock:
+                        self.prompts[prompt_key] = (action, peer_id, time.monotonic() + 300)
+                    return ('text', 'نام جدید را بفرستید؛ لغو: /cancel' if action == 'rename' else
+                            'روز و حجم را بفرستید: days | GB — لغو: /cancel')
+                text = '/' + action + ' ' + str(peer_id)
+        elif text == '/cancel':
+            with self.prompt_lock:
+                self.prompts.pop(prompt_key, None)
+            return ('text', 'لغو شد / Cancelled')
+        elif not text.startswith('/'):
+            with self.prompt_lock:
+                prompt = self.prompts.pop(prompt_key, None)
+            if prompt and prompt[2] > time.monotonic():
+                text = '/' + prompt[0] + ' ' + str(prompt[1]) + ' | ' + text
+            else:
+                text = '/help'
         head, _, argument = text.partition(' ')
         command = head.split('@', 1)[0].lower()
         operation = 'telegram-update-' + str(row['bot_id']) + '-' + str(update['update_id'])
         if command in {'/start', '/help'}:
-            return ('text', 'ساخت کانفیگ / Create:\n/new name | days | GB\n'
-                    '/peers\n/config ID\n/link ID\n/rename ID | name\n/renew ID | days | GB')
-        if command == '/new':
+            return ('messages', [{'text': 'ساخت کانفیگ / Create:\n/new name | days | GB\n'
+                    '/peers\n/config ID\n/qr ID\n/link ID\n/rename ID | name\n/renew ID | days | GB',
+                'reply_markup': {'inline_keyboard': [[{'text': 'کانفیگ‌های من / My configs', 'callback_data': 'page:0'},
+                                                     {'text': 'اعتبار / Credit', 'callback_data': 'credit'}]]}}])
+        if command == '/credit':
+            code, result, _ = self.dispatch(row, 'GET', '/reseller/api/credit')
+            if code == 200 and isinstance(result, dict):
+                value = result.get('credit') or {}
+                seconds = int(value.get('remaining_seconds', 0))
+                return ('text', 'اعتبار: ' + str(seconds // 86400) + ' روز، ' + str(seconds % 86400 // 3600) +
+                        ' ساعت\nPeer باقی‌مانده: ' + str(value.get('remaining_peers', 0)) +
+                        ' / ' + str(value.get('max_peers', 0)))
+        elif command == '/new':
             parts = [part.strip() for part in argument.split('|')]
             if len(parts) != 3 or not re.fullmatch(r'[0-9]{1,3}', parts[1]) or not re.fullmatch(r'[0-9]{1,6}', parts[2]):
                 return ('text', '/new name | days | GB')
             code, result, _ = self.dispatch(row, 'POST', '/reseller/api/peers',
                 payload={'name': parts[0], 'days': int(parts[1]), 'volume_gb': int(parts[2])}, operation=operation)
             if code in {200, 201} and result and result.get('id'):
-                return ('text', 'Peer ID: ' + str(result['id']) + '\n/config ' + str(result['id']) + '\n/link ' + str(result['id']))
+                return ('messages', [{'text': 'Peer ID: ' + str(result['id']),
+                    'reply_markup': self.peer_keyboard(result['id'])}])
         elif command == '/peers':
             code, result, _ = self.dispatch(row, 'GET', '/reseller/api/peers')
             if code == 200 and isinstance(result, dict):
-                lines = [str(peer['id']) + ' — ' + str(peer.get('name', '')) for peer in result.get('peers', [])]
-                return ('text', '\n'.join(lines)[:3500] or 'بدون مشتری / No peers')
-        elif command in {'/config', '/link'} and re.fullmatch(r'[1-9][0-9]{0,12}', argument):
-            path = '/reseller/api/peers/' + argument + ('/config' if command == '/config' else '/user-link')
+                peers = result.get('peers', [])
+                page = int(argument) if re.fullmatch(r'[0-9]{1,6}', argument) else 0
+                start = page * 10
+                messages = [{'text': str(peer['id']) + ' — ' + str(peer.get('name', ''))[:256],
+                             'reply_markup': self.peer_keyboard(peer['id'])} for peer in peers[start:start + 10]]
+                if start + 10 < len(peers):
+                    messages.append({'text': 'صفحه بعد / Next page', 'reply_markup': {'inline_keyboard': [[
+                        {'text': 'بعدی / Next', 'callback_data': 'page:' + str(page + 1)}]]}})
+                return ('messages', messages or [{'text': 'بدون مشتری / No peers'}])
+        elif command in {'/config', '/link', '/qr'} and re.fullmatch(r'[1-9][0-9]{0,12}', argument):
+            path = '/reseller/api/peers/' + argument + {'/config': '/config', '/link': '/user-link', '/qr': '/qr'}[command]
             code, result, body = self.dispatch(row, 'GET', path)
             if code == 200:
-                if command == '/config':
-                    return ('document', body)
+                if command in {'/config', '/qr'}:
+                    return ('document' if command == '/config' else 'photo', body)
                 if isinstance(result, dict) and isinstance(result.get('url'), str):
                     return ('text', result['url'])
         elif command in {'/rename', '/renew'}:
@@ -270,6 +390,25 @@ class BotManager:
         return ('text', 'عملیات انجام نشد؛ مشخصات، اعتبار و وضعیت درخواست را در پنل بررسی کنید. / '
                 'Not completed. Check the request and your panel access before retrying.')
 
+    @staticmethod
+    def error_status(error):
+        value = getattr(error, 'code', '')
+        return value if value in {'telegram_invalid_token', 'telegram_conflict', 'telegram_rate_limited',
+                                 'telegram_connection_failed', 'telegram_unavailable'} else 'connection_error'
+
+    def send_answer(self, row, token, answer):
+        kind, value = answer
+        if kind == 'document':
+            self.transport().call(token, 'sendDocument', {'chat_id': row['owner_id']}, document=value)
+        elif kind == 'photo':
+            self.transport().call(token, 'sendPhoto', {'chat_id': row['owner_id']}, photo=value)
+        else:
+            for item in value if kind == 'messages' else [{'text': value}]:
+                if not self.current(row) or not self.account(row):
+                    break
+                self.transport().call(token, 'sendMessage', {'chat_id': row['owner_id'],
+                    'disable_web_page_preview': 'true', **item})
+
     def poll(self, row, stop):
         try:
             token = self.store.cipher().decrypt(row['token_enc'].encode()).decode()
@@ -285,11 +424,11 @@ class BotManager:
                     self.store.progress(row, status='panel_paused')
                     stop.wait(5)
                     continue
-                self.store.progress(row, status='running')
                 updates = self.transport().call(token, 'getUpdates', {'offset': fresh['offset'],
-                    'timeout': 25, 'limit': 20, 'allowed_updates': '["message"]'})
+                    'timeout': 25, 'limit': 20, 'allowed_updates': '["message","callback_query"]'})
                 if not isinstance(updates, list):
                     raise BotError('telegram_response_invalid')
+                self.store.progress(row, status='running')
                 for update in updates:
                     if stop.is_set() or not self.current(row):
                         return
@@ -303,15 +442,13 @@ class BotManager:
                     # cause the same paid operation to execute again on failure.
                     self.store.progress(row, offset=update['update_id'] + 1)
                     if answer and self.current(row) and self.account(row):
-                        kind, value = answer
-                        if kind == 'document':
-                            self.transport().call(token, 'sendDocument', {'chat_id': row['owner_id']}, document=value)
-                        else:
-                            self.transport().call(token, 'sendMessage', {'chat_id': row['owner_id'], 'text': value,
-                                'disable_web_page_preview': 'true'})
-            except Exception:
-                self.store.progress(row, status='connection_error')
-                stop.wait(10)
+                        callback_id = self.callback_id(row, update)
+                        if callback_id:
+                            self.transport().call(token, 'answerCallbackQuery', {'callback_query_id': callback_id})
+                        self.send_answer(row, token, answer)
+            except Exception as error:
+                self.store.progress(row, status=self.error_status(error))
+                stop.wait(max(10, getattr(error, 'retry_after', 0)))
 
     def supervise(self):
         import fcntl
@@ -331,33 +468,9 @@ class BotManager:
                 time.sleep(10)
 
     def run_leader(self):
-        workers = {}
-        try:
-            while True:
-                rows = {row['reseller_id']: row for row in self.store.rows()}
-                for account_id, (row, stop, thread) in list(workers.items()):
-                    if account_id not in rows or rows[account_id]['revision'] != row['revision'] or not thread.is_alive():
-                        stop.set()
-                        # A replacement must never consume updates until the old
-                        # long poll/request has finished.
-                        thread.join(timeout=50)
-                        if not thread.is_alive():
-                            workers.pop(account_id)
-                for account_id, row in rows.items():
-                    if account_id not in workers:
-                        stop = threading.Event()
-                        thread = threading.Thread(target=self.poll, args=(row, stop), daemon=True,
-                                                  name='reseller-bot-' + str(account_id))
-                        workers[account_id] = (row, stop, thread)
-                        thread.start()
-                time.sleep(3)
-        finally:
-            for _, stop, thread in workers.values():
-                stop.set()
-            for _, _, thread in workers.values():
-                # Retain the leader lock until every old poller has stopped.
-                # A native operation may outlast an HTTP polling timeout.
-                thread.join()
+        import asyncio
+        from portal_bot_runtime import AsyncBotRuntime
+        asyncio.run(AsyncBotRuntime(self).run())
 
     def ensure_started(self):
         if self.app.testing or not sys.platform.startswith('linux') or self.app.config.get('RESELLER_BOTS_DISABLED'):
@@ -374,6 +487,13 @@ def install_reseller_bot(app, csrf, database):
     manager = BotManager(app, database)
     app.extensions['reseller_bots'] = manager
     bp = Blueprint('reseller_bot', __name__)
+
+    @bp.errorhandler(400)
+    def security_failure(_error):
+        # Flask-WTF may reject before the view. Keep its protection and return
+        # a usable error without reflecting token-bearing input or internals.
+        return jsonify(error='bot_csrf_rejected',
+                       message='نشست امنیتی معتبر نیست؛ صفحه را تازه کنید و دوباره تلاش کنید.'), 400
 
     @bp.route('/reseller/api/bot', methods=['GET', 'POST', 'DELETE'])
     def settings():
@@ -428,7 +548,10 @@ def install_reseller_bot(app, csrf, database):
                     raise BotError('invalid_panel_url')
                 manager.store.save(account['id'], int(raw_owner), token, info, base_url.rstrip('/'))
             except BotError as error:
-                return jsonify(error=str(error)), 400
+                code = 429 if error.code == 'telegram_rate_limited' else 409 if error.code in {
+                    'telegram_conflict', 'bot_already_assigned'} else 503 if error.code in {
+                    'telegram_connection_failed', 'telegram_unavailable'} else 400
+                return jsonify(error=error.code, retry_after=error.retry_after), code
             except Exception:
                 return jsonify(error='bot_configuration_failed'), 503
         manager.ensure_started()

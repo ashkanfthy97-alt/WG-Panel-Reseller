@@ -68,6 +68,10 @@ class NativeResellerChecks(unittest.TestCase):
         def config(key):
             return 'native-config', 200, {'Content-Type': 'text/plain'}
 
+        @self.app.get('/api/peer/<key>/config_qr')
+        def config_qr(key):
+            return b'\x89PNG\r\n\x1a\nfixture', 200, {'Content-Type':'image/png'}
+
         @self.app.get('/api/peer/<path:key>/shortlink')
         def shortlink(key):
             if request.headers.get('X-API-KEY') != self.app.config['API_KEY']:

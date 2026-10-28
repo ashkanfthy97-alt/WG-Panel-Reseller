@@ -65,3 +65,12 @@ footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:w
   #reseller-create-peer .fields{grid-template-columns:1fr}
   .account-toolbar{justify-content:flex-start;padding-block:0 7px}
 }
+
+#credit-dialog{width:min(720px,calc(100vw - 32px));max-height:calc(100dvh - 32px);text-align:start}
+.credit-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-block:20px}
+.credit-grid>div{min-width:0;padding:15px;border:1px solid #294b60;border-radius:12px;background:#0a2030}
+.credit-grid>div:first-child,.credit-grid>div:last-child{grid-column:1/-1}
+.credit-grid dt{font-size:11px;color:var(--portal-muted)}
+.credit-grid dd{margin:7px 0 0;font-size:26px;line-height:1.7;font-weight:700;color:#d9f5ff;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+#credit-remaining-time{font-size:20px}#credit-expiry{font-size:15px;font-weight:500}
+@media(max-width:600px){.credit-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#credit-dialog{padding:20px 16px}#credit-dialog .dialog-head h2{font-size:16px}}

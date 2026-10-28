@@ -170,6 +170,59 @@ class ResellerStore:
             row = db.execute('SELECT * FROM resellers WHERE id=?', (reseller_id,)).fetchone()
             return self._public(db, row) if row else None
 
+    def credit(self, reseller_id, *, auth_version=None):
+        """Return validity and quota from one read snapshot.
+
+        Quota deliberately follows reserve(): ownership records and uncertain
+        or pending creations consume capacity even if a native Peer is absent.
+        This method reports paused/pending accounts without granting operations.
+        """
+        if type(reseller_id) is not int or reseller_id < 1:
+            return None
+        with self.db() as db:
+            db.execute('BEGIN')
+            rows = {item['id']: item for item in db.execute('SELECT * FROM resellers')}
+            row = rows.get(reseller_id)
+            if row is None or (auth_version is not None and row['auth_version'] != auth_version):
+                return None
+            now = int(time.time())
+            expires = int(row['expires_at'])
+            effective_expires = expires
+            active = bool(row['enabled'] and row['approval_status'] == 'approved' and expires > now)
+            seen, parent_id = {reseller_id}, row['parent_id']
+            while parent_id is not None:
+                parent = rows.get(parent_id)
+                if parent_id in seen or parent is None:
+                    effective_expires = 0
+                    active = False
+                    break
+                seen.add(parent_id)
+                effective_expires = min(effective_expires, int(parent['expires_at']))
+                if (not parent['enabled'] or parent['approval_status'] != 'approved'
+                        or parent['expires_at'] <= now):
+                    active = False
+                parent_id = parent['parent_id']
+            used = db.execute('SELECT count(*) FROM reseller_peers WHERE reseller_id=?',
+                              (reseller_id,)).fetchone()[0]
+            reserved = db.execute("""SELECT count(*) FROM reseller_operations
+                WHERE reseller_id=? AND state IN ('pending','uncertain')""",
+                (reseller_id,)).fetchone()[0]
+            maximum = int(row['max_peers'])
+            return {
+                'server_time': now,
+                'expires_at': expires,
+                'effective_expires_at': effective_expires,
+                'remaining_seconds': max(0, effective_expires - now),
+                'own_remaining_seconds': max(0, expires - now),
+                'max_peers': maximum,
+                'used_peers': used,
+                'reserved_peers': reserved,
+                'remaining_peers': max(0, maximum - used - reserved),
+                'active': active,
+                'approval_status': row['approval_status'],
+                'enabled': bool(row['enabled']),
+            }
+
     def all(self):
         with self.db() as db:
             rows = {row['id']: row for row in db.execute('SELECT * FROM resellers ORDER BY id DESC')}

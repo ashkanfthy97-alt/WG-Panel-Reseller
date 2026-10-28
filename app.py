@@ -521,7 +521,7 @@ def inject_sec_headers(resp):
     try:
         secure_flag = bool(secure_now)
 
-        if request.blueprint != "reseller":
+        if request.blueprint not in {"reseller", "reseller_bot"}:
             # The native UI reads this cookie. A reseller visit must not replace
             # it with a token signed against the independent reseller session.
             resp.set_cookie(
