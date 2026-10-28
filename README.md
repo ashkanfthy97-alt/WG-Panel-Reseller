@@ -6,20 +6,57 @@
 
 ## نصب تک‌خطی و منوی لینوکسی اصلی
 
-برای **نصب تازه** روی Debian/Ubuntu با کاربر root، پس از تنظیم دسترسی SSH به مخزن خصوصی:
+این راهنما برای **VPS تازهٔ Debian/Ubuntu** است. همهٔ فرمان‌ها را با کاربر **root** اجرا کنید. اگر سرور را حذف یا Rebuild کرده‌اید، دسترسی SSH سرور قبلی خودکار به سرور جدید منتقل نمی‌شود.
+
+### ۱. آماده‌سازی دسترسی SSH به گیت‌هاب
+
+فرمان‌های زیر Git و ابزار SSH را آماده می‌کنند، در صورت نبودن کلید یک کلید جدید می‌سازند و **کلید عمومی** را نمایش می‌دهند. اگر کلیدی از قبل موجود باشد، بازنویسی نمی‌شود:
 
 ```bash
-apt-get update && apt-get install -y git openssh-client && (if [ -f /root/.ssh/wg_panel_deploy ]; then export GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_panel_deploy -o IdentitiesOnly=yes'; fi; git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git /opt/wg-panel && bash /opt/wg-panel/wg.sh)
+apt-get update && apt-get install -y git openssh-client
+mkdir -p /root/.ssh && chmod 700 /root/.ssh
+if [ -e /root/.ssh/id_ed25519 ] || [ -e /root/.ssh/id_ed25519.pub ]; then
+  echo 'Existing SSH key found; it was not overwritten.'
+else
+  ssh-keygen -t ed25519 -N "" -C "wg-panel-vps" -f /root/.ssh/id_ed25519
+fi
+cat /root/.ssh/id_ed25519.pub
 ```
 
-این فرمان سورس را دریافت می‌کند و **منوی اصلی `WG Panel Control`** را باز می‌کند. در منو گزینهٔ `2) Install / Setup` و سپس `Install Everything` را انتخاب کنید تا مراحل نصب بومی، تنظیم `.env`، WireGuard، تنظیمات پنل، runtime، سرویس پنل و تلگرام انجام شود. می‌توانید مراحل اختیاری را رد کنید. پیش‌نیازها طبق اسکریپت اصلی نصب می‌شوند؛ نصب برای هر توزیع/نسخهٔ لینوکس تضمین نشده است.
+خروجی آخر که با `ssh-ed25519` شروع می‌شود را کپی کنید. در حساب گیت‌هابی که به این مخزن دسترسی دارد، صفحهٔ [افزودن کلید SSH](https://github.com/settings/ssh/new) را باز کنید، یک عنوان مانند `wg-panel-vps` بگذارید و کلید عمومی را ذخیره کنید. فایل `id_ed25519` کلید خصوصی است؛ فقط محتوای فایل دارای پسوند `.pub` را به گیت‌هاب بدهید.
 
-مخزن خصوصی است؛ کلید SSH root باید مجوز خواندن آن را در GitHub داشته باشد. پوشهٔ مقصد برای clone باید خالی/ناموجود باشد؛ دستور بالا پوشهٔ قبلی را حذف نمی‌کند.
+برای بررسی اتصال، جداگانه اجرا کنید:
+
+```bash
+ssh -T git@github.com
+```
+
+پیام `successfully authenticated` نشان‌دهندهٔ اتصال موفق است؛ نداشتن دسترسی shell در همین پیام طبیعی است. اگر `Permission denied (publickey)` دیدید، کلید عمومی و دسترسی حساب به مخزن را بررسی کنید و سپس مرحلهٔ نصب را انجام دهید.
+
+اگر کلید اختصاصی قدیمی شما `/root/.ssh/wg_panel_deploy` است و دسترسی مخزن دارد، به‌جای ساخت کلید جدید، پیش از فرمان نصب این خط را اجرا کنید:
+
+```bash
+export GIT_SSH_COMMAND='ssh -i /root/.ssh/wg_panel_deploy -o IdentitiesOnly=yes'
+```
+
+### ۲. دانلود و نصب با یک خط فرمان
+
+پس از وصل‌شدن SSH گیت‌هاب، این فرمان آخرین سورس مخزن و تغییرات WG Portal را دریافت می‌کند و نصب‌کنندهٔ بومی همان سورس را باز می‌کند:
+
+```bash
+apt-get update && apt-get install -y git && git clone git@github.com:ashkanfthy97-alt/WG-Panel-Reseller.git /opt/wg-panel && cd /opt/wg-panel && bash wg.sh --wg-py /opt/wg-panel/wg.py
+```
+
+در **منوی اصلی `WG Panel Control`**، گزینهٔ **`2) Install / Setup`** و سپس **`2) Panel Quick Setup`** را انتخاب کنید و تنظیمات خواسته‌شده را وارد کنید. برای نصب کامل و مرحله‌به‌مرحله، به‌جای Quick Setup می‌توانید **`1) Install Everything`** را انتخاب کنید. نصب و سرویس همان WG_Panel بومی هستند؛ پیش‌نیازها طبق نصب‌کنندهٔ اصلی نصب می‌شوند.
+
+بات هر نماینده را بعد از نصب، از داخل سایت با توکن و شناسهٔ عددی تنظیم کنید؛ گزینهٔ Telegram Quick Setup منوی لینوکس مربوط به بات اصلی مدیر است و برای بات نمایندگان لازم نیست.
+
+مخزن خصوصی است؛ کلید SSH root باید مجوز خواندن آن را در GitHub داشته باشد. پوشهٔ `/opt/wg-panel` برای clone باید خالی/ناموجود باشد؛ دستور نصب، پوشه یا دادهٔ قبلی را حذف نمی‌کند. این مسیر برای نصب تازه است؛ برای پنل موجود از به‌روزرسانی استفاده کنید.
 
 اگر سورس از قبل دریافت شده است، از داخل همان پوشه اجرا کنید:
 
 ```bash
-bash wg.sh
+bash wg.sh --wg-py "$PWD/wg.py"
 ```
 
 `bash install.sh` و `bash install-gui.sh` نیز همین منوی ترمینالی را باز می‌کنند. فایل `installer/installer_web.py` در نسخهٔ مرجع وجود ندارد؛ برای نصب از منوی بومی `wg.sh` استفاده کنید.
