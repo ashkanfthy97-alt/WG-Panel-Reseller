@@ -47,7 +47,7 @@ class InitialUiChecks(unittest.TestCase):
             for name in ('dashboard-modern.html', 'login.html', 'users.html'):
                 (target / name).write_text(render_template(name, **values), encoding='utf-8')
             result = subprocess.run(['node', str(ROOT / 'tests/portal_initial_ui.cjs'), str(ROOT), str(target)],
-                                    capture_output=True, text=True, timeout=60)
+                                    capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 

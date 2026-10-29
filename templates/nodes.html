@@ -8,12 +8,12 @@
   <header class="nodes-header">
     <div class="nodes-header__identity">
       <span class="nodes-header__icon" aria-hidden="true"
-        ><i class="fas fa-server"></i
+         data-portal-ui><i class="fas fa-server"></i
       ></span>
       <div>
-        <span class="nodes-kicker">FLEET / NODE MANAGEMENT</span>
-        <h1>Infrastructure</h1>
-        <p>
+        <span class="nodes-kicker" data-portal-ui>FLEET / NODE MANAGEMENT</span>
+        <h1 data-portal-ui>Infrastructure</h1>
+        <p data-portal-ui>
           Manage remote WireGuard agents, availability, peer load, and interface
           state from one workspace.
         </p>
@@ -22,21 +22,21 @@
     <div class="nodes-header__actions">
       <div class="nodes-sync" aria-label="Node refresh state">
         <span id="nodes-sync-dot" class="nodes-sync-dot is-idle"></span
-        ><span id="nodes-sync-text">Ready</span>
+        ><span id="nodes-sync-text" data-portal-ui>Ready</span>
       </div>
       <button
         id="nodes-refresh"
         class="nodes-btn nodes-btn--quiet"
         type="button"
-      >
-        <i class="fas fa-rotate-right"></i><span>Refresh</span>
+       data-portal-ui>
+        <i class="fas fa-rotate-right"></i><span data-portal-ui>Refresh</span>
       </button>
       <button
         id="open-node-modal"
         class="nodes-btn nodes-btn--primary"
         type="button"
-      >
-        <i class="fas fa-plus"></i><span>Add node</span>
+       data-portal-ui>
+        <i class="fas fa-plus"></i><span data-portal-ui>Add node</span>
       </button>
     </div>
   </header>
@@ -46,20 +46,20 @@
       <div class="nodes-summary__icon"><i class="fas fa-server"></i></div>
       <div class="nodes-summary__body">
         <div class="nodes-summary__top">
-          <span>Nodes</span><strong id="nodes-total">0</strong>
+          <span data-portal-ui>Nodes</span><strong id="nodes-total">0</strong>
         </div>
         <div class="nodes-summary__sentence" id="nodes-health-label">
           No nodes configured
         </div>
         <div class="nodes-summary__states">
           <span class="is-online"
-            ><i></i><b id="nodes-online">0</b> online</span
+             data-portal-ui><i></i><b id="nodes-online">0</b> online</span
           >
           <span class="is-offline"
-            ><i></i><b id="nodes-offline">0</b> offline</span
+             data-portal-ui><i></i><b id="nodes-offline">0</b> offline</span
           >
           <span class="is-disabled"
-            ><i></i><b id="nodes-disabled">0</b> paused</span
+             data-portal-ui><i></i><b id="nodes-disabled">0</b> paused</span
           >
         </div>
         <div class="nodes-health-track" aria-hidden="true">
@@ -75,9 +75,9 @@
       </div>
       <div class="nodes-summary__body">
         <div class="nodes-summary__top">
-          <span>Remote peers</span><strong id="nodes-peers">0</strong>
+          <span data-portal-ui>Remote peers</span><strong id="nodes-peers">0</strong>
         </div>
-        <p id="nodes-peer-note">No remote peers</p>
+        <p id="nodes-peer-note" data-portal-ui>No remote peers</p>
       </div>
     </article>
 
@@ -87,9 +87,9 @@
       </div>
       <div class="nodes-summary__body">
         <div class="nodes-summary__top">
-          <span>Interfaces</span><strong id="nodes-interfaces">0</strong>
+          <span data-portal-ui>Interfaces</span><strong id="nodes-interfaces">0</strong>
         </div>
-        <p id="nodes-iface-note">No interfaces</p>
+        <p id="nodes-iface-note" data-portal-ui>No interfaces</p>
       </div>
     </article>
 
@@ -99,9 +99,9 @@
       </div>
       <div class="nodes-summary__body">
         <div class="nodes-summary__top">
-          <span>Alerts</span><strong id="nodes-attention">0</strong>
+          <span data-portal-ui>Alerts</span><strong id="nodes-attention">0</strong>
         </div>
-        <p id="nodes-attention-note">Nothing needs attention</p>
+        <p id="nodes-attention-note" data-portal-ui>Nothing needs attention</p>
       </div>
     </article>
   </section>
@@ -109,19 +109,19 @@
   <section class="nodes-workspace">
     <div class="nodes-workspace__head">
       <div>
-        <span class="nodes-kicker">Inventory</span>
-        <h2>Remote servers</h2>
-        <p>Search, filter, and manage agents without opening each server.</p>
+        <span class="nodes-kicker" data-portal-ui>Inventory</span>
+        <h2 data-portal-ui>Remote servers</h2>
+        <p data-portal-ui>Search, filter, and manage agents without opening each server.</p>
       </div>
       <div class="nodes-workspace__hint">
         <i class="fas fa-circle-info"></i
-        ><span>Paused nodes remain saved and are not health-probed.</span>
+        ><span data-portal-ui>Paused nodes remain saved and are not health-probed.</span>
       </div>
     </div>
 
     <div class="nodes-toolbar">
       <label class="nodes-search" for="nodes-search"
-        ><i class="fas fa-magnifying-glass"></i
+         data-portal-ui><i class="fas fa-magnifying-glass"></i
         ><input
           id="nodes-search"
           type="search"
@@ -130,22 +130,22 @@
         /><kbd>/</kbd></label
       >
       <div class="nodes-filters" role="group" aria-label="Node filters">
-        <button type="button" class="is-active" data-node-filter="all">
+        <button type="button" class="is-active" data-node-filter="all" data-portal-ui>
           All <b id="nodes-filter-all">0</b>
         </button>
-        <button type="button" data-node-filter="online">
+        <button type="button" data-node-filter="online" data-portal-ui>
           <span class="filter-dot is-online"></span>Online
           <b id="nodes-filter-online">0</b>
         </button>
-        <button type="button" data-node-filter="offline">
+        <button type="button" data-node-filter="offline" data-portal-ui>
           <span class="filter-dot is-offline"></span>Offline
           <b id="nodes-filter-offline">0</b>
         </button>
-        <button type="button" data-node-filter="disabled">
+        <button type="button" data-node-filter="disabled" data-portal-ui>
           <span class="filter-dot is-disabled"></span>Paused
           <b id="nodes-filter-disabled">0</b>
         </button>
-        <button type="button" data-node-filter="with-peers">
+        <button type="button" data-node-filter="with-peers" data-portal-ui>
           <i class="fas fa-users"></i>With peers
           <b id="nodes-filter-peers">0</b>
         </button>
@@ -155,10 +155,10 @@
     <div id="nodes-grid" class="nodes-grid" aria-live="polite"></div>
 
     <div id="nodes-empty" class="nodes-empty" hidden>
-      <span class="nodes-empty__icon"><i class="fas fa-server"></i></span>
-      <span class="nodes-kicker">Remote management</span>
-      <h3>No remote nodes configured</h3>
-      <p id="nodes-empty-copy">
+      <span class="nodes-empty__icon" data-portal-ui><i class="fas fa-server"></i></span>
+      <span class="nodes-kicker" data-portal-ui>Remote management</span>
+      <h3 data-portal-ui>No remote nodes configured</h3>
+      <p id="nodes-empty-copy" data-portal-ui>
         Install the node agent on another server, then add its URL and API key
         here.
       </p>
@@ -166,11 +166,11 @@
         id="empty-add-node"
         class="nodes-btn nodes-btn--primary"
         type="button"
-      >
+       data-portal-ui>
         <i class="fas fa-plus"></i> Add node
       </button>
       <small
-        >Node health is based on agent reachability and the latest summary
+         data-portal-ui>Node health is based on agent reachability and the latest summary
         returned by that server.</small
       >
     </div>
@@ -187,11 +187,11 @@
   >
     <div class="nodes-modal__head">
       <div class="nodes-modal__title-wrap">
-        <span class="nodes-modal__icon"><i class="fas fa-server"></i></span>
+        <span class="nodes-modal__icon" data-portal-ui><i class="fas fa-server"></i></span>
         <div>
-          <span class="nodes-kicker">Remote agent</span>
-          <h2 id="node-mini-title">Add node</h2>
-          <p>Connect a WireGuard node API to this panel.</p>
+          <span class="nodes-kicker" data-portal-ui>Remote agent</span>
+          <h2 id="node-mini-title" data-portal-ui>Add node</h2>
+          <p data-portal-ui>Connect a WireGuard node API to this panel.</p>
         </div>
       </div>
       <button
@@ -199,14 +199,14 @@
         id="node-mini-close"
         aria-label="Close"
         type="button"
-      >
+       data-portal-ui>
         <i class="fas fa-times"></i>
       </button>
     </div>
     <form id="node-form" autocomplete="off">
       <div class="nodes-modal__body">
         <label class="nodes-field" for="n-name"
-          ><span>Node name</span
+           data-portal-ui><span data-portal-ui>Node name</span
           ><input
             id="n-name"
             name="name"
@@ -215,11 +215,11 @@
             autocomplete="organization"
             required
           /><small
-            >Use a short label that identifies the server or location.</small
+             data-portal-ui>Use a short label that identifies the server or location.</small
           ></label
         >
         <label class="nodes-field" for="n-url"
-          ><span>Agent base URL</span>
+           data-portal-ui><span data-portal-ui>Agent base URL</span>
           <div class="nodes-input-wrap">
             <i class="fas fa-link"></i
             ><input
@@ -235,11 +235,11 @@
             />
           </div>
           <small
-            >Include the scheme and agent port when it is non-standard.</small
+             data-portal-ui>Include the scheme and agent port when it is non-standard.</small
           ></label
         >
         <label class="nodes-field" for="n-key"
-          ><span>API key</span>
+           data-portal-ui><span data-portal-ui>API key</span>
           <div class="nodes-input-wrap">
             <i class="fas fa-key"></i
             ><input
@@ -257,12 +257,12 @@
               type="button"
               aria-label="Show API key"
               aria-pressed="false"
-            >
+             data-portal-ui>
               <i class="fas fa-eye"></i>
             </button>
           </div>
           <small id="node-key-help"
-            >Required when adding a node. The key is stored by the panel and is
+             data-portal-ui>Required when adding a node. The key is stored by the panel and is
             not displayed again.</small
           ></label
         >
@@ -270,7 +270,7 @@
       <div class="nodes-modal__note">
         <i class="fas fa-shield-halved"></i
         ><span
-          >The credential is used only for authenticated requests from this
+           data-portal-ui>The credential is used only for authenticated requests from this
           panel to the node agent.</span
         >
       </div>
@@ -279,9 +279,9 @@
           type="button"
           class="nodes-btn nodes-btn--quiet"
           id="node-mini-cancel"
-        >
+         data-portal-ui>
           Cancel</button
-        ><button class="nodes-btn nodes-btn--primary" type="submit">
+        ><button class="nodes-btn nodes-btn--primary" type="submit" data-portal-ui>
           <i class="fas fa-check"></i> Save node
         </button>
       </div>
@@ -298,9 +298,9 @@
         class="nodes-btn nodes-btn--quiet"
         data-act="cancel"
         type="button"
-      >
+       data-portal-ui>
         Cancel</button
-      ><button class="nodes-btn nodes-btn--danger" data-act="ok" type="button">
+      ><button class="nodes-btn nodes-btn--danger" data-act="ok" type="button" data-portal-ui>
         OK
       </button>
     </div>

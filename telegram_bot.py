@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 from telegram_peer_cards import safe_peer_name, peer_card_caption, bundle_keyboard
+from portal_native_reseller_admin_bot import handle_callback as reseller_admin_callback, handle_text as reseller_admin_text
 import time, threading, queue
 from datetime import datetime, time as dtime, timezone
 import os, io, json, logging, math, re, asyncio, ipaddress
@@ -4043,6 +4044,7 @@ class KB:
     @staticmethod
     def home():
         return InlineKeyboardMarkup([
+            [InlineKeyboardButton("👥 نماینده‌ها", callback_data="resellers:menu")],
             [InlineKeyboardButton("◇ Peers", callback_data="peers:menu"), InlineKeyboardButton("⌘ Subscriptions", callback_data="client:list:1")],
             [InlineKeyboardButton("✦ Profiles", callback_data="profiles:menu"), InlineKeyboardButton("▣ Backups", callback_data="backup:menu")],
             [InlineKeyboardButton("⌘ Traffic Control", callback_data="traffic:menu"), InlineKeyboardButton("◆ Security", callback_data="security:menu")],
@@ -4386,7 +4388,14 @@ EDIT_FIELDS = [
 # ____ /start
 @admin_only
 async def start(update, context):
+    context.user_data.pop("reseller_admin_flow", None)
     await send_text(update, render_home(update), kb=KB.home())
+
+async def _reseller_admin_send(update, message, keyboard):
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton(item['text'], callback_data=item['callback_data'])
+        for item in row] for row in keyboard.get('inline_keyboard', [])])
+    await edit_send(update, message, markup)
+
 
 # ____ callback 
 @admin_only
@@ -4394,6 +4403,8 @@ async def on_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     data = q.data
+    if await reseller_admin_callback(update, context, data, _api_data, _reseller_admin_send):
+        return
 
     def _admin_ident():
         uid = str(update.effective_user.id) if update.effective_user else ""
@@ -6986,6 +6997,8 @@ async def wizard_bulk_node(update: Update):
 
 @admin_only
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await reseller_admin_text(update, context, _api_data, _reseller_admin_send):
+        return
     text = (update.message.text or "").strip()
 
 

@@ -19,9 +19,9 @@ import requests
 from flask import Blueprint, Response, abort, current_app, g, jsonify, redirect, request, send_from_directory, session
 
 if __package__:
-    from .reseller_store import ResellerStore, StoreError
+    from .reseller_store import ResellerStore, StoreError, RESELLER_CREATION_FEE_TOMAN
 else:
-    from reseller_store import ResellerStore, StoreError
+    from reseller_store import ResellerStore, StoreError, RESELLER_CREATION_FEE_TOMAN
 
 
 class CoreError(Exception):
@@ -313,10 +313,46 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         if factory is None and native_scheme:
             from flask_wtf.csrf import generate_csrf
             factory = generate_csrf
-        return jsonify(csrf=csrf(), account=active_account(), activation={
-            'amount': 3000000, 'currency': 'toman', 'manual': True,
+        account = active_account()
+        return jsonify(csrf=csrf(), account=account, activation={
+            'amount': account['creation_fee_toman'] if account is not None else RESELLER_CREATION_FEE_TOMAN,
+            'currency': 'toman', 'manual': True,
             'telegram_url': 'https://t.me/AshkanfathiOfficial',
             'telegram_username': 'AshkanfathiOfficial'}, native_csrf=factory() if factory else '')
+
+    def security_account():
+        account = active_account()
+        if not account:
+            abort(401)
+        return account
+
+    @bp.get('/reseller/api/security')
+    def security_status():
+        from portal_reseller_security import status
+        return jsonify(**status(store, security_account()['id']))
+
+    @bp.post('/reseller/api/security/setup')
+    def security_setup():
+        from portal_reseller_security import setup
+        account = security_account()
+        value = data()
+        if set(value) != {'password'}:
+            raise StoreError('فقط رمز فعلی را وارد کنید.')
+        return jsonify(**setup(store, account['id'], value['password'], request.remote_addr))
+
+    @bp.post('/reseller/api/security/enable')
+    @bp.post('/reseller/api/security/disable')
+    def security_change():
+        from portal_reseller_security import change
+        account = security_account()
+        value = data()
+        if set(value) != {'password', 'otp'}:
+            raise StoreError('رمز فعلی و کد دومرحله‌ای الزامی هستند.')
+        result = change(store, account['id'], value['password'], value['otp'], request.remote_addr,
+                        enable=request.path.endswith('/enable'))
+        fresh = store.get(account['id'])
+        session['reseller_identity'] = {'id': fresh['id'], 'version': fresh['auth_version']}
+        return jsonify(**result)
 
     @bp.get('/reseller/api/credit')
     def credit():
@@ -343,11 +379,11 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
                 address = str(ipaddress.ip_address(request.headers.get('X-Forwarded-For', '').split(',')[-1].strip()))
         except ValueError:
             pass
-        account, limited = store.authenticate(username, password, address)
+        account, limited = store.authenticate(username, password, address, otp=value.get('otp') or value.get('twofa_code') or value.get('otp_or_recovery'))
         if limited:
             return jsonify(error='rate_limited', message='کمی بعد دوباره تلاش کنید.'), 429
         if not account:
-            return jsonify(error='invalid_credentials', message='نام کاربری یا رمز درست نیست.'), 401
+            return jsonify(error='invalid_credentials', message='اطلاعات ورود یا کد دومرحله‌ای درست نیست.'), 401
         session.clear()
         session.permanent = True
         session['reseller_identity'] = {'id': account['id'], 'version': account['auth_version']}
@@ -358,7 +394,7 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     @bp.post('/reseller/api/logout')
     def logout():
         session.clear()
-        return jsonify(ok=True)
+        return jsonify(ok=True, signin_url='/login')
 
     @bp.get('/resellers/api/accounts')
     @require_owner
@@ -383,9 +419,10 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         return jsonify(summary=store.summary())
 
     def child_creation_fee():
-        return {'amount': 3000000, 'currency': 'toman', 'one_time': True,
+        formatted = f'{RESELLER_CREATION_FEE_TOMAN:,}'.translate(str.maketrans('0123456789,', '۰۱۲۳۴۵۶۷۸۹٬'))
+        return {'amount': RESELLER_CREATION_FEE_TOMAN, 'currency': 'toman', 'one_time': True,
                 'payment_gateway': False,
-                'message': 'هزینهٔ یک‌بارهٔ ساخت زیرنمایندگی ۳٬۰۰۰٬۰۰۰ تومان است؛ پرداخت آنلاین انجام نمی‌شود.'}
+                'message': f'هزینهٔ یک‌بارهٔ ساخت نمایندگی {formatted} تومان است؛ پرداخت آنلاین انجام نمی‌شود.'}
 
     @bp.get('/reseller/api/accounts')
     @require_reseller
@@ -417,7 +454,7 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
             capacity = min(policy['child_max_peers'], g.reseller['max_peers'])
             account = store.create(value['username'], value['password'], [], capacity,
                 'reseller:' + str(g.reseller['id']), parent_id=g.reseller['id'],
-                creation_fee_toman=3000000, allow_unassigned=True)
+                creation_fee_toman=RESELLER_CREATION_FEE_TOMAN, allow_unassigned=True)
             return provision_account_interface(account, policy, port, address)
 
     @bp.post('/resellers/api/accounts')
@@ -435,7 +472,7 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         with provisioning_lock(current_app.instance_path):
             policy, port, address = prepare_child_interface(interfaces())
             account = store.create(value['username'], value['password'], [], capacity,
-                g.reseller_owner, creation_fee_toman=3000000, allow_unassigned=True)
+                g.reseller_owner, creation_fee_toman=RESELLER_CREATION_FEE_TOMAN, allow_unassigned=True)
             return provision_account_interface(account, policy, port, address)
 
     @bp.post('/resellers/api/accounts/<int:account_id>/approval')
@@ -483,9 +520,17 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         actor = g.reseller_owner if parent_id is None else 'reseller:' + str(parent_id)
         account = store.archive(account_id, actor, parent_id=parent_id)
         manager = current_app.extensions.get('reseller_bots')
+        warning = None
         if manager is not None:
-            manager.store.disable(account_id)
-        return jsonify(ok=True, account=account, resources_preserved=True,
+            try:
+                manager.store.disable(account_id)
+            except Exception:
+                # Access was already revoked durably. The bot command gate
+                # checks this account on every operation even if its credential
+                # database is temporarily unavailable. Never report false failure.
+                warning = 'bot_cleanup_pending'
+                current_app.logger.warning('Archived reseller credential cleanup pending for account %s', account_id)
+        return jsonify(ok=True, account=account, resources_preserved=True, warning=warning,
                        message='دسترسی نماینده حذف شد؛ Peerها و زیرنماینده‌ها حفظ شدند و زیرمجموعه تا بررسی مدیر دسترسی عملیاتی ندارد.')
 
     @bp.delete('/resellers/api/accounts/<int:account_id>')
@@ -720,5 +765,21 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         if kind == 'config':
             result.headers['Content-Disposition'] = f'attachment; filename="peer-{peer_id}.conf"'
         return result
+
+    if native_scheme:
+        from portal_reseller_admin import install_admin_bridge
+        install_admin_bridge(bp, store, {
+            'list': (accounts, '/resellers/api/accounts', 'GET'),
+            'create': (create_account, '/resellers/api/accounts', 'POST'),
+            'approve': (approve, '/resellers/api/accounts/{id}/approval', 'POST'),
+            'revoke': (approve, '/resellers/api/accounts/{id}/approval', 'POST'),
+            'enable': (access, '/resellers/api/accounts/{id}/access', 'POST'),
+            'disable': (access, '/resellers/api/accounts/{id}/access', 'POST'),
+            'renew': (renew, '/resellers/api/accounts/{id}/renew', 'POST'),
+            'setinterface': (assign_account_interface, '/resellers/api/accounts/{id}/interface', 'POST'),
+            'archive': (delete_account, '/resellers/api/accounts/{id}', 'DELETE'),
+            'defaults_get': (interface_defaults, '/resellers/api/interface-defaults', 'GET'),
+            'defaults_set': (interface_defaults, '/resellers/api/interface-defaults', 'PUT'),
+        }, account_details)
 
     return bp

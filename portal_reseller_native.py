@@ -203,7 +203,7 @@ def install_reseller(app, csrf, *, native_admin_lookup=None):
         if len(username) > 64 or len(password) > 1024:
             account, limited = None, False
         else:
-            account, limited = store.authenticate(username, password, request.remote_addr or '')
+            account, limited = store.authenticate(username, password, request.remote_addr or '', otp=request.form.get('twofa_code') or request.form.get('otp') or request.form.get('otp_or_recovery'))
         if not account:
             flash('کمی بعد دوباره تلاش کنید.' if limited else 'Invalid username or password', 'error')
             return render_template('login.html'), 429 if limited else 200

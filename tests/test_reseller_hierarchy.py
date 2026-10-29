@@ -92,7 +92,7 @@ class HierarchyStoreChecks(unittest.TestCase):
         self.assertEqual(account['auth_version'], 3)
         with closing(sqlite3.connect(path)) as db:
             self.assertEqual(db.execute('SELECT password_hash FROM resellers WHERE id=7').fetchone()[0], 'hash-preserved')
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 6)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 7)
 
     def test_concurrent_v2_migration(self):
         path = self.legacy()
@@ -124,18 +124,18 @@ class HierarchyNativeChecks(unittest.TestCase):
         child = result.json['account']
         self.assertEqual(result.json['signin_url'], '/login')
         self.assertEqual(child['parent_id'], parent['id'])
-        self.assertEqual(child['creation_fee_toman'], 3000000)
+        self.assertEqual(child['creation_fee_toman'], 5000000)
         self.assertFalse(child['active'])
         result = self.client.get('/reseller/api/accounts')
         self.assertEqual(len(result.json['accounts']), 1)
-        self.assertEqual(result.json['creation_fee']['amount'], 3000000)
+        self.assertEqual(result.json['creation_fee']['amount'], 5000000)
         self.assertNotIn('password_hash', result.get_data(as_text=True))
         self.assertEqual(self.client.get('/resellers/api/summary').status_code, 401)
         self.client.get('/fixture-owner')
         result = self.client.get('/resellers/api/summary')
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json['summary']['subresellers'], 1)
-        self.assertEqual(result.json['summary']['total_creation_fee_toman'], 3000000)
+        self.assertEqual(result.json['summary']['total_creation_fee_toman'], 5000000)
 
     def test_parent_cannot_forge_ownership_price_or_activation(self):
         self.account()

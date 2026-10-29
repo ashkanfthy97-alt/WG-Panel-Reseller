@@ -14,6 +14,9 @@ class StoreError(ValueError):
     pass
 
 
+RESELLER_CREATION_FEE_TOMAN = 5_000_000
+
+
 class ResellerStore:
     def __init__(self, path):
         self.path = Path(path)
@@ -44,17 +47,17 @@ class ResellerStore:
     @staticmethod
     def _initialize(connection):
         version = connection.execute('PRAGMA user_version').fetchone()[0]
-        if version > 6:
+        if version > 7:
             raise StoreError('نسخهٔ داده‌های نمایندگی جدیدتر از این برنامه است.')
-        if version == 6:
+        if version == 7:
             return
         # Serialise additive upgrades across workers and re-read the version
         # after obtaining the lock. executescript would commit this lock early.
         connection.execute('BEGIN IMMEDIATE')
         version = connection.execute('PRAGMA user_version').fetchone()[0]
-        if version > 6:
+        if version > 7:
             raise StoreError('نسخهٔ داده‌های نمایندگی جدیدتر از این برنامه است.')
-        if version == 6:
+        if version == 7:
             connection.commit()
             return
         statements = (
@@ -134,7 +137,18 @@ class ResellerStore:
         connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS reseller_owner_interface_port_live
             ON reseller_owner_interface_jobs(port) WHERE state IN ('pending','complete','uncertain')""")
         connection.execute('CREATE INDEX IF NOT EXISTS reseller_parent_idx ON resellers(parent_id)')
-        connection.execute('PRAGMA user_version=6')
+        connection.execute('''CREATE TABLE IF NOT EXISTS reseller_security (
+            reseller_id INTEGER PRIMARY KEY REFERENCES resellers(id), secret_enc TEXT NOT NULL DEFAULT '',
+            pending_enc TEXT NOT NULL DEFAULT '', pending_until INTEGER NOT NULL DEFAULT 0,
+            last_counter INTEGER NOT NULL DEFAULT -1, recovery_hashes TEXT NOT NULL DEFAULT '[]')''')
+        connection.execute('''CREATE TABLE IF NOT EXISTS reseller_security_attempts (
+            reseller_id INTEGER NOT NULL REFERENCES resellers(id), identity TEXT NOT NULL, created_at INTEGER NOT NULL)''')
+        connection.execute('CREATE INDEX IF NOT EXISTS reseller_security_attempt_idx ON reseller_security_attempts(reseller_id,created_at)')
+        connection.execute('''CREATE TABLE IF NOT EXISTS reseller_security_resets (
+            reseller_id INTEGER NOT NULL REFERENCES resellers(id), request_id TEXT NOT NULL,
+            actor TEXT NOT NULL, created_at INTEGER NOT NULL,
+            UNIQUE(reseller_id,request_id))''')
+        connection.execute('PRAGMA user_version=7')
         connection.commit()
 
     @staticmethod
@@ -160,6 +174,8 @@ class ResellerStore:
             for item in rows.values():
                 children.setdefault(item['parent_id'], []).append(item['id'])
         result = cls.public(row)
+        security = connection.execute('SELECT secret_enc FROM reseller_security WHERE reseller_id=?', (row['id'],)).fetchone()
+        result['twofa_enabled'] = bool(security and security['secret_enc'])
         parent = rows.get(row['parent_id'])
         result['parent_username'] = parent['username'] if parent else None
         job = cls._interface_job(connection, row)
@@ -488,7 +504,7 @@ class ResellerStore:
                        ('uncertain' if uncertain else 'failed', str(detail)[:500], int(time.time()), job['id']))
             return dict(db.execute('SELECT * FROM reseller_owner_interface_jobs WHERE id=?', (job['id'],)).fetchone())
 
-    def authenticate(self, username, password, identity):
+    def authenticate(self, username, password, identity, otp=None):
         now = int(time.time())
         ip_bucket = 'ip:' + identity
         account_bucket = 'account:' + username.strip().casefold()
@@ -501,6 +517,12 @@ class ResellerStore:
             # Equal-cost password verification when the username does not exist.
             hashed = row['password_hash'] if row else _DUMMY_HASH
             accepted = check_password_hash(hashed, password)
+            if row and not row['deleted_at'] and accepted:
+                from portal_reseller_security import verify_second_factor
+                try:
+                    accepted = verify_second_factor(db, row['id'], otp)
+                except Exception:
+                    accepted = False  # Missing/rotated key fails closed; never grants a session.
             if not row or row['deleted_at'] or not accepted:
                 db.executemany('INSERT INTO reseller_login_failures VALUES(?,?)', ((ip_bucket, now), (account_bucket, now)))
                 return None, False
@@ -535,6 +557,23 @@ class ResellerStore:
                 action = 'enabled' if enabled else 'paused'
             db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)',
                        (reseller_id, action, actor, int(time.time())))
+        return self.get(reseller_id)
+
+    def set_quota(self, reseller_id, max_peers, actor='admin'):
+        if type(max_peers) is not int or not 1 <= max_peers <= 10000:
+            raise StoreError('سقف Peer باید بین ۱ تا ۱۰۰۰۰ باشد.')
+        with self.db(write=True) as db:
+            row = db.execute('SELECT * FROM resellers WHERE id=?', (reseller_id,)).fetchone()
+            if not row or row['deleted_at']:
+                raise StoreError('نماینده پیدا نشد.')
+            if row['parent_id'] is not None:
+                parent = db.execute('SELECT max_peers FROM resellers WHERE id=?', (row['parent_id'],)).fetchone()
+                if not parent or max_peers > parent['max_peers']:
+                    raise StoreError('سقف زیرنماینده از سقف والد بیشتر نمی‌شود.')
+            if db.execute('SELECT 1 FROM resellers WHERE parent_id=? AND deleted_at IS NULL AND max_peers>?', (reseller_id,max_peers)).fetchone():
+                raise StoreError('ابتدا سقف زیرنماینده‌ها را کاهش دهید.')
+            db.execute('UPDATE resellers SET max_peers=? WHERE id=?', (max_peers,reseller_id))
+            db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)', (reseller_id,'quota:'+str(max_peers),actor,int(time.time())))
         return self.get(reseller_id)
 
     def assign_interface(self, reseller_id, iface_id, actor='admin'):

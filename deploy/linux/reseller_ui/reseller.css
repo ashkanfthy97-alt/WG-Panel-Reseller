@@ -102,3 +102,6 @@ button.danger{border:1px solid #f58c98;color:#ffb8c1;background:#442834}
 button.danger:hover{background:#633240}
 @media(max-width:720px){#bulk-peer-form .fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:440px){#bulk-peer-form .fields{grid-template-columns:minmax(0,1fr)}#delete-dialog .actions button{width:100%}}
+
+/* Keep authenticator material isolated and readable inside the Persian panel. */
+#security-form{display:grid;gap:.75rem;max-width:42rem}#security-qr{display:block;max-width:100%;height:auto;margin:1rem auto;background:#fff;padding:.5rem;border-radius:12px}#security-secret,#security-otp,#security-recovery-codes{direction:ltr;text-align:left;font-family:ui-monospace,monospace}#security-recovery-codes{width:100%;box-sizing:border-box;min-height:15rem}#security-enrollment p,#security-recovery p{line-height:1.9;overflow-wrap:anywhere}

@@ -6,11 +6,14 @@
   let language = "fa", csrf = "", nativeCSRF = "", account = null, adminData = null, peerData = null, childrenData = null, botData = null, busy = false;
   const pending = new Map();
   let provisionDefaultsLoaded = false, provisionDefaultsDirty = false, provisionDefaultsData = null;
-  let creditData = null, creditRequest = 0, botStatusTimer = null, botStatusBusy = false;
+  let securityData = null, securityPending = false, securityLoading = false, activationData = null;
+  let creditData = null, creditRequest = 0, botStatusTimer = null, botStatusBusy = false, loggingOut = false;
+  const requestsInFlight = new Set();
   const sections = {
     overview: ["نمای کلی", "Overview", "وضعیت حساب، اعتبار و دسترسی نمایندگی خود را ببینید.", "Review your reseller account, validity and access."],
     services: ["سرویس‌ها و کانفیگ‌ها", "Services and configs", "سرویس بسازید و کانفیگ، لینک کاربر و تمدید مشتری‌ها را از همین بخش مدیریت کنید.", "Create services and manage customer configs, user links and renewals in one place."],
-    children: ["نماینده‌های من", "My subresellers", "زیرنماینده اضافه کنید و Interface اختصاصی آن را راه‌اندازی کنید.", "Add subresellers and provision their dedicated interfaces."],
+    children: ["نماینده‌های من", "My subresellers", "زیرنماینده اضافه کنید و اینترفیس اختصاصی آن را راه‌اندازی کنید.", "Add subresellers and provision their dedicated interfaces."],
+    security: ["امنیت و ورود دومرحله‌ای", "Security and two-factor login", "ورود دومرحله‌ای و کدهای بازیابی حساب خود را مدیریت کنید.", "Manage your account’s two-factor login and recovery codes."],
     bot: ["بات تلگرام", "Telegram bot", "بات اختصاصی نمایندگی خود را متصل و مدیریت کنید.", "Connect and manage your dedicated reseller bot."]
   };
   function sectionFromHash() {
@@ -24,14 +27,14 @@
   function renderSection({focus = false} = {}) {
     if (ownerView) return;
     const enabled = Boolean(account?.active);
-    if (account && !enabled) {
+    if (account && !enabled && selectedSection !== "security") {
       selectedSection = "overview";
     }
     if (account && location.hash !== "#" + selectedSection) history.replaceState(null, "", "#" + selectedSection);
     $("#reseller-navigation").hidden = !account;
     document.querySelectorAll("[data-reseller-section]").forEach(link => {
       const key = link.dataset.resellerSection;
-      link.hidden = !enabled && key !== "overview";
+      link.hidden = !enabled && !["overview", "security"].includes(key);
       const active = key === selectedSection;
       link.classList.toggle("active", active);
       if (active) link.setAttribute("aria-current", "page");
@@ -39,7 +42,7 @@
     });
     document.querySelectorAll("[data-reseller-panel]").forEach(panel => {
       const key = panel.dataset.resellerPanel;
-      panel.hidden = !account || key !== selectedSection || (!enabled && key !== "overview");
+      panel.hidden = !account || key !== selectedSection || (!enabled && !["overview", "security"].includes(key));
     });
     const values = sections[selectedSection];
     $("#page-title").textContent = text(values[0], values[1]);
@@ -48,12 +51,14 @@
     document.title = text(values[0], values[1]) + " · WG Portal";
     if (focus) $("#page-title").focus({preventScroll: true});
     scheduleBotStatus();
+    if (selectedSection === "security" && account && !securityData) loadSecurity();
   }
   function changeSection() {
     if (ownerView) return;
     const previous = selectedSection;
     selectedSection = sectionFromHash();
     if (previous !== selectedSection) {
+      if (previous === "security") clearSecuritySecrets();
       if (previous === "bot") $("#bot-token").value = "";
       if (previous === "services") {
         for (const id of ["#peer-edit-dialog", "#user-link-dialog"]) if ($(id).open) $(id).close();
@@ -91,6 +96,7 @@
     const row = document.createElement("tr"), td = cell(row, message); td.colSpan = columns; table.replaceChildren(row);
   }
   async function api(path, { method = "GET", payload, key, bulkResult = false } = {}) {
+    if (loggingOut && path !== "/reseller/api/logout") throw new Error(text("در حال خروج…", "Signing out…"));
     const headers = new Headers({ Accept: "application/json" });
     if (method !== "GET") {
       if (!csrf) throw new Error(text("وضعیت نشست را تازه کنید.", "Refresh the session first."));
@@ -103,6 +109,7 @@
     if (payload !== undefined) headers.set("Content-Type", "application/json");
     if (key) headers.set("Idempotency-Key", key);
     const controller = new AbortController();
+    requestsInFlight.add(controller);
     const timer = setTimeout(() => controller.abort(), 90000);
     try {
       const response = await fetch(path, { method, headers, ...(path === "/reseller/api/bot" ? {referrerPolicy:"same-origin"} : {}), credentials: "same-origin", cache: "no-store", redirect: "error", signal: controller.signal, ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}) });
@@ -137,13 +144,13 @@
           rate_limited: text("تعداد تلاش‌ها زیاد است؛ کمی بعد دوباره تلاش کنید.", "Too many attempts. Try again later."),
           admin_required: text("با حساب مدیر اصلی وارد شوید.", "Sign in with the native panel owner account."),
           login_required: text("نشست پایان یافته؛ دوباره وارد شوید.", "Your session ended. Sign in again."),
-          interface_required: text("پیش از تأیید پرداخت، یک Interface واقعی برای همین نماینده تعیین کنید.", "Assign a real interface to this reseller before approving payment."),
-          interface_review_required: text("نتیجهٔ ساخت Interface این نماینده نامشخص است. Interface واقعی را بررسی و با گزینهٔ تعیین Interface ثبت کنید؛ ساخت را تکرار نکنید.", "This reseller’s interface creation outcome is uncertain. Inspect the native interface and assign it explicitly; do not repeat creation."),
-          provision_defaults_required: text("مدیر اصلی باید ابتدا پیش‌فرض ساخت Interface نمایندگان را ذخیره کند.", "The owner must save the reseller interface defaults first."),
-          interface_defaults_required: text("مدیر اصلی باید ابتدا پیش‌فرض ساخت Interface نمایندگان را ذخیره کند.", "The owner must save the reseller interface defaults first."),
+          interface_required: text("پیش از تأیید پرداخت، یک اینترفیس واقعی برای همین نماینده تعیین کنید.", "Assign a real interface to this reseller before approving payment."),
+          interface_review_required: text("نتیجهٔ ساخت اینترفیس این نماینده نامشخص است. اینترفیس واقعی را بررسی و با گزینهٔ تعیین اینترفیس ثبت کنید؛ ساخت را تکرار نکنید.", "This reseller’s interface creation outcome is uncertain. Inspect the native interface and assign it explicitly; do not repeat creation."),
+          provision_defaults_required: text("مدیر اصلی باید ابتدا پیش‌فرض ساخت اینترفیس نمایندگان را ذخیره کند.", "The owner must save the reseller interface defaults first."),
+          interface_defaults_required: text("مدیر اصلی باید ابتدا پیش‌فرض ساخت اینترفیس نمایندگان را ذخیره کند.", "The owner must save the reseller interface defaults first."),
           no_available_ports: text("همهٔ پورت‌های ۵۱۸۲۵ تا ۵۲۰۰۰ استفاده یا رزرو شده‌اند؛ با مدیر تماس بگیرید.", "All ports from 51825 to 52000 are occupied or reserved; contact the owner."),
           port_scan_failed: text("بررسی پورت‌های آزاد کامل نشد؛ حساب تازه نسازید و وضعیت را با مدیر بررسی کنید.", "The free-port check did not complete. Check the status with the owner before creating another account."),
-          interface_create_uncertain: text("نتیجهٔ ساخت Interface قطعی نیست؛ حساب را دوباره نسازید و از مدیر بخواهید وضعیت را بررسی کند.", "The interface creation outcome is uncertain. Do not recreate the account; ask the owner to inspect it."),
+          interface_create_uncertain: text("نتیجهٔ ساخت اینترفیس قطعی نیست؛ حساب را دوباره نسازید و از مدیر بخواهید وضعیت را بررسی کند.", "The interface creation outcome is uncertain. Do not recreate the account; ask the owner to inspect it."),
           create_uncertain: text("نتیجهٔ ساخت نامشخص است؛ درخواست تازه نسازید و به مدیر اطلاع دهید.", "The creation outcome is uncertain. Do not submit a new request; contact the owner."),
           native_create_failed: text("ساخت تأیید نشد؛ پیش از تلاش تازه مدیر باید وضعیت هسته را بررسی کند.", "Creation was not confirmed. The owner must inspect the native panel before another attempt."),
           operation_not_repeatable: text("این درخواست نیازمند بررسی مدیر است و قابل تکرار نیست.", "This operation requires owner review and cannot be repeated.")
@@ -158,7 +165,7 @@
         uncertain.code = "timeout"; throw uncertain;
       }
       throw error;
-    } finally { clearTimeout(timer); }
+    } finally { clearTimeout(timer); requestsInFlight.delete(controller); }
   }
   async function receipt(operation, payload) {
     const signature = operation + ":" + JSON.stringify(payload);
@@ -205,7 +212,7 @@
     $("#language-toggle").textContent = language === "fa" ? "EN" : "فارسی";
     $("#language-toggle").setAttribute("aria-label", text("Switch to English", "تغییر زبان به فارسی"));
     $("#page-title").textContent = ownerView ? text("مدیریت نمایندگی‌ها", "Manage resellers") : text("مدیریت سرویس‌های شما", "Manage your services");
-    $("#page-copy").textContent = ownerView ? text("حساب، اعتبار ماهانه و دسترسی نمایندگان را از همین‌جا کنترل کنید.", "Manage reseller accounts, prepaid validity and access here.") : text("فقط سرویس‌ها و Interfaceهای اختصاص‌یافته به حساب شما در این بخش نمایش داده می‌شوند.", "This workspace only shows services and interfaces assigned to your account.");
+    $("#page-copy").textContent = ownerView ? text("حساب، اعتبار ماهانه و دسترسی نمایندگان را از همین‌جا کنترل کنید.", "Manage reseller accounts, prepaid validity and access here.") : text("فقط سرویس‌ها و اینترفیسهای اختصاص‌یافته به حساب شما در این بخش نمایش داده می‌شوند.", "This workspace only shows services and interfaces assigned to your account.");
     $("#workspace-label").textContent = ownerView ? text("مدیریت مادر", "Owner workspace") : text("پنل نمایندگی", "Reseller panel");
     $("#breadcrumb-title").textContent = ownerView ? text("نماینده‌ها", "Resellers") : text("سرویس‌های من", "My services");
     document.title = $("#page-title").textContent + " · WG Portal";
@@ -217,6 +224,7 @@
     if (botData && account?.active) renderBot(botData);
     if (creditData && $("#credit-dialog").open) renderCredit(creditData);
     renderProvisionStatus();
+    if (securityData) renderSecurity();
     renderSection();
   }
   function ownerVisibility(authorized) {
@@ -244,6 +252,8 @@
     $("#account-state").textContent = account.approval_status !== "approved" ? text("در انتظار تأیید", "Awaiting approval") : active ? text("فعال", "Active") : text("متوقف", "Paused");
     $("#account-state").className = "pill" + (active ? "" : " paused");
     const awaiting = account.approval_status !== "approved";
+    const paymentFee = Number.isSafeInteger(account.creation_fee_toman) ? account.creation_fee_toman : activationData?.amount;
+    $("#payment-fee").textContent = Number.isSafeInteger(paymentFee) ? new Intl.NumberFormat(language === "fa" ? "fa-IR" : "en-GB").format(paymentFee) + text(" تومان", " toman") : text("از مدیر اصلی بپرسید.", "Ask the owner.");
     $("#payment-pending-panel").hidden = !awaiting;
     $("#paused-view").hidden = active || awaiting;
     $("#active-view").hidden = !active;
@@ -270,6 +280,7 @@
       const avatar = document.createElement("span"); avatar.className = "account-avatar"; avatar.setAttribute("aria-hidden", "true"); avatar.textContent = Array.from(String(item.username || "?"))[0];
       const name = document.createElement("strong"); name.textContent = item.username;
       identity.append(avatar, name); row.insertCell().append(identity);
+      if (item.twofa_enabled) {const badge=document.createElement("small"); badge.textContent=text("🔐 ورود دومرحله‌ای فعال", "🔐 Two-factor login enabled"); identity.append(badge);}
       const created = document.createElement("small"); created.textContent = "#" + item.id + " · " + date(item.created_at); name.append(created);
       const state = document.createElement("span"); state.className = "pill " + (item.active ? "active" : item.enabled ? "expired" : "suspended");
       state.textContent = item.deleted || item.deleted_at ? text("دسترسی حذف‌شده", "Archived access") : item.approval_status !== "approved" ? text("در انتظار تأیید پرداخت", "Awaiting payment approval") : item.active ? text("فعال", "Active") : item.enabled ? text("اعتبار پایان‌یافته", "Expired") : text("متوقف توسط مدیر", "Suspended by owner");
@@ -289,16 +300,16 @@
       approval.textContent = item.approval_status === "approved" ? text("لغو تأیید", "Revoke approval") : text("تأیید پرداخت و فعال‌سازی", "Approve payment and activate");
       approval.setAttribute("aria-label", approval.textContent + " · " + item.username);
       approval.addEventListener("click", () => action(approval, null, async () => {
-        approval.textContent = text("در حال بررسی و آماده‌سازی Interface…", "Checking and preparing interface…");
+        approval.textContent = text("در حال بررسی و آماده‌سازی اینترفیس…", "Checking and preparing interface…");
         try { await api(`/resellers/api/accounts/${Number(item.id)}/approval`, {method:"POST",payload:{approved:item.approval_status !== "approved",days:30}}); }
         catch (error) { try { await loadAdmin(); } catch { /* Keep the original failure. */ } throw error; }
         await loadAdmin(); notice(text("وضعیت تأیید ذخیره شد.", "Approval status saved."), "success");
       })); actions.append(approval);
-      const assigned = document.createElement("select"); assigned.setAttribute("aria-label", text("Interface اختصاصی نماینده", "Assigned reseller interface"));
-      const missing = document.createElement("option"); missing.value = ""; missing.textContent = text("Interface را تعیین کنید", "Assign an interface"); assigned.append(missing);
+      const assigned = document.createElement("select"); assigned.setAttribute("aria-label", text("اینترفیس اختصاصی نماینده", "Assigned reseller interface"));
+      const missing = document.createElement("option"); missing.value = ""; missing.textContent = text("اینترفیس را تعیین کنید", "Assign an interface"); assigned.append(missing);
       for (const iface of data.interfaces || []) {const option = document.createElement("option"); option.value = iface.id; option.textContent = iface.name; option.selected = (item.interfaces || []).length === 1 && Number(item.interfaces[0]) === Number(iface.id); assigned.append(option);}
-      const assign = document.createElement("button"); assign.type = "button"; assign.className = "secondary"; assign.textContent = text("تعیین Interface", "Assign interface");
-      assign.addEventListener("click", () => action(assign, null, async () => {if (!assigned.value) throw new Error(text("یک Interface انتخاب کنید.", "Choose one interface.")); await api(`/resellers/api/accounts/${Number(item.id)}/interface`, {method:"POST",payload:{iface_id:Number(assigned.value)}}); await loadAdmin();}));
+      const assign = document.createElement("button"); assign.type = "button"; assign.className = "secondary"; assign.textContent = text("تعیین اینترفیس", "Assign interface");
+      assign.addEventListener("click", () => action(assign, null, async () => {if (!assigned.value) throw new Error(text("یک اینترفیس انتخاب کنید.", "Choose one interface.")); await api(`/resellers/api/accounts/${Number(item.id)}/interface`, {method:"POST",payload:{iface_id:Number(assigned.value)}}); await loadAdmin();}));
       actions.append(assigned, assign);
       const days = document.createElement("input"); days.type = "number"; days.min = "1"; days.max = "366"; days.value = "30"; days.setAttribute("aria-label", text("روزهای تمدید برای ", "Renewal days for ") + item.username);
       const renew = document.createElement("button"); renew.type = "button"; renew.textContent = text("تمدید", "Renew");
@@ -379,7 +390,7 @@
     }
     if (!accounts.length) empty(rows, text("هنوز زیرنماینده‌ای ثبت نکرده‌اید.", "You have not created a subreseller yet."), 7);
     $("#add-child").disabled = (account.interfaces || []).length !== 1;
-    $("#child-load-state").textContent = text("فقط نام کاربری و رمز را وارد کنید؛ Interface و پورت آزاد ۵۱۸۲۵ تا ۵۲۰۰۰ خودکار تعیین می‌شوند. همهٔ زیرمجموعه‌ها و هزینهٔ ثبت در پنل مدیر اصلی دیده می‌شوند و تأیید پرداخت با مدیر است.", "Enter only a username and password. The interface and an available port from 51825 to 52000 are assigned automatically. The owner sees every subreseller and approves payment.");
+    $("#child-load-state").textContent = text("فقط نام کاربری و رمز را وارد کنید؛ اینترفیس و پورت آزاد ۵۱۸۲۵ تا ۵۲۰۰۰ خودکار تعیین می‌شوند. همهٔ زیرمجموعه‌ها و هزینهٔ ثبت در پنل مدیر اصلی دیده می‌شوند و تأیید پرداخت با مدیر است.", "Enter only a username and password. The interface and an available port from 51825 to 52000 are assigned automatically. The owner sees every subreseller and approves payment.");
     $("#child-load-state").removeAttribute("data-fa"); $("#child-load-state").removeAttribute("data-en");
   }
   function closeQR() {
@@ -413,8 +424,9 @@
     const target = {...deletion};
     action(event.currentTarget, "#delete-result", async () => {
       const path = target.kind === "peer" ? `/reseller/api/peers/${target.id}` : `${target.owner ? "/resellers" : "/reseller"}/api/accounts/${target.id}`;
+      let deletionResult;
       try {
-        await api(path, {method:"DELETE", payload:{confirm:true}});
+        deletionResult = await api(path, {method:"DELETE", payload:{confirm:true}});
       } catch (error) {
         if (!error.status || error.status >= 500 || /uncertain|timeout/.test(error.code || "")) {
           uncertainDeletions.add(target.kind + ":" + target.id);
@@ -428,7 +440,7 @@
       $("#delete-dialog").close();
       try { if (target.kind === "peer") { await loadPeers(); if ($("#credit-dialog").open) await loadCredit(); } else if (target.owner) await loadAdmin(); else await loadChildren(); }
       catch { notice(text("حذف ثبت شد؛ فهرست تازه دریافت نشد. فقط صفحه را تازه کنید.", "Deletion was recorded, but the list could not refresh. Refresh the page only.")); return; }
-      notice(text("حذف ثبت شد.", "Deletion recorded."), "success");
+      notice(deletionResult.warning ? text("دسترسی حساب بسته شد؛ پاک‌سازی اطلاعات بات نیازمند بررسی مدیر است. مشتری‌ها و زیرمجموعه‌ها حفظ شدند.", "Account access is closed; the owner must review bot credential cleanup. Customers and descendants were preserved.") : text("حذف ثبت شد.", "Deletion recorded."), deletionResult.warning ? "warning" : "success");
     }).finally(() => { if ($("#delete-confirm").dataset.uncertain) $("#delete-confirm").disabled = true; });
   });
   function renderPeers(data) {
@@ -475,7 +487,7 @@
     if (!provisionDefaultsData) return;
     const configured = provisionDefaultsData.configured === true;
     $("#provision-defaults-state").dataset.configured = String(configured);
-    $("#provision-defaults-state").textContent = configured ? text("الگوی ساخت ذخیره شده است؛ هر نمایندهٔ جدید Interface خودکار می‌گیرد.", "Creation defaults are saved. Every new reseller receives an interface automatically.") : text("هنوز الگو ذخیره نشده است؛ پیش از ثبت نماینده، پیش‌فرض‌ها را تنظیم و ذخیره کنید.", "No template has been saved. Configure and save defaults before registering a reseller.");
+    $("#provision-defaults-state").textContent = configured ? text("الگوی ساخت ذخیره شده است؛ هر نمایندهٔ جدید اینترفیس خودکار می‌گیرد.", "Creation defaults are saved. Every new reseller receives an interface automatically.") : text("هنوز الگو ذخیره نشده است؛ پیش از ثبت نماینده، پیش‌فرض‌ها را تنظیم و ذخیره کنید.", "No template has been saved. Configure and save defaults before registering a reseller.");
   }
   function fillProvisionDefaults(data) {
     if (!data || !data.defaults || typeof data.defaults !== "object") throw new Error(text("الگوی ساخت معتبر دریافت نشد.", "The creation template response is invalid."));
@@ -571,11 +583,11 @@
   }
   function scheduleBotStatus() {
     stopBotStatus();
-    if (ownerView || !account?.active || selectedSection !== "bot" || document.hidden || botStatusBusy) return;
+    if (loggingOut || ownerView || !account?.active || selectedSection !== "bot" || document.hidden || botStatusBusy) return;
     botStatusTimer = setTimeout(() => {botStatusTimer = null; loadBot();}, 10000);
   }
   async function loadBot() {
-    if (!account?.active || ownerView || botStatusBusy) return;
+    if (loggingOut || !account?.active || ownerView || botStatusBusy) return;
     botStatusBusy = true;
     try {renderBot(await api("/reseller/api/bot"));}
     catch (error) {$("#bot-status").textContent = error.message || text("دریافت وضعیت بات ناموفق بود؛ کمی بعد دوباره بررسی می‌شود.", "Bot status could not be loaded; it will be checked again shortly.");}
@@ -595,9 +607,10 @@
     }
   }
   async function load() {
+    if (loggingOut) return;
     $("#loading").hidden = false;
     try {
-      const result = await api("/reseller/api/session"); account = result.account || null;
+      const result = await api("/reseller/api/session"); account = result.account || null; activationData = result.activation || null;
       if (ownerView) await loadAdmin();
       else { renderAccount(); if (account?.active) await Promise.all([loadPeers(), loadChildren(), loadBot()]); }
     } catch (error) {
@@ -606,6 +619,58 @@
       notice(error.message, "error");
     } finally { $("#loading").hidden = true; }
   }
+  function clearSecuritySecrets() {
+    securityPending = false;
+    for (const id of ["#security-password", "#security-otp", "#security-secret", "#security-recovery-codes"]) $(id).value = "";
+    $("#security-qr").removeAttribute("src"); $("#security-enrollment").hidden = true; $("#security-recovery").hidden = true;
+    $("#security-enable").disabled = true;
+  }
+  function renderSecurity() {
+    if (!securityData) return;
+    $("#security-status").textContent = securityData.enabled ? text("ورود دومرحله‌ای فعال است؛ کد بازیابی باقی‌مانده: ", "Two-factor login is enabled; recovery codes remaining: ") + String(securityData.recovery_codes_remaining ?? 0) : text("ورود دومرحله‌ای غیرفعال است.", "Two-factor login is disabled.");
+    $("#security-setup").hidden = Boolean(securityData.enabled);
+    $("#security-disable").hidden = !securityData.enabled;
+    $("#security-enable").hidden = Boolean(securityData.enabled);
+  }
+  async function loadSecurity() {
+    if (!account || ownerView || loggingOut || securityLoading) return;
+    securityLoading = true;
+    try { securityData = await api("/reseller/api/security"); renderSecurity(); }
+    catch (error) { formResult("#security-result", error.message, true); }
+    finally { securityLoading = false; }
+  }
+  function securityPayload() {
+    return {password:$("#security-password").value, otp:$("#security-otp").value.trim().replace(/[۰-۹٠-٩]/g, value => String("۰۱۲۳۴۵۶۷۸۹".includes(value) ? "۰۱۲۳۴۵۶۷۸۹".indexOf(value) : "٠١٢٣٤٥٦٧٨٩".indexOf(value)))};
+  }
+  $("#security-refresh").addEventListener("click", () => loadSecurity());
+  $("#security-setup").addEventListener("click", event => action(event.currentTarget, "#security-result", async () => {
+    const password = $("#security-password").value;
+    if (!password) throw new Error(text("رمز فعلی حساب را وارد کنید.", "Enter your current password."));
+    const result = await api("/reseller/api/security/setup", {method:"POST", payload:{password}});
+    clearSecuritySecrets(); $("#security-password").value = password;
+    $("#security-secret").value = String(result.secret || "");
+    const image = String(result.qr_data_uri || "");
+    if (image.startsWith("data:image/png;base64,")) $("#security-qr").src = image;
+    $("#security-qr").hidden = !image.startsWith("data:image/png;base64,");
+    securityPending = true; $("#security-enrollment").hidden = false; $("#security-enable").disabled = false;
+    formResult("#security-result", text("کلید را در برنامهٔ احراز هویت ثبت و با کد همان برنامه تأیید کنید.", "Add the key to your authenticator and confirm with its code."));
+  }));
+  $("#security-form").addEventListener("submit", event => {
+    event.preventDefault(); if (!securityPending) return;
+    action(event.submitter || $("#security-enable"), "#security-result", async () => {
+      const result = await api("/reseller/api/security/enable", {method:"POST", payload:securityPayload()});
+      clearSecuritySecrets();
+      securityData = {enabled:true, recovery_codes_remaining:(result.recovery_codes || []).length}; renderSecurity();
+      $("#security-recovery-codes").value = (result.recovery_codes || []).join("\n"); $("#security-recovery").hidden = false;
+      formResult("#security-result", text("ورود دومرحله‌ای فعال شد. کدهای بازیابی را ذخیره کنید؛ برای ورود بعدی کد تازهٔ برنامه را بگیرید.", "Two-factor login enabled. Save recovery codes now; use a fresh authenticator code for your next sign-in."));
+    });
+  });
+  $("#security-disable").addEventListener("click", event => action(event.currentTarget, "#security-result", async () => {
+    await api("/reseller/api/security/disable", {method:"POST", payload:securityPayload()});
+    clearSecuritySecrets(); securityData = {enabled:false,recovery_codes_remaining:0}; renderSecurity();
+    formResult("#security-result", text("ورود دومرحله‌ای غیرفعال شد.", "Two-factor login disabled."));
+  }));
+  $("#security-recovery-hide").addEventListener("click", () => {$("#security-recovery-codes").value = ""; $("#security-recovery").hidden = true;});
   $("#provision-defaults-form").addEventListener("input", () => {provisionDefaultsDirty = true;});
   $("#provision-defaults-refresh").addEventListener("click", () => action($("#provision-defaults-refresh"), "#provision-defaults-result", () => loadProvisionDefaults({force:true})));
   $("#provision-defaults-form").addEventListener("submit", event => {
@@ -619,7 +684,7 @@
     if (["mtu", "persistent_keepalive", "subnet_prefix", "child_max_peers"].some(key => !Number.isSafeInteger(payload[key]))) return formResult("#provision-defaults-result", text("مقدارهای عددی را بررسی کنید.", "Check the numeric values."), true);
     action(event.submitter || $("#provision-defaults-save"), "#provision-defaults-result", async () => {
       fillProvisionDefaults(await api("/resellers/api/interface-defaults", {method:"PUT",payload}));
-      formResult("#provision-defaults-result", text("پیش‌فرض‌ها ذخیره شدند؛ Interface همهٔ نمایندگان جدید، از جمله حساب‌های ساخته‌شده توسط مدیر، از این الگو ساخته می‌شود.", "Defaults saved. All new reseller interfaces, including owner-created accounts, use this template."));
+      formResult("#provision-defaults-result", text("پیش‌فرض‌ها ذخیره شدند؛ اینترفیس همهٔ نمایندگان جدید، از جمله حساب‌های ساخته‌شده توسط مدیر، از این الگو ساخته می‌شود.", "Defaults saved. All new reseller interfaces, including owner-created accounts, use this template."));
     });
   });
   $("#add-reseller").addEventListener("click", () => {
@@ -644,24 +709,45 @@
   $("#credit-close").addEventListener("click", () => $("#credit-dialog").close());
   $("#credit-dialog").addEventListener("close", () => {creditRequest += 1; $("#reseller-refresh").focus();});
   $("#account-refresh").addEventListener("click", () => action($("#account-refresh"), "#credit-result", async () => {await load(); await loadCredit();}));
-  $("#logout").addEventListener("click", () => action($("#logout"), null, async () => {
-    await api("/reseller/api/logout", { method: "POST", payload: {} });
-    stopBotStatus(); creditRequest += 1; creditData = null; if ($("#credit-dialog").open) $("#credit-dialog").close(); csrf = ""; nativeCSRF = ""; account = null; peerData = null; childrenData = null; closeQR(); $("#peer-rows").replaceChildren(); $("#child-rows").replaceChildren(); await load();
-  }));
+  $("#logout").addEventListener("click", async () => {
+    // Logout must remain available while another panel request is in flight.
+    if (loggingOut) return;
+    loggingOut = true;
+    const button = $("#logout");
+    button.disabled = true; button.setAttribute("aria-busy", "true");
+    stopBotStatus(); creditRequest += 1;
+    for (const controller of requestsInFlight) controller.abort();
+    try {
+      await api("/reseller/api/logout", {method:"POST", payload:{}});
+      csrf = ""; nativeCSRF = ""; account = null; adminData = null;
+      peerData = null; childrenData = null; botData = null; creditData = null;
+      pending.clear(); clearSecuritySecrets(); securityData = null; closeQR();
+      for (const id of ["#peer-rows", "#child-rows", "#account-rows"]) $(id).replaceChildren();
+      for (const input of document.querySelectorAll('input[type="password"]')) input.value = "";
+      for (const dialog of document.querySelectorAll("dialog[open]")) dialog.close();
+      $("#active-view").hidden = true; $("#reseller-navigation").hidden = true;
+      location.replace("/login");
+    } catch (error) {
+      loggingOut = false;
+      notice(text("خروج انجام نشد؛ اتصال را بررسی کنید و دوباره خروج را بزنید.", "Sign-out failed. Check your connection and try again."), "error");
+      scheduleBotStatus();
+      button.disabled = false; button.removeAttribute("aria-busy");
+    }
+  });
   $("#account-form").addEventListener("submit", (event) => {
     event.preventDefault();
     if (event.currentTarget.dataset.locked) return formResult("#account-result", text("ساخت قبلی نیازمند بررسی است؛ فهرست نمایندگان را بررسی کنید و حساب را دوباره نسازید.", "The previous creation needs review. Check the reseller list and do not recreate the account."), true);
     const payload = {username:$("#account-username").value.trim(), password:$("#account-password").value, max_peers:Number($("#account-limit").value)};
     if (!Number.isSafeInteger(payload.max_peers) || payload.max_peers < 1 || payload.max_peers > 10000) return formResult("#account-result", text("سقف Peer باید عدد صحیح بین ۱ تا ۱۰۰۰۰ باشد.", "The Peer limit must be an integer from 1 to 10000."), true);
     action(event.submitter || event.currentTarget.querySelector('[type="submit"]'), "#account-result", async () => {
-      formResult("#account-result", text("در حال ساخت خودکار حساب و Interface اختصاصی…", "Creating the account and dedicated interface automatically…"));
+      formResult("#account-result", text("در حال ساخت خودکار حساب و اینترفیس اختصاصی…", "Creating the account and dedicated interface automatically…"));
       let created;
       try { created = await api("/resellers/api/accounts", {method:"POST", payload}); }
       catch (error) {
         if (!error.status || error.data?.account || ["interface_create_uncertain", "create_uncertain", "timeout"].includes(error.code)) {
           $("#account-form").dataset.locked = "true";
           $("#account-password").value = "";
-          error.message = text("نتیجهٔ ساخت نیازمند بررسی است؛ فهرست نمایندگان و Interface حساب را بررسی کنید. حساب را دوباره نسازید؛ از عملیات همان ردیف برای بررسی یا بازیابی استفاده کنید.", "Creation needs review. Inspect the reseller list and its interface. Do not recreate the account; use that account’s row to inspect or recover it.");
+          error.message = text("نتیجهٔ ساخت نیازمند بررسی است؛ فهرست نمایندگان و اینترفیس حساب را بررسی کنید. حساب را دوباره نسازید؛ از عملیات همان ردیف برای بررسی یا بازیابی استفاده کنید.", "Creation needs review. Inspect the reseller list and its interface. Do not recreate the account; use that account’s row to inspect or recover it.");
         }
         try { await loadAdmin(); } catch { /* Preserve the original creation outcome. */ }
         throw error;
@@ -670,7 +756,7 @@
       $("#account-dialog").close();
       $("#account-form").reset();
       showSignin(created.signin_url || "/reseller");
-      notice(text("حساب و Interface اختصاصی خودکار ساخته شدند. فعال‌سازی به پرداخت ۳٬۰۰۰٬۰۰۰ تومان و تأیید شما نیاز دارد.", "The account and dedicated interface were created automatically. Activation requires payment of 3,000,000 toman and your approval."), "success");
+      notice(text("حساب و اینترفیس اختصاصی خودکار ساخته شدند. فعال‌سازی به پرداخت ۵٬۰۰۰٬۰۰۰ تومان و تأیید شما نیاز دارد.", "The account and dedicated interface were created automatically. Activation requires payment of 5,000,000 toman and your approval."), "success");
       try { await loadAdmin(); } catch { notice(text("حساب ساخته شد، اما فهرست تازه دریافت نشد. وضعیت را تازه کنید.", "The account was created, but the list could not be refreshed. Refresh status.")); }
     });
   });
@@ -693,7 +779,7 @@
     if (event.currentTarget.dataset.locked) return formResult("#child-result", text("درخواست قبلی نیازمند بررسی مدیر است؛ حساب را دوباره نسازید.", "The previous request needs owner review. Do not recreate the account."), true);
     const payload = {username:$("#child-username").value.trim(),password:$("#child-password").value};
     action(event.submitter || event.currentTarget.querySelector('[type="submit"]'), "#child-result", async () => {
-      formResult("#child-result", text("در حال ساخت خودکار حساب و Interface اختصاصی…", "Creating the account and dedicated interface automatically…"));
+      formResult("#child-result", text("در حال ساخت خودکار حساب و اینترفیس اختصاصی…", "Creating the account and dedicated interface automatically…"));
       let created;
       try { created = await api("/reseller/api/accounts", {method:"POST", payload}); }
       catch (error) {
@@ -706,7 +792,7 @@
       }
       $("#child-password").value = ""; $("#child-dialog").close(); $("#child-form").reset();
       showSignin(created.signin_url || "/reseller");
-      notice(text("زیرنماینده و Interface اختصاصی آن خودکار ساخته شدند و در پنل مدیر دیده می‌شوند. لینک ورود را برای پرداخت و تأیید مدیر تحویل دهید.", "The subreseller and dedicated interface were created automatically and are visible to the owner. Share the sign-in link for payment and approval."), "success");
+      notice(text("زیرنماینده و اینترفیس اختصاصی آن خودکار ساخته شدند و در پنل مدیر دیده می‌شوند. لینک ورود را برای پرداخت و تأیید مدیر تحویل دهید.", "The subreseller and dedicated interface were created automatically and are visible to the owner. Share the sign-in link for payment and approval."), "success");
       try { await loadChildren(); } catch { notice(text("حساب ثبت شد، اما فهرست تازه دریافت نشد. فقط وضعیت را تازه کنید؛ حساب را دوباره نسازید.", "The account was created, but the list could not be refreshed. Refresh status only; do not create it again.")); }
     });
   });

@@ -163,7 +163,7 @@ class OwnerAutomaticInterfaceChecks(unittest.TestCase):
         self.assertTrue(migrated.get(parent['id'])['active'])
         self.assertEqual(migrated.ownership(parent['id']), {71: 'M' * 43 + '='})
         with migrated.db() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 6)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 7)
             self.assertEqual(db.execute('SELECT password_hash FROM resellers WHERE id=?', (parent['id'],)).fetchone()[0], password_hash)
             self.assertEqual([dict(row) for row in db.execute('SELECT * FROM reseller_interface_jobs ORDER BY id')], old_jobs)
             self.assertEqual([dict(row) for row in db.execute('SELECT * FROM reseller_operations ORDER BY id')], old_operations)

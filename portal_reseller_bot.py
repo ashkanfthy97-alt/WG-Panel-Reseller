@@ -25,7 +25,7 @@ import requests
 from werkzeug.test import Client
 from werkzeug.wrappers import Response
 
-from deploy.linux.reseller_store import ResellerStore
+from deploy.linux.reseller_store import ResellerStore, RESELLER_CREATION_FEE_TOMAN
 from telegram_peer_cards import safe_peer_name, peer_card_caption, bundle_keyboard
 
 
@@ -459,7 +459,9 @@ class BotManager:
                     self.remember(update_key, int(result['id']))
                     return self.bundle(row, int(result['id']))
                 if action == 'child' and code in {200, 201}:
-                    answer = ('messages', [{'text': 'ثبت شد؛ فعال‌سازی پس از تأیید مدیر و پرداخت ۳٬۰۰۰٬۰۰۰ تومان.\n'
+                    fee = (result.get('account') or {}).get('creation_fee_toman', RESELLER_CREATION_FEE_TOMAN)
+                    formatted_fee = f'{fee:,}'.translate(str.maketrans('0123456789,', '۰۱۲۳۴۵۶۷۸۹٬'))
+                    answer = ('messages', [{'text': f'ثبت شد؛ فعال‌سازی پس از تأیید مدیر و پرداخت {formatted_fee} تومان.\n'
                         'برای دریافت شماره کارت: @AshkanfathiOfficial\nRegistered; payment and administrator approval required.',
                         'reply_markup': self.menu()}])
                 elif action == 'bulk' and any(name in result for name in ('created', 'failed', 'uncertain')):

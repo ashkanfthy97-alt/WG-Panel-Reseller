@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="{{ 'en' if request.cookies.get('wgportal-language') == 'en' else 'fa' }}" dir="{{ 'ltr' if request.cookies.get('wgportal-language') == 'en' else 'rtl' }}">
-  <head>
-    <script src="{{ url_for('static', filename='js/portal-locale.js') }}?v=hierarchy1"></script>
+  <head><script src="/static/js/portal-translations-fa.js?v=20261029"></script><script src="/static/js/portal-locale.js?v=20261029"></script>
+    
     <script src="{{ url_for('static', filename='js/auth-appearance.js') }}"></script>
     <meta charset="utf-8" />
-    <title>WG Portal — Login</title>
+    <title data-portal-ui>WG Portal — Login</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
 
@@ -340,7 +340,7 @@
         </div>
 
         <header class="auth-header">
-          <h2>Welcome back</h2>
+          <h2 data-portal-ui>Welcome back</h2>
           <div class="muted">Sign in to your WG Portal</div>
         </header>
 
@@ -363,7 +363,7 @@
 
           <div class="form-grid">
             <div class="form-group">
-              <label for="username">Username</label>
+              <label for="username" data-portal-ui>Username</label>
               <input
                 class="input"
                 id="username"
@@ -376,7 +376,7 @@
             </div>
 
             <div class="form-group">
-              <label for="password">Password</label>
+              <label for="password" data-portal-ui>Password</label>
               <div class="field has-icon">
                 <input
                   class="input"
@@ -393,7 +393,7 @@
                   class="pwd-toggle"
                   aria-label="Show password"
                   aria-pressed="false"
-                >
+                 data-portal-ui>
                   <svg
                     class="eye"
                     viewBox="0 0 24 24"
@@ -438,27 +438,27 @@
             </div>
 
             <div class="form-group">
-              <label for="twofa_code">Two-factor code (optional)</label>
+              <label for="twofa_code" data-portal-ui>Authenticator or recovery code (if enabled)</label>
               <input
                 class="input"
                 id="twofa_code"
                 name="twofa_code"
                 type="text"
-                inputmode="numeric"
-                pattern="[0-9]*"
-                maxlength="8"
-                placeholder="Enter your 6-digit code"
+                inputmode="text"
+                autocomplete="one-time-code"
+                maxlength="128"
+                placeholder="Enter authenticator or recovery code"
               />
               <div class="hint">
-                If 2FA is enabled on your account, enter your current code.
+                If two-factor login is enabled, enter a fresh authenticator code or one recovery code.
               </div>
             </div>
 
             <div class="row-actions">
               <span class="hint"
-                >You can use a password manager; paste is allowed.</span
+                 data-portal-ui>You can use a password manager; paste is allowed.</span
               >
-              <button type="submit" class="btn" id="submit-btn">Sign in</button>
+              <button type="submit" class="btn" id="submit-btn" data-portal-ui>Sign in</button>
             </div>
           </div>
         </form>

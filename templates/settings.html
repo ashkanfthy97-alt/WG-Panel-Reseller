@@ -25,33 +25,33 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 {% endblock %} {% block content %}
 
 <header class="modern-page-heading">
-  <span class="modern-only modern-eyebrow">WORKSPACE PREFERENCES</span>
+  <span class="modern-only modern-eyebrow" data-portal-ui>WORKSPACE PREFERENCES</span>
   <div class="page-title">
     <i class="fa-solid fa-gear" aria-hidden="true"></i> Settings
   </div>
-  <p class="modern-only modern-description">
+  <p class="modern-only modern-description" data-portal-ui>
     Configure your panel, delivery channels and administrator access.
   </p>
 </header>
 
 <div class="ws-settings-layout">
   <div class="tabs" id="set-tabs" style="margin-bottom: 10px">
-    <button class="tab active" data-tab="panel">
+    <button class="tab active" data-tab="panel" data-portal-ui>
       <i class="fa-solid fa-lock"></i> Panel
     </button>
-    <button class="tab" data-tab="security">
+    <button class="tab" data-tab="security" data-portal-ui>
       <i class="fa-solid fa-shield-halved"></i> Security
     </button>
-    <button class="tab" data-tab="iface">
+    <button class="tab" data-tab="iface" data-portal-ui>
       <i class="fa-solid fa-network-wired"></i> Interface
     </button>
-    <button class="tab" data-tab="traffic">
+    <button class="tab" data-tab="traffic" data-portal-ui>
       <i class="fa-solid fa-route"></i> Traffic
     </button>
-    <button class="tab" data-tab="telegram">
+    <button class="tab" data-tab="telegram" data-portal-ui>
       <i class="fa-brands fa-telegram"></i> Telegram
     </button>
-    <button class="tab" data-tab="admin">
+    <button class="tab" data-tab="admin" data-portal-ui>
       <i class="fa-solid fa-user-shield"></i> Admin
     </button>
   </div>
@@ -70,7 +70,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           aria-selected="true"
           aria-controls="subpanel-tls"
           data-sub="tls"
-        >
+         data-portal-ui>
           <i class="fa-solid fa-lock"></i> TLS
         </button>
         <button
@@ -79,7 +79,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           aria-selected="false"
           aria-controls="subpanel-runtime"
           data-sub="runtime"
-        >
+         data-portal-ui>
           <i class="fa-solid fa-gauge-simple-high"></i> Runtime
         </button>
         <button
@@ -88,7 +88,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           aria-selected="false"
           aria-controls="subpanel-regional"
           data-sub="regional"
-        >
+         data-portal-ui>
           <i class="fa-solid fa-clock"></i> Regional
         </button>
       </div>
@@ -103,8 +103,8 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         <div class="cards">
           <div class="card full">
             <div class="card-header">
-              <i class="fa-solid fa-lock"></i><span>Panel Security (TLS)</span>
-              <span class="card-value">
+              <i class="fa-solid fa-lock"></i><span data-portal-ui>Panel Security (TLS)</span>
+              <span class="card-value" data-portal-ui>
                 <span id="cur-scheme" class="badge gray" title="Current scheme"
                   >—</span
                 >
@@ -115,14 +115,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               <div class="section-head inline">
                 <div class="head-text">
                   <div class="h5">
-                    <label class="switch sm">
+                    <label class="switch sm" data-portal-ui>
                       <input type="checkbox" id="tls-enabled" />
                       <span class="slider"></span>
                     </label>
                     Enable TLS (HTTPS)
                   </div>
                   <div class="small-text">
-                    When enabled, the panel prefers your <b>Domain</b> and uses
+                    When enabled, the panel prefers your <b data-portal-ui>Domain</b> and uses
                     HTTPS. Suggested peer endpoints will also use it.
                   </div>
                 </div>
@@ -131,7 +131,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               <div id="tls-advanced" class="fade-wrap" style="display: none">
                 <div class="form-group">
                   <label for="domain"
-                    >Domain (e.g., <code>panel.azumi.com</code>)</label
+                     data-portal-ui>Domain (e.g., <code>panel.azumi.com</code>)</label
                   >
                   <input
                     class="input"
@@ -146,7 +146,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
                 <div class="form-grid-2">
                   <div class="form-group">
-                    <label for="https-port">HTTPS port</label>
+                    <label for="https-port" data-portal-ui>HTTPS port</label>
                     <input
                       class="input"
                       id="https-port"
@@ -158,7 +158,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   </div>
 
                   <div class="form-group">
-                    <label for="cert-path">TLS cert path</label>
+                    <label for="cert-path" data-portal-ui>TLS cert path</label>
                     <input
                       class="input"
                       id="cert-path"
@@ -167,7 +167,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   </div>
 
                   <div class="form-group">
-                    <label for="key-path">TLS key path</label>
+                    <label for="key-path" data-portal-ui>TLS key path</label>
                     <input
                       class="input"
                       id="key-path"
@@ -186,7 +186,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="section-head inline">
                   <div class="head-text">
                     <div class="h5">
-                      <label class="switch sm">
+                      <label class="switch sm" data-portal-ui>
                         <input type="checkbox" id="force-https" />
                         <span class="slider"></span>
                       </label>
@@ -198,7 +198,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="section-head inline">
                   <div class="head-text">
                     <div class="h5">
-                      <label class="switch sm">
+                      <label class="switch sm" data-portal-ui>
                         <input type="checkbox" id="hsts" />
                         <span class="slider"></span>
                       </label>
@@ -212,7 +212,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 </div>
               </div>
 
-              <button class="btn" id="save-panel">
+              <button class="btn" id="save-panel" data-portal-ui>
                 <i class="fa-solid fa-check"></i> Save
               </button>
             </div>
@@ -231,14 +231,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         <div class="cards">
           <div class="card full">
             <div class="card-header">
-              <i class="fa-solid fa-gauge-simple-high"></i><span>Runtime</span>
-              <span class="card-value rt-actions">
-                <span class="badge gray">Restart required after save</span>
+              <i class="fa-solid fa-gauge-simple-high"></i><span data-portal-ui>Runtime</span>
+              <span class="card-value rt-actions" data-portal-ui>
+                <span class="badge gray" data-portal-ui>Restart required after save</span>
                 <span
                   id="rt-managed-pill"
                   class="badge black"
                   style="display: none"
-                  >Managed in Panel (HTTPS)</span
+                   data-portal-ui>Managed in Panel (HTTPS)</span
                 >
 
                 <button
@@ -246,7 +246,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   class="btn sm"
                   type="button"
                   style="margin-left: 4px"
-                >
+                 data-portal-ui>
                   <i class="fa-solid fa-rotate-right"></i>
                   Restart now
                 </button>
@@ -257,9 +257,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   aria-haspopup="true"
                   aria-expanded="false"
                   title="Show restart command"
-                >
+                 data-portal-ui>
                   <i class="fa-solid fa-circle-info"></i>
-                  <span class="hint-text">How do I restart?</span>
+                  <span class="hint-text" data-portal-ui>How do I restart?</span>
                 </button>
                 <div
                   id="rt-pop"
@@ -271,7 +271,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     <i class="fa-solid fa-terminal"></i> Restart the panel
                     service
                   </div>
-                  <p class="muted" style="margin: 6px 0 10px">
+                  <p class="muted" style="margin: 6px 0 10px" data-portal-ui>
                     Run this after saving runtime settings:
                   </p>
                   <div class="cmd-row">
@@ -281,7 +281,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       class="btn sm"
                       type="button"
                       title="Copy"
-                    >
+                     data-portal-ui>
                       <i class="fa-regular fa-copy"></i>
                     </button>
                   </div>
@@ -292,7 +292,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div class="card-body">
               <div class="rt-grid">
                 <div class="form-group">
-                  <label>Bind (host:port)</label>
+                  <label data-portal-ui>Bind (host:port)</label>
                   <input
                     id="rt2-bind"
                     class="input"
@@ -304,7 +304,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 </div>
 
                 <div class="form-group">
-                  <label>Threads (per worker)</label>
+                  <label data-portal-ui>Threads (per worker)</label>
                   <input
                     id="rt-threads"
                     type="number"
@@ -316,7 +316,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 </div>
 
                 <div class="form-group">
-                  <label>PORT</label>
+                  <label data-portal-ui>PORT</label>
                   <input
                     id="rt2-port"
                     type="number"
@@ -328,7 +328,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 </div>
 
                 <div class="form-group">
-                  <label>Timeout (s)</label>
+                  <label data-portal-ui>Timeout (s)</label>
                   <input
                     id="rt-timeout"
                     type="number"
@@ -340,7 +340,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 </div>
 
                 <div class="form-group">
-                  <label>Workers</label>
+                  <label data-portal-ui>Workers</label>
                   <input
                     id="rt-workers"
                     type="number"
@@ -352,7 +352,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 </div>
 
                 <div class="form-group">
-                  <label>Graceful Timeout (s)</label>
+                  <label data-portal-ui>Graceful Timeout (s)</label>
                   <input
                     id="rt-gtimeout"
                     type="number"
@@ -366,33 +366,33 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="form-group rt-empty"></div>
 
                 <div class="form-group">
-                  <label>Log level</label>
+                  <label data-portal-ui>Log level</label>
                   <select id="rt-loglevel" class="input">
-                    <option>debug</option>
-                    <option selected>info</option>
-                    <option>warning</option>
-                    <option>error</option>
-                    <option>critical</option>
+                    <option data-portal-ui>debug</option>
+                    <option selected data-portal-ui>info</option>
+                    <option data-portal-ui>warning</option>
+                    <option data-portal-ui>error</option>
+                    <option data-portal-ui>critical</option>
                   </select>
                 </div>
               </div>
 
               <div class="form-group">
-                <label>Application</label>
+                <label data-portal-ui>Application</label>
                 <div class="chips">
                   <span class="chip"
-                    >Uptime: <span id="rt-uptime">—</span></span
+                     data-portal-ui>Uptime: <span id="rt-uptime">—</span></span
                   >
-                  <span class="chip">Mode: <span id="rt-mode">—</span></span>
+                  <span class="chip" data-portal-ui>Mode: <span id="rt-mode">—</span></span>
                 </div>
               </div>
 
               <div class="savebar">
-                <button class="btn" id="save-runtime">
+                <button class="btn" id="save-runtime" data-portal-ui>
                   <i class="fa-solid fa-floppy-disk"></i> Save runtime
                 </button>
                 <span class="muted"
-                  >Applies on next restart of the panel service.</span
+                   data-portal-ui>Applies on next restart of the panel service.</span
                 >
               </div>
             </div>
@@ -411,28 +411,28 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         <div class="cards">
           <div class="card full regional-card">
             <div class="card-header regional-card__head">
-              <span class="regional-card__title">
+              <span class="regional-card__title" data-portal-ui>
                 <span class="regional-card__icon"
-                  ><i class="fa-solid fa-earth-americas"></i
+                   data-portal-ui><i class="fa-solid fa-earth-americas"></i
                 ></span>
-                <span>
-                  <strong>Regional time</strong>
+                <span data-portal-ui>
+                  <strong data-portal-ui>Regional time</strong>
                   <small
-                    >One timezone for schedules and every human-facing
+                     data-portal-ui>One timezone for schedules and every human-facing
                     timestamp.</small
                   >
                 </span>
               </span>
-              <span class="card-value">
+              <span class="card-value" data-portal-ui>
                 <span id="panel-timezone-status" class="badge gray"
-                  >Loading…</span
+                   data-portal-ui>Loading…</span
                 >
               </span>
             </div>
             <div class="card-body regional-card__body">
               <div class="regional-timezone-grid">
                 <div class="form-group regional-timezone-field">
-                  <label for="panel-timezone">Panel timezone</label>
+                  <label for="panel-timezone" data-portal-ui>Panel timezone</label>
                   <select
                     id="panel-timezone"
                     class="input"
@@ -448,12 +448,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="regional-timezone-summary">
                   <div class="regional-timezone-summary__top">
                     <span class="regional-timezone-summary__icon"
-                      ><i class="fa-solid fa-clock"></i
+                       data-portal-ui><i class="fa-solid fa-clock"></i
                     ></span>
                     <span
-                      ><b id="panel-timezone-current">—</b
+                       data-portal-ui><b id="panel-timezone-current">—</b
                       ><small id="panel-timezone-now"
-                        >Current local time —</small
+                         data-portal-ui>Current local time —</small
                       ></span
                     >
                   </div>
@@ -462,16 +462,16 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     aria-label="Timezone usage"
                   >
                     <span
-                      ><i class="fa-solid fa-database"></i><b>Storage</b
-                      ><small>UTC internally</small></span
+                       data-portal-ui><i class="fa-solid fa-database"></i><b data-portal-ui>Storage</b
+                      ><small data-portal-ui>UTC internally</small></span
                     >
                     <span
-                      ><i class="fa-solid fa-calendar-check"></i><b>Backups</b
-                      ><small>Schedule + display</small></span
+                       data-portal-ui><i class="fa-solid fa-calendar-check"></i><b data-portal-ui>Backups</b
+                      ><small data-portal-ui>Schedule + display</small></span
                     >
                     <span
-                      ><i class="fa-brands fa-telegram"></i><b>Telegram</b
-                      ><small>Displayed timestamps</small></span
+                       data-portal-ui><i class="fa-brands fa-telegram"></i><b data-portal-ui>Telegram</b
+                      ><small data-portal-ui>Displayed timestamps</small></span
                     >
                   </div>
                 </div>
@@ -479,10 +479,10 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
               <div class="regional-detect-row">
                 <div>
-                  <strong>Browser-detected timezone</strong>
-                  <span id="panel-browser-timezone">Detecting…</span>
+                  <strong data-portal-ui>Browser-detected timezone</strong>
+                  <span id="panel-browser-timezone" data-portal-ui>Detecting…</span>
                   <small
-                    >Use this only when the browser is running in the timezone
+                     data-portal-ui>Use this only when the browser is running in the timezone
                     you want the panel to display.</small
                   >
                 </div>
@@ -490,7 +490,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   id="panel-use-browser-timezone"
                   class="btn secondary"
                   type="button"
-                >
+                 data-portal-ui>
                   <i class="fa-solid fa-location-crosshairs"></i> Use browser
                   timezone
                 </button>
@@ -499,18 +499,18 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               <div class="regional-note">
                 <i class="fa-solid fa-circle-info"></i>
                 <span
-                  ><b>Single source of truth.</b> Backup scheduling continues to
+                   data-portal-ui><b data-portal-ui>Single source of truth.</b> Backup scheduling continues to
                   convert this local timezone to UTC internally. Telegram and
                   the panel convert UTC back to this timezone for display.</span
                 >
               </div>
 
               <div class="savebar regional-savebar">
-                <button class="btn" id="save-regional" type="button">
+                <button class="btn" id="save-regional" type="button" data-portal-ui>
                   <i class="fa-solid fa-floppy-disk"></i> Save regional settings
                 </button>
                 <span class="muted"
-                  >No restart is required for timezone changes.</span
+                   data-portal-ui>No restart is required for timezone changes.</span
                 >
               </div>
             </div>
@@ -528,13 +528,13 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         <header class="sec-overview sec-overview--compact">
           <div class="sec-overview__identity">
             <span class="sec-overview__icon"
-              ><i class="fa-solid fa-shield-halved"></i
+               data-portal-ui><i class="fa-solid fa-shield-halved"></i
             ></span>
             <div class="sec-overview__text">
-              <span class="sec-kicker">Panel protection</span>
+              <span class="sec-kicker" data-portal-ui>Panel protection</span>
               <div class="sec-title-row">
-                <h2>Security center</h2>
-                <span class="sec-info-wrap">
+                <h2 data-portal-ui>Security center</h2>
+                <span class="sec-info-wrap" data-portal-ui>
                   <button
                     id="sec-info-trigger"
                     class="sec-info-pulse"
@@ -543,7 +543,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     aria-haspopup="dialog"
                     aria-expanded="false"
                     title="How blocking works"
-                  >
+                   data-portal-ui>
                     <i class="fa-solid fa-circle-info"></i>
                   </button>
                   <div
@@ -555,9 +555,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   >
                     <div class="sec-info-popover__head">
                       <div>
-                        <strong>How blocking works</strong
+                        <strong data-portal-ui>How blocking works</strong
                         ><span
-                          >Application quarantine with optional host-firewall
+                           data-portal-ui>Application quarantine with optional host-firewall
                           escalation</span
                         >
                       </div>
@@ -565,7 +565,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                         id="sec-info-close"
                         type="button"
                         aria-label="Close"
-                      >
+                       data-portal-ui>
                         <i class="fa-solid fa-xmark"></i>
                       </button>
                     </div>
@@ -573,9 +573,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       <div>
                         <b>1</b
                         ><span
-                          ><strong>Detect</strong
+                           data-portal-ui><strong data-portal-ui>Detect</strong
                           ><small
-                            >Rejected requests, sensitive paths, repeated 429
+                             data-portal-ui>Rejected requests, sensitive paths, repeated 429
                             responses and failed logins are counted per
                             client.</small
                           ></span
@@ -584,9 +584,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       <div>
                         <b>2</b
                         ><span
-                          ><strong>Classify</strong
+                           data-portal-ui><strong data-portal-ui>Classify</strong
                           ><small
-                            >Events are labelled as environment, repository,
+                             data-portal-ui>Events are labelled as environment, repository,
                             admin scanner, credential/config, rate-limit,
                             authentication or generic traffic.</small
                           ></span
@@ -595,9 +595,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       <div>
                         <b>3</b
                         ><span
-                          ><strong>Quarantine</strong
+                           data-portal-ui><strong data-portal-ui>Quarantine</strong
                           ><small
-                            >Temporary blocks return HTTP 403 with
+                             data-portal-ui>Temporary blocks return HTTP 403 with
                             <code>Retry-After</code>. Optional nftables
                             escalation can drop repeat offenders before
                             Flask.</small
@@ -607,9 +607,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       <div>
                         <b>4</b
                         ><span
-                          ><strong>Release</strong
+                           data-portal-ui><strong data-portal-ui>Release</strong
                           ><small
-                            >Temporary blocks expire automatically or can be
+                             data-portal-ui>Temporary blocks expire automatically or can be
                             released manually. Permanent deny entries remain
                             until removed.</small
                           ></span
@@ -619,7 +619,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     <div class="sec-info-tls">
                       <i class="fa-solid fa-lock"></i
                       ><span
-                        ><b>HTTPS / TLS compatible.</b> Inspection happens after
+                         data-portal-ui><b data-portal-ui>HTTPS / TLS compatible.</b> Inspection happens after
                         TLS termination, so the same policy protects HTTP and
                         HTTPS panel traffic.</span
                       >
@@ -627,7 +627,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   </div>
                 </span>
               </div>
-              <p>
+              <p data-portal-ui>
                 Detect abusive HTTP traffic, quarantine repeat offenders and
                 keep security visibility in one place.
               </p>
@@ -635,16 +635,16 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           </div>
           <div class="sec-overview__health" aria-label="Security status">
             <span id="sec-status-monitor" class="sec-state neutral"
-              ><i class="fa-solid fa-circle"></i> Monitor —</span
+               data-portal-ui><i class="fa-solid fa-circle"></i> Monitor —</span
             >
             <span id="sec-status-response" class="sec-state neutral"
-              ><i class="fa-solid fa-shield"></i> Response —</span
+               data-portal-ui><i class="fa-solid fa-shield"></i> Response —</span
             >
             <span id="sec-status-blocks" class="sec-state neutral"
-              ><i class="fa-solid fa-ban"></i> 0 active blocks</span
+               data-portal-ui><i class="fa-solid fa-ban"></i> 0 active blocks</span
             >
             <span id="sec-status-24h" class="sec-state neutral"
-              ><i class="fa-solid fa-chart-simple"></i> 24h —</span
+               data-portal-ui><i class="fa-solid fa-chart-simple"></i> 24h —</span
             >
           </div>
         </header>
@@ -654,11 +654,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div class="sec-card__head">
               <div class="sec-card__title">
                 <span class="sec-card__icon"
-                  ><i class="fa-solid fa-wave-square"></i
+                   data-portal-ui><i class="fa-solid fa-wave-square"></i
                 ></span>
                 <div>
-                  <strong>HTTP protection</strong
-                  ><small>Engine, response mode and client identity</small>
+                  <strong data-portal-ui>HTTP protection</strong
+                  ><small data-portal-ui>Engine, response mode and client identity</small>
                 </div>
               </div>
               <div class="sec-head-actions">
@@ -667,55 +667,55 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   class="btn secondary sm sec-advanced-trigger"
                   id="sec-advanced-trigger"
                   type="button"
-                >
+                 data-portal-ui>
                   <i class="fa-solid fa-sliders"></i> Advanced
                   <span id="sec-advanced-badge" class="sec-advanced-badge"
-                    >Configured</span
+                     data-portal-ui>Configured</span
                   >
                 </button>
                 <button
                   class="btn secondary sm"
                   id="sec-apply-recommended"
                   type="button"
-                >
+                 data-portal-ui>
                   <i class="fa-solid fa-wand-magic-sparkles"></i> Safe defaults
                 </button>
               </div>
             </div>
             <div class="sec-card__body sec-policy-row">
-              <label class="sec-toggle-row sec-toggle-row--policy">
+              <label class="sec-toggle-row sec-toggle-row--policy" data-portal-ui>
                 <span
-                  ><b>HTTP security monitor</b
+                   data-portal-ui><b data-portal-ui>HTTP security monitor</b
                   ><small
-                    >Track relevant rejected requests independently of
+                     data-portal-ui>Track relevant rejected requests independently of
                     Telegram.</small
                   ></span
                 >
                 <span class="switch sm"
-                  ><input type="checkbox" id="sec-enabled" /><span
+                   data-portal-ui><input type="checkbox" id="sec-enabled" /><span
                     class="slider"
                   ></span
                 ></span>
               </label>
               <div class="sec-field">
-                <label for="sec-response-mode">Response mode</label>
+                <label for="sec-response-mode" data-portal-ui>Response mode</label>
                 <select class="input" id="sec-response-mode">
-                  <option value="monitor">Monitor only</option>
-                  <option value="block">Monitor + temporary block</option>
+                  <option value="monitor" data-portal-ui>Monitor only</option>
+                  <option value="block" data-portal-ui>Monitor + temporary block</option>
                 </select>
                 <small
-                  >Start with Monitor only until the reported client IP is
+                   data-portal-ui>Start with Monitor only until the reported client IP is
                   verified.</small
                 >
               </div>
               <div class="sec-field">
-                <label for="sec-ip-source">Client IP source</label>
+                <label for="sec-ip-source" data-portal-ui>Client IP source</label>
                 <select class="input" id="sec-ip-source">
-                  <option value="direct">Direct socket address</option>
-                  <option value="effective">Trusted proxy / CDN headers</option>
+                  <option value="direct" data-portal-ui>Direct socket address</option>
+                  <option value="effective" data-portal-ui>Trusted proxy / CDN headers</option>
                 </select>
                 <small id="sec-ip-source-help"
-                  >Safest when the panel is reached directly.</small
+                   data-portal-ui>Safest when the panel is reached directly.</small
                 >
               </div>
             </div>
@@ -725,21 +725,21 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div class="sec-card__head">
               <div class="sec-card__title">
                 <span class="sec-card__icon"
-                  ><i class="fa-solid fa-sliders"></i
+                   data-portal-ui><i class="fa-solid fa-sliders"></i
                 ></span>
                 <div>
-                  <strong>Detection &amp; blocking</strong
+                  <strong data-portal-ui>Detection &amp; blocking</strong
                   ><small
-                    >Thresholds, timing and repeat-offender escalation</small
+                     data-portal-ui>Thresholds, timing and repeat-offender escalation</small
                   >
                 </div>
               </div>
-              <span class="sec-pill good">Auto release</span>
+              <span class="sec-pill good" data-portal-ui>Auto release</span>
             </div>
             <div class="sec-card__body sec-tuning-body">
               <div class="sec-metrics sec-metrics--dense">
                 <label class="sec-metric"
-                  ><span>Generic threshold</span>
+                   data-portal-ui><span data-portal-ui>Generic threshold</span>
                   <div>
                     <input
                       class="input"
@@ -749,10 +749,10 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       max="500"
                     /><em>requests</em>
                   </div>
-                  <small>Ordinary rejected requests.</small></label
+                  <small data-portal-ui>Ordinary rejected requests.</small></label
                 >
                 <label class="sec-metric sec-time-metric"
-                  ><span>Detection window</span>
+                   data-portal-ui><span data-portal-ui>Detection window</span>
                   <div class="sec-time-control">
                     <input
                       class="input"
@@ -765,18 +765,18 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       id="sec-window-unit"
                       aria-label="Detection window unit"
                     >
-                      <option value="60">minutes</option>
-                      <option value="3600">hours</option>
-                      <option value="86400">days</option>
+                      <option value="60" data-portal-ui>minutes</option>
+                      <option value="3600" data-portal-ui>hours</option>
+                      <option value="86400" data-portal-ui>days</option>
                     </select>
                   </div>
                   <input id="sec-window" type="hidden" /><small
                     id="sec-window-human"
-                    >Rolling request window.</small
+                     data-portal-ui>Rolling request window.</small
                   ></label
                 >
                 <label class="sec-metric"
-                  ><span>Sensitive threshold</span>
+                   data-portal-ui><span data-portal-ui>Sensitive threshold</span>
                   <div>
                     <input
                       class="input"
@@ -786,10 +786,10 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       max="50"
                     /><em>requests</em>
                   </div>
-                  <small>For .env, .git and similar probes.</small></label
+                  <small data-portal-ui>For .env, .git and similar probes.</small></label
                 >
                 <label class="sec-metric sec-time-metric"
-                  ><span>Alert cooldown</span>
+                   data-portal-ui><span data-portal-ui>Alert cooldown</span>
                   <div class="sec-time-control">
                     <input
                       class="input"
@@ -802,18 +802,18 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       id="sec-cooldown-unit"
                       aria-label="Alert cooldown unit"
                     >
-                      <option value="60">minutes</option>
-                      <option value="3600">hours</option>
-                      <option value="86400">days</option>
+                      <option value="60" data-portal-ui>minutes</option>
+                      <option value="3600" data-portal-ui>hours</option>
+                      <option value="86400" data-portal-ui>days</option>
                     </select>
                   </div>
                   <input id="sec-cooldown" type="hidden" /><small
                     id="sec-cooldown-human"
-                    >Suppress repeated alerts.</small
+                     data-portal-ui>Suppress repeated alerts.</small
                   ></label
                 >
                 <label class="sec-metric sec-time-metric"
-                  ><span>Initial block</span>
+                   data-portal-ui><span data-portal-ui>Initial block</span>
                   <div class="sec-time-control">
                     <input
                       class="input"
@@ -826,18 +826,18 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       id="sec-block-unit"
                       aria-label="Initial block unit"
                     >
-                      <option value="60">minutes</option>
-                      <option value="3600">hours</option>
-                      <option value="86400">days</option>
+                      <option value="60" data-portal-ui>minutes</option>
+                      <option value="3600" data-portal-ui>hours</option>
+                      <option value="86400" data-portal-ui>days</option>
                     </select>
                   </div>
                   <input id="sec-block-seconds" type="hidden" /><small
                     id="sec-block-human"
-                    >First offense duration.</small
+                     data-portal-ui>First offense duration.</small
                   ></label
                 >
                 <label class="sec-metric sec-time-metric"
-                  ><span>Maximum block</span>
+                   data-portal-ui><span data-portal-ui>Maximum block</span>
                   <div class="sec-time-control">
                     <input
                       class="input"
@@ -850,35 +850,35 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       id="sec-max-block-unit"
                       aria-label="Maximum block unit"
                     >
-                      <option value="60">minutes</option>
-                      <option value="3600">hours</option>
-                      <option value="86400">days</option>
+                      <option value="60" data-portal-ui>minutes</option>
+                      <option value="3600" data-portal-ui>hours</option>
+                      <option value="86400" data-portal-ui>days</option>
                     </select>
                   </div>
                   <input id="sec-max-block-seconds" type="hidden" /><small
                     id="sec-max-block-human"
-                    >Hard ceiling for escalation.</small
+                     data-portal-ui>Hard ceiling for escalation.</small
                   ></label
                 >
               </div>
               <div class="sec-escalation-row">
-                <label class="sec-toggle-row sec-toggle-row--compact">
+                <label class="sec-toggle-row sec-toggle-row--compact" data-portal-ui>
                   <span
-                    ><b>Escalate repeat offenders</b
+                     data-portal-ui><b data-portal-ui>Escalate repeat offenders</b
                     ><small
-                      >Each new offense doubles the previous duration until the
+                       data-portal-ui>Each new offense doubles the previous duration until the
                       maximum is reached.</small
                     ></span
                   >
                   <span class="switch sm"
-                    ><input type="checkbox" id="sec-escalate" /><span
+                     data-portal-ui><input type="checkbox" id="sec-escalate" /><span
                       class="slider"
                     ></span
                   ></span>
                 </label>
                 <div class="sec-escalation-preview" id="sec-escalation-preview">
                   <i class="fa-solid fa-arrow-trend-up"></i
-                  ><span>15m → 30m → 1h → 2h → 4h … capped at 1d</span>
+                  ><span data-portal-ui>15m → 30m → 1h → 2h → 4h … capped at 1d</span>
                 </div>
               </div>
             </div>
@@ -888,58 +888,58 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div class="sec-card__head">
               <div class="sec-card__title">
                 <span class="sec-card__icon"
-                  ><i class="fa-solid fa-user-shield"></i
+                   data-portal-ui><i class="fa-solid fa-user-shield"></i
                 ></span>
                 <div>
-                  <strong>Alerts &amp; trusted access</strong
+                  <strong data-portal-ui>Alerts &amp; trusted access</strong
                   ><small
-                    >Telegram delivery and addresses that bypass temporary
+                     data-portal-ui>Telegram delivery and addresses that bypass temporary
                     blocking</small
                   >
                 </div>
               </div>
-              <span class="sec-pill neutral">Security controls</span>
+              <span class="sec-pill neutral" data-portal-ui>Security controls</span>
             </div>
             <div class="sec-card__body sec-side-compact-body">
               <div class="sec-mini-section">
                 <div class="sec-mini-section__title">
-                  <strong>Telegram security alerts</strong
-                  ><small>These switches never disable protection.</small>
+                  <strong data-portal-ui>Telegram security alerts</strong
+                  ><small data-portal-ui>These switches never disable protection.</small>
                 </div>
                 <div class="sec-alerts sec-alerts--compact">
                   <label class="sec-alert-row"
-                    ><span
-                      ><i class="fa-solid fa-right-to-bracket"></i
+                     data-portal-ui><span
+                       data-portal-ui><i class="fa-solid fa-right-to-bracket"></i
                       ><span
-                        ><b>Successful login</b
-                        ><small>Account, IP and device.</small></span
+                         data-portal-ui><b data-portal-ui>Successful login</b
+                        ><small data-portal-ui>Account, IP and device.</small></span
                       ></span
                     ><span class="switch sm"
-                      ><input type="checkbox" id="tg-n-login-success" /><span
+                       data-portal-ui><input type="checkbox" id="tg-n-login-success" /><span
                         class="slider"
                       ></span></span
                   ></label>
                   <label class="sec-alert-row is-critical"
-                    ><span
-                      ><i class="fa-solid fa-triangle-exclamation"></i
+                     data-portal-ui><span
+                       data-portal-ui><i class="fa-solid fa-triangle-exclamation"></i
                       ><span
-                        ><b>Failed login / 2FA</b
-                        ><small>Rejected authentication.</small></span
+                         data-portal-ui><b data-portal-ui>Failed login / 2FA</b
+                        ><small data-portal-ui>Rejected authentication.</small></span
                       ></span
                     ><span class="switch sm"
-                      ><input type="checkbox" id="tg-n-login-fail" /><span
+                       data-portal-ui><input type="checkbox" id="tg-n-login-fail" /><span
                         class="slider"
                       ></span></span
                   ></label>
                   <label class="sec-alert-row is-critical"
-                    ><span
-                      ><i class="fa-solid fa-radar"></i
+                     data-portal-ui><span
+                       data-portal-ui><i class="fa-solid fa-radar"></i
                       ><span
-                        ><b>Suspicious HTTP</b
-                        ><small>Monitor-only threshold events.</small></span
+                         data-portal-ui><b data-portal-ui>Suspicious HTTP</b
+                        ><small data-portal-ui>Monitor-only threshold events.</small></span
                       ></span
                     ><span class="switch sm"
-                      ><input type="checkbox" id="tg-n-4xx" /><span
+                       data-portal-ui><input type="checkbox" id="tg-n-4xx" /><span
                         class="slider"
                       ></span></span
                   ></label>
@@ -949,7 +949,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     class="sec-link-btn"
                     id="sec-alert-options-trigger"
                     type="button"
-                  >
+                   data-portal-ui>
                     <i class="fa-solid fa-bell"></i> Block / release alert
                     options
                   </button>
@@ -957,17 +957,17 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="sec-note sec-note--compact">
                   <i class="fa-solid fa-circle-info"></i
                   ><span
-                    >Telegram itself must also be enabled under
-                    <b>Settings → Telegram</b>.</span
+                     data-portal-ui>Telegram itself must also be enabled under
+                    <b data-portal-ui>Settings → Telegram</b>.</span
                   >
                 </div>
               </div>
               <div class="sec-mini-divider"></div>
               <div class="sec-mini-section sec-trust">
                 <div class="sec-mini-section__title">
-                  <strong>Trusted IPs / CIDRs</strong
+                  <strong data-portal-ui>Trusted IPs / CIDRs</strong
                   ><small
-                    >Permanent allow list. Keep it intentionally small.</small
+                     data-portal-ui>Permanent allow list. Keep it intentionally small.</small
                   >
                 </div>
                 <div
@@ -988,14 +988,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     class="btn secondary"
                     id="sec-trusted-add"
                     type="button"
-                  >
+                   data-portal-ui>
                     <i class="fa-solid fa-plus"></i> Add
                   </button>
                 </div>
                 <div class="sec-trust__hint">
                   <i class="fa-solid fa-circle-info"></i
                   ><span
-                    >Click × to remove. Advanced Security contains temporary
+                     data-portal-ui>Click × to remove. Advanced Security contains temporary
                     allows and permanent denies.</span
                   >
                 </div>
@@ -1008,11 +1008,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           <div class="sec-card__head">
             <div class="sec-card__title">
               <span class="sec-card__icon"
-                ><i class="fa-solid fa-ban"></i
+                 data-portal-ui><i class="fa-solid fa-ban"></i
               ></span>
               <div>
-                <strong>Active temporary blocks</strong
-                ><small>Clients currently quarantined by the panel</small>
+                <strong data-portal-ui>Active temporary blocks</strong
+                ><small data-portal-ui>Clients currently quarantined by the panel</small>
               </div>
             </div>
             <div class="sec-head-actions">
@@ -1020,14 +1020,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 class="btn secondary sm"
                 id="sec-history-trigger"
                 type="button"
-              >
+               data-portal-ui>
                 <i class="fa-solid fa-clock-rotate-left"></i> History
               </button>
               <button
                 class="btn secondary sm"
                 id="sec-refresh-blocks"
                 type="button"
-              >
+               data-portal-ui>
                 <i class="fa-solid fa-rotate"></i> Refresh
               </button>
             </div>
@@ -1038,12 +1038,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               class="sec-empty-state sec-empty-state--compact"
             >
               <span class="sec-empty-state__icon"
-                ><i class="fa-solid fa-circle-check"></i
+                 data-portal-ui><i class="fa-solid fa-circle-check"></i
               ></span>
               <div class="sec-empty-state__copy">
-                <strong>All clear</strong
+                <strong data-portal-ui>All clear</strong
                 ><small
-                  >No client is temporarily quarantined. Triggered addresses
+                   data-portal-ui>No client is temporarily quarantined. Triggered addresses
                   will appear here automatically.</small
                 >
               </div>
@@ -1056,11 +1056,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               <table class="table sec-blocks-table" id="sec-blocks-table">
                 <thead>
                   <tr>
-                    <th>Client IP</th>
-                    <th>Category / reason</th>
-                    <th>Offenses</th>
-                    <th>Blocked until</th>
-                    <th>Remaining</th>
+                    <th data-portal-ui>Client IP</th>
+                    <th data-portal-ui>Category / reason</th>
+                    <th data-portal-ui>Offenses</th>
+                    <th data-portal-ui>Blocked until</th>
+                    <th data-portal-ui>Remaining</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -1074,14 +1074,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           <div class="sec-savebar__copy">
             <span class="sec-savebar__dot"></span>
             <div>
-              <strong>Security policy</strong
+              <strong data-portal-ui>Security policy</strong
               ><small
-                >Changes apply immediately; no restart is required. Host
+                 data-portal-ui>Changes apply immediately; no restart is required. Host
                 firewall mode requires nftables permission.</small
               >
             </div>
           </div>
-          <button class="btn" id="sec-save" type="button">
+          <button class="btn" id="sec-save" type="button" data-portal-ui>
             <i class="fa-solid fa-floppy-disk"></i> Save security settings
           </button>
         </div>
@@ -1103,21 +1103,21 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         <div class="sec-modal-head">
           <div>
             <span class="sec-modal-icon"
-              ><i class="fa-solid fa-shield-halved"></i
+               data-portal-ui><i class="fa-solid fa-shield-halved"></i
             ></span>
             <div>
               <span class="sec-advanced-titleline"
-                ><strong id="sec-advanced-title">Advanced Security</strong
+                 data-portal-ui><strong id="sec-advanced-title" data-portal-ui>Advanced Security</strong
                 ><button
                   id="sec-advanced-info-trigger"
                   class="sec-advanced-info-trigger"
                   type="button"
                   aria-label="About advanced security"
                   aria-expanded="false"
-                >
+                 data-portal-ui>
                   <i class="fa-solid fa-circle-info"></i></button></span
               ><small
-                >Higher-impact controls; safe defaults keep these
+                 data-portal-ui>Higher-impact controls; safe defaults keep these
                 conservative.</small
               >
             </div>
@@ -1127,7 +1127,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             type="button"
             data-close
             aria-label="Close"
-          >
+           data-portal-ui>
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
@@ -1138,13 +1138,13 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         >
           <div class="sec-advanced-info-popover__head">
             <strong
-              ><i class="fa-solid fa-circle-info"></i> About Advanced
+               data-portal-ui><i class="fa-solid fa-circle-info"></i> About Advanced
               Security</strong
             ><button
               id="sec-advanced-info-close"
               type="button"
               aria-label="Close information"
-            >
+             data-portal-ui>
               <i class="fa-solid fa-xmark"></i>
             </button>
           </div>
@@ -1152,11 +1152,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div>
               <i class="fa-solid fa-floppy-disk"></i
               ><span
-                ><b>Saving</b
+                 data-portal-ui><b data-portal-ui>Saving</b
                 ><small
-                  >Advanced policy changes are not active until you press
-                  <b>Save advanced settings</b> or the main
-                  <b>Save security settings</b> button. Temporary Allow entries
+                   data-portal-ui>Advanced policy changes are not active until you press
+                  <b data-portal-ui>Save advanced settings</b> or the main
+                  <b data-portal-ui>Save security settings</b> button. Temporary Allow entries
                   are the exception: they apply immediately.</small
                 ></span
               >
@@ -1164,9 +1164,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div>
               <i class="fa-solid fa-earth-europe"></i
               ><span
-                ><b>Geo / ASN</b
+                 data-portal-ui><b data-portal-ui>Geo / ASN</b
                 ><small
-                  >Display-only enrichment for public attacker IPs. The current
+                   data-portal-ui>Display-only enrichment for public attacker IPs. The current
                   backend sends the public IP to <code>ipwho.is</code> and
                   caches the result for 24 hours. Country, ASN and provider
                   information never decide whether an address is blocked.</small
@@ -1176,9 +1176,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div>
               <i class="fa-solid fa-shield-halved"></i
               ><span
-                ><b>nftables</b
+                 data-portal-ui><b data-portal-ui>nftables</b
                 ><small
-                  >An optional host-firewall second layer for repeat offenders.
+                   data-portal-ui>An optional host-firewall second layer for repeat offenders.
                   It uses a dedicated <code>inet wgpanel_security</code> table.
                   Application-level blocking remains fully functional when
                   nftables is unavailable.</small
@@ -1188,9 +1188,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div>
               <i class="fa-solid fa-triangle-exclamation"></i
               ><span
-                ><b>If nftables is unavailable</b
+                 data-portal-ui><b data-portal-ui>If nftables is unavailable</b
                 ><small
-                  >The firewall toggle cannot be newly enabled. The panel shows
+                   data-portal-ui>The firewall toggle cannot be newly enabled. The panel shows
                   whether the package is missing or the service lacks firewall
                   permission, and provides a copyable remediation command. It
                   never runs package installation or sudo automatically.</small
@@ -1201,44 +1201,44 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         </div>
         <div class="sec-advanced-summary" aria-label="Advanced security status">
           <span id="sec-adv-status-scope" class="sec-adv-chip"
-            ><i class="fa-solid fa-shield"></i> Scope —</span
+             data-portal-ui><i class="fa-solid fa-shield"></i> Scope —</span
           >
           <span id="sec-adv-status-login" class="sec-adv-chip"
-            ><i class="fa-solid fa-key"></i> Login guard —</span
+             data-portal-ui><i class="fa-solid fa-key"></i> Login guard —</span
           >
           <span id="sec-adv-status-geo" class="sec-adv-chip"
-            ><i class="fa-solid fa-earth-europe"></i> Geo/ASN —</span
+             data-portal-ui><i class="fa-solid fa-earth-europe"></i> Geo/ASN —</span
           >
           <span id="sec-adv-status-firewall" class="sec-adv-chip"
-            ><i class="fa-solid fa-shield-halved"></i> nftables —</span
+             data-portal-ui><i class="fa-solid fa-shield-halved"></i> nftables —</span
           >
           <span id="sec-adv-status-deny" class="sec-adv-chip"
-            ><i class="fa-solid fa-ban"></i> Deny 0</span
+             data-portal-ui><i class="fa-solid fa-ban"></i> Deny 0</span
           >
           <span id="sec-adv-status-allow" class="sec-adv-chip"
-            ><i class="fa-solid fa-clock"></i> Allow 0</span
+             data-portal-ui><i class="fa-solid fa-clock"></i> Allow 0</span
           >
         </div>
         <div class="sec-modal-body">
           <section class="sec-advanced-section">
             <div class="sec-advanced-title">
-              <strong>Protection policy</strong
-              ><small>How and where a quarantine is enforced.</small>
+              <strong data-portal-ui>Protection policy</strong
+              ><small data-portal-ui>How and where a quarantine is enforced.</small>
             </div>
             <div class="sec-advanced-grid sec-advanced-grid--3">
               <div class="sec-field">
-                <label for="sec-block-scope">Block scope</label
+                <label for="sec-block-scope" data-portal-ui>Block scope</label
                 ><select class="input" id="sec-block-scope">
-                  <option value="all">Entire panel</option>
-                  <option value="auth_admin">
+                  <option value="all" data-portal-ui>Entire panel</option>
+                  <option value="auth_admin" data-portal-ui>
                     Authentication &amp; admin routes only
                   </option></select
                 ><small
-                  >Permanent deny entries always block the whole panel.</small
+                   data-portal-ui>Permanent deny entries always block the whole panel.</small
                 >
               </div>
               <label class="sec-metric"
-                ><span>429 threshold</span>
+                 data-portal-ui><span data-portal-ui>429 threshold</span>
                 <div>
                   <input
                     class="input"
@@ -1249,18 +1249,18 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   /><em>responses</em>
                 </div>
                 <small
-                  >Dedicated trigger for rate-limit responses.</small
+                   data-portal-ui>Dedicated trigger for rate-limit responses.</small
                 ></label
               >
               <label class="sec-toggle-row sec-toggle-row--modal"
-                ><span
-                  ><b>Geo / ASN display</b
+                 data-portal-ui><span
+                   data-portal-ui><b data-portal-ui>Geo / ASN display</b
                   ><small
-                    >Display only. Public IPs are looked up externally and never
+                     data-portal-ui>Display only. Public IPs are looked up externally and never
                     blocked by country/ASN.</small
                   ></span
                 ><span class="switch sm"
-                  ><input type="checkbox" id="sec-enrich-ip" /><span
+                   data-portal-ui><input type="checkbox" id="sec-enrich-ip" /><span
                     class="slider"
                   ></span></span
               ></label>
@@ -1269,15 +1269,15 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
           <section class="sec-advanced-section">
             <div class="sec-advanced-title">
-              <strong>Authentication abuse</strong
+              <strong data-portal-ui>Authentication abuse</strong
               ><small
-                >Separate protection for failed password and 2FA
+                 data-portal-ui>Separate protection for failed password and 2FA
                 attempts.</small
               >
             </div>
             <div class="sec-advanced-grid sec-advanced-grid--2">
               <label class="sec-metric"
-                ><span>Failed-login threshold</span>
+                 data-portal-ui><span data-portal-ui>Failed-login threshold</span>
                 <div>
                   <input
                     class="input"
@@ -1288,11 +1288,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   /><em>failures</em>
                 </div>
                 <small
-                  >Triggers independently of ordinary 4xx traffic.</small
+                   data-portal-ui>Triggers independently of ordinary 4xx traffic.</small
                 ></label
               >
               <label class="sec-metric sec-time-metric"
-                ><span>Login window</span>
+                 data-portal-ui><span data-portal-ui>Login window</span>
                 <div class="sec-time-control">
                   <input
                     class="input"
@@ -1304,14 +1304,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     class="input sec-time-unit"
                     id="sec-login-window-unit"
                   >
-                    <option value="60">minutes</option>
-                    <option value="3600">hours</option>
-                    <option value="86400">days</option>
+                    <option value="60" data-portal-ui>minutes</option>
+                    <option value="3600" data-portal-ui>hours</option>
+                    <option value="86400" data-portal-ui>days</option>
                   </select>
                 </div>
                 <input id="sec-login-window" type="hidden" /><small
                   id="sec-login-window-human"
-                  >Rolling authentication window.</small
+                   data-portal-ui>Rolling authentication window.</small
                 ></label
               >
             </div>
@@ -1319,27 +1319,27 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
           <section class="sec-advanced-section">
             <div class="sec-advanced-title">
-              <strong>Host firewall escalation</strong
+              <strong data-portal-ui>Host firewall escalation</strong
               ><small
-                >Optional second layer for repeat offenders. Application
+                 data-portal-ui>Optional second layer for repeat offenders. Application
                 blocking continues even if nftables is unavailable.</small
               >
             </div>
             <div class="sec-firewall-row">
               <label class="sec-toggle-row sec-toggle-row--modal"
-                ><span
-                  ><b>Escalate to nftables</b
+                 data-portal-ui><span
+                   data-portal-ui><b data-portal-ui>Escalate to nftables</b
                   ><small
-                    >Uses a dedicated <code>inet wgpanel_security</code> table
+                     data-portal-ui>Uses a dedicated <code>inet wgpanel_security</code> table
                     with expiring IPv4/IPv6 sets.</small
                   ></span
                 ><span class="switch sm"
-                  ><input type="checkbox" id="sec-firewall-enabled" /><span
+                   data-portal-ui><input type="checkbox" id="sec-firewall-enabled" /><span
                     class="slider"
                   ></span></span
               ></label>
               <label class="sec-metric"
-                ><span>After offense</span>
+                 data-portal-ui><span data-portal-ui>After offense</span>
                 <div>
                   <input
                     class="input"
@@ -1349,20 +1349,20 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     max="20"
                   /><em>level</em>
                 </div>
-                <small>Recommended: 3.</small></label
+                <small data-portal-ui>Recommended: 3.</small></label
               >
               <div id="sec-firewall-status" class="sec-firewall-status">
                 <i class="fa-solid fa-circle"></i
-                ><span>Checking nftables…</span>
+                ><span data-portal-ui>Checking nftables…</span>
               </div>
               <div id="sec-firewall-remedy" class="sec-firewall-remedy" hidden>
                 <div>
                   <i class="fa-solid fa-screwdriver-wrench"></i
                   ><span
-                    ><b id="sec-firewall-remedy-title"
-                      >Host firewall unavailable</b
+                     data-portal-ui><b id="sec-firewall-remedy-title"
+                       data-portal-ui>Host firewall unavailable</b
                     ><small id="sec-firewall-remedy-text"
-                      >Application blocking remains active.</small
+                       data-portal-ui>Application blocking remains active.</small
                     ></span
                   >
                 </div>
@@ -1372,13 +1372,13 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     class="btn secondary sm"
                     id="sec-firewall-copy"
                     type="button"
-                  >
+                   data-portal-ui>
                     <i class="fa-regular fa-copy"></i> Copy</button
                   ><button
                     class="btn secondary sm"
                     id="sec-firewall-refresh"
                     type="button"
-                  >
+                   data-portal-ui>
                     <i class="fa-solid fa-rotate"></i> Recheck
                   </button>
                 </div>
@@ -1388,9 +1388,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
           <section class="sec-advanced-section">
             <div class="sec-advanced-title">
-              <strong>Permanent deny list</strong
+              <strong data-portal-ui>Permanent deny list</strong
               ><small
-                >Application-level deny rules. The panel refuses to save a rule
+                 data-portal-ui>Application-level deny rules. The panel refuses to save a rule
                 that contains your current client IP.</small
               >
             </div>
@@ -1406,7 +1406,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 spellcheck="false"
                 autocomplete="off"
                 placeholder="IP or CIDR to deny"
-              /><button class="btn secondary" id="sec-deny-add" type="button">
+              /><button class="btn secondary" id="sec-deny-add" type="button" data-portal-ui>
                 <i class="fa-solid fa-ban"></i> Add deny
               </button>
             </div>
@@ -1414,9 +1414,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
           <section class="sec-advanced-section">
             <div class="sec-advanced-title">
-              <strong>Temporary allow list</strong
+              <strong data-portal-ui>Temporary allow list</strong
               ><small
-                >Bypasses temporary quarantine until expiry. It does not
+                 data-portal-ui>Bypasses temporary quarantine until expiry. It does not
                 override a permanent deny.</small
               >
             </div>
@@ -1438,15 +1438,15 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 value="1"
               />
               <select class="input" id="sec-temp-allow-duration-unit">
-                <option value="60">minutes</option>
-                <option value="3600" selected>hours</option>
-                <option value="86400">days</option>
+                <option value="60" data-portal-ui>minutes</option>
+                <option value="3600" selected data-portal-ui>hours</option>
+                <option value="86400" data-portal-ui>days</option>
               </select>
               <button
                 class="btn secondary"
                 id="sec-temp-allow-add"
                 type="button"
-              >
+               data-portal-ui>
                 <i class="fa-solid fa-clock"></i> Allow
               </button>
             </div>
@@ -1454,48 +1454,48 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
           <section class="sec-advanced-section" id="sec-alert-options-section">
             <div class="sec-advanced-title">
-              <strong>Telegram security event delivery</strong
+              <strong data-portal-ui>Telegram security event delivery</strong
               ><small
-                >Fine-grained delivery; protection is always independent of
+                 data-portal-ui>Fine-grained delivery; protection is always independent of
                 these switches.</small
               >
             </div>
             <div class="sec-alert-options-grid">
               <label class="sec-alert-row is-critical"
-                ><span
-                  ><i class="fa-solid fa-ban"></i
+                 data-portal-ui><span
+                   data-portal-ui><i class="fa-solid fa-ban"></i
                   ><span
-                    ><b>Temporary block applied</b
-                    ><small>Recommended on.</small></span
+                     data-portal-ui><b data-portal-ui>Temporary block applied</b
+                    ><small data-portal-ui>Recommended on.</small></span
                   ></span
                 ><span class="switch sm"
-                  ><input type="checkbox" id="tg-n-security-block" /><span
+                   data-portal-ui><input type="checkbox" id="tg-n-security-block" /><span
                     class="slider"
                   ></span></span
               ></label>
               <label class="sec-alert-row"
-                ><span
-                  ><i class="fa-solid fa-unlock"></i
+                 data-portal-ui><span
+                   data-portal-ui><i class="fa-solid fa-unlock"></i
                   ><span
-                    ><b>Manual release</b
+                     data-portal-ui><b data-portal-ui>Manual release</b
                     ><small
-                      >Notify when an administrator releases an IP.</small
+                       data-portal-ui>Notify when an administrator releases an IP.</small
                     ></span
                   ></span
                 ><span class="switch sm"
-                  ><input type="checkbox" id="tg-n-security-release" /><span
+                   data-portal-ui><input type="checkbox" id="tg-n-security-release" /><span
                     class="slider"
                   ></span></span
               ></label>
               <label class="sec-alert-row"
-                ><span
-                  ><i class="fa-solid fa-clock"></i
+                 data-portal-ui><span
+                   data-portal-ui><i class="fa-solid fa-clock"></i
                   ><span
-                    ><b>Automatic release</b
-                    ><small>Off by default to reduce noise.</small></span
+                     data-portal-ui><b data-portal-ui>Automatic release</b
+                    ><small data-portal-ui>Off by default to reduce noise.</small></span
                   ></span
                 ><span class="switch sm"
-                  ><input
+                   data-portal-ui><input
                     type="checkbox"
                     id="tg-n-security-auto-release" /><span
                     class="slider"
@@ -1506,13 +1506,13 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         </div>
         <div class="sec-modal-foot sec-modal-foot--actions">
           <span id="sec-advanced-save-state"
-            ><i class="fa-solid fa-circle-check"></i> Saved policy · Temporary
+             data-portal-ui><i class="fa-solid fa-circle-check"></i> Saved policy · Temporary
             Allow entries apply immediately.</span
           >
           <div>
-            <button class="btn" id="sec-advanced-save" type="button">
+            <button class="btn" id="sec-advanced-save" type="button" data-portal-ui>
               <i class="fa-solid fa-floppy-disk"></i> Save advanced settings</button
-            ><button class="btn secondary" type="button" data-close>
+            ><button class="btn secondary" type="button" data-close data-portal-ui>
               Done
             </button>
           </div>
@@ -1535,12 +1535,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         <div class="sec-modal-head">
           <div>
             <span class="sec-modal-icon"
-              ><i class="fa-solid fa-clock-rotate-left"></i
+               data-portal-ui><i class="fa-solid fa-clock-rotate-left"></i
             ></span>
             <div>
-              <strong id="sec-history-title">Security event history</strong
+              <strong id="sec-history-title" data-portal-ui>Security event history</strong
               ><small
-                >Meaningful threshold, block and release events. Up to 500
+                 data-portal-ui>Meaningful threshold, block and release events. Up to 500
                 events are retained.</small
               >
             </div>
@@ -1550,19 +1550,19 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             type="button"
             data-close
             aria-label="Close"
-          >
+           data-portal-ui>
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
         <div class="sec-modal-body">
           <div class="sec-history-stats">
-            <span><b id="sec-stat-rejected">0</b><small>Rejected</small></span>
+            <span data-portal-ui><b id="sec-stat-rejected">0</b><small data-portal-ui>Rejected</small></span>
             <span
-              ><b id="sec-stat-sensitive">0</b><small>Sensitive</small></span
+               data-portal-ui><b id="sec-stat-sensitive">0</b><small data-portal-ui>Sensitive</small></span
             >
-            <span><b id="sec-stat-blocks">0</b><small>Blocks</small></span>
-            <span><b id="sec-stat-logins">0</b><small>Login fails</small></span>
-            <span><b id="sec-stat-ips">0</b><small>Unique IPs</small></span>
+            <span data-portal-ui><b id="sec-stat-blocks">0</b><small data-portal-ui>Blocks</small></span>
+            <span data-portal-ui><b id="sec-stat-logins">0</b><small data-portal-ui>Login fails</small></span>
+            <span data-portal-ui><b id="sec-stat-ips">0</b><small data-portal-ui>Unique IPs</small></span>
           </div>
           <div class="sec-history-toolbar">
             <input
@@ -1572,31 +1572,31 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               placeholder="Filter by IP"
             />
             <select class="input" id="sec-history-type">
-              <option value="">All events</option>
-              <option value="block">Blocks</option>
-              <option value="monitor_trigger">Monitor triggers</option>
-              <option value="login_trigger">Login triggers</option>
-              <option value="manual_release">Manual releases</option>
-              <option value="auto_release">Auto releases</option>
-              <option value="temporary_allow">Temporary allows</option>
+              <option value="" data-portal-ui>All events</option>
+              <option value="block" data-portal-ui>Blocks</option>
+              <option value="monitor_trigger" data-portal-ui>Monitor triggers</option>
+              <option value="login_trigger" data-portal-ui>Login triggers</option>
+              <option value="manual_release" data-portal-ui>Manual releases</option>
+              <option value="auto_release" data-portal-ui>Auto releases</option>
+              <option value="temporary_allow" data-portal-ui>Temporary allows</option>
             </select>
             <button
               class="btn secondary"
               id="sec-history-refresh"
               type="button"
-            >
+             data-portal-ui>
               <i class="fa-solid fa-rotate"></i> Refresh
             </button>
-            <button class="btn danger" id="sec-history-clear" type="button">
+            <button class="btn danger" id="sec-history-clear" type="button" data-portal-ui>
               <i class="fa-solid fa-trash"></i> Clear
             </button>
           </div>
           <div id="sec-history-empty" class="sec-history-empty">
             <i class="fa-solid fa-clock-rotate-left"></i
             ><span
-              ><b>No security events yet</b
+               data-portal-ui><b data-portal-ui>No security events yet</b
               ><small
-                >Thresholds, blocks and releases will appear here.</small
+                 data-portal-ui>Thresholds, blocks and releases will appear here.</small
               ></span
             >
           </div>
@@ -1608,12 +1608,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <table class="table sec-history-table" id="sec-history-table">
               <thead>
                 <tr>
-                  <th>Time</th>
-                  <th>IP</th>
-                  <th>Event</th>
-                  <th>Category</th>
-                  <th>Reason</th>
-                  <th>Network</th>
+                  <th data-portal-ui>Time</th>
+                  <th data-portal-ui>IP</th>
+                  <th data-portal-ui>Event</th>
+                  <th data-portal-ui>Category</th>
+                  <th data-portal-ui>Reason</th>
+                  <th data-portal-ui>Network</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -1629,19 +1629,19 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           <div class="card-header iface-console__head">
             <div class="iface-console__title">
               <span class="iface-console__title-icon"
-                ><i class="fa-solid fa-network-wired"></i
+                 data-portal-ui><i class="fa-solid fa-network-wired"></i
               ></span>
-              <span>
-                <strong>WireGuard Interface</strong>
+              <span data-portal-ui>
+                <strong data-portal-ui>WireGuard Interface</strong>
                 <small
-                  >Manage local or remote interface settings and runtime
+                   data-portal-ui>Manage local or remote interface settings and runtime
                   state.</small
                 >
               </span>
             </div>
-            <span class="card-value iface-console__head-actions">
-              <span id="iface-status" class="badge gray">Unknown</span>
-              <button class="btn secondary" id="open-logs">
+            <span class="card-value iface-console__head-actions" data-portal-ui>
+              <span id="iface-status" class="badge gray" data-portal-ui>Unknown</span>
+              <button class="btn secondary" id="open-logs" data-portal-ui>
                 <i class="fa-solid fa-list"></i> Logs
               </button>
             </span>
@@ -1666,7 +1666,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       hidden
                     />
                     <label for="iface-scope-local" role="tab"
-                      ><i class="fa-regular fa-computer"></i> Local</label
+                       data-portal-ui><i class="fa-regular fa-computer"></i> Local</label
                     >
 
                     <input
@@ -1677,7 +1677,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                       hidden
                     />
                     <label for="iface-scope-node" role="tab"
-                      ><i class="fa-solid fa-server"></i> Node</label
+                       data-portal-ui><i class="fa-solid fa-server"></i> Node</label
                     >
                   </div>
                 </div>
@@ -1685,13 +1685,13 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   id="iface-scope-chip"
                   class="badge gray iface-scope-status"
                   aria-hidden="true"
-                  >Unknown</span
+                   data-portal-ui>Unknown</span
                 >
               </div>
 
               <div class="iface-selector-grid">
                 <div class="form-group iface-node-field" id="iface-node-field">
-                  <label for="iface-node">Remote node</label>
+                  <label for="iface-node" data-portal-ui>Remote node</label>
                   <select
                     id="iface-node"
                     class="input"
@@ -1703,7 +1703,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   </div>
                 </div>
                 <div class="form-group iface-select-field">
-                  <label for="iface-select">Interface</label>
+                  <label for="iface-select" data-portal-ui>Interface</label>
                   <select
                     class="input"
                     id="iface-select"
@@ -1719,11 +1719,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div id="iface-view" hidden>
               <div class="iface-section-heading">
                 <div>
-                  <span class="iface-eyebrow">Interface details</span>
-                  <h3>Identity and network settings</h3>
+                  <span class="iface-eyebrow" data-portal-ui>Interface details</span>
+                  <h3 data-portal-ui>Identity and network settings</h3>
                 </div>
                 <span class="iface-section-note"
-                  ><i class="fa-solid fa-circle-info"></i> Read-only values are
+                   data-portal-ui><i class="fa-solid fa-circle-info"></i> Read-only values are
                   discovered from the active configuration.</span
                 >
               </div>
@@ -1732,7 +1732,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="form-group iface-field-card is-readonly">
                   <div class="iface-field-label">
                     <i class="fa-solid fa-tag"></i
-                    ><label for="i-name">Name</label>
+                    ><label for="i-name" data-portal-ui>Name</label>
                   </div>
                   <input class="input" id="i-name" disabled />
                 </div>
@@ -1740,7 +1740,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="form-group iface-field-card is-readonly">
                   <div class="iface-field-label">
                     <i class="fa-solid fa-file-lines"></i
-                    ><label for="i-path">Config path</label>
+                    ><label for="i-path" data-portal-ui>Config path</label>
                   </div>
                   <input class="input" id="i-path" disabled />
                 </div>
@@ -1748,7 +1748,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="form-group iface-field-card is-readonly">
                   <div class="iface-field-label">
                     <i class="fa-solid fa-location-dot"></i
-                    ><label for="i-address">Address</label>
+                    ><label for="i-address" data-portal-ui>Address</label>
                   </div>
                   <input class="input" id="i-address" disabled />
                 </div>
@@ -1756,7 +1756,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="form-group iface-field-card is-editable">
                   <div class="iface-field-label">
                     <i class="fa-solid fa-plug"></i
-                    ><label for="i-listen">Listen port</label>
+                    ><label for="i-listen" data-portal-ui>Listen port</label>
                   </div>
                   <input
                     class="input"
@@ -1766,26 +1766,26 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     max="65535"
                     inputmode="numeric"
                   />
-                  <small>UDP port used by this interface.</small>
+                  <small data-portal-ui>UDP port used by this interface.</small>
                 </div>
 
                 <div class="form-group iface-field-card is-editable">
                   <div class="iface-field-label">
                     <i class="fa-solid fa-globe"></i
-                    ><label for="i-dns">DNS</label>
+                    ><label for="i-dns" data-portal-ui>DNS</label>
                   </div>
                   <input
                     class="input"
                     id="i-dns"
                     placeholder="Optional DNS server"
                   />
-                  <small>Leave empty to keep the current client default.</small>
+                  <small data-portal-ui>Leave empty to keep the current client default.</small>
                 </div>
 
                 <div class="form-group iface-field-card is-editable">
                   <div class="iface-field-label">
                     <i class="fa-solid fa-ruler-horizontal"></i
-                    ><label for="i-mtu">MTU</label>
+                    ><label for="i-mtu" data-portal-ui>MTU</label>
                   </div>
                   <input
                     class="input"
@@ -1796,13 +1796,13 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     inputmode="numeric"
                     placeholder="Auto"
                   />
-                  <small>Leave empty to use automatic MTU selection.</small>
+                  <small data-portal-ui>Leave empty to use automatic MTU selection.</small>
                 </div>
 
                 <div class="form-group iface-field-card is-editable">
                   <div class="iface-field-label">
                     <i class="fa-solid fa-tower-broadcast"></i
-                    ><label for="i-ep-host">Client endpoint host</label>
+                    ><label for="i-ep-host" data-portal-ui>Client endpoint host</label>
                   </div>
                   <input
                     class="input"
@@ -1811,7 +1811,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     autocomplete="off"
                   />
                   <small
-                    >Written into exported client configs. Leave both fields
+                     data-portal-ui>Written into exported client configs. Leave both fields
                     empty to use auto-detection.</small
                   >
                 </div>
@@ -1819,7 +1819,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="form-group iface-field-card is-editable">
                   <div class="iface-field-label">
                     <i class="fa-solid fa-plug-circle-bolt"></i
-                    ><label for="i-ep-port">Client endpoint port</label>
+                    ><label for="i-ep-port" data-portal-ui>Client endpoint port</label>
                   </div>
                   <input
                     class="input"
@@ -1831,7 +1831,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     placeholder="51820"
                   />
                   <small
-                    >May differ from the listen port when the server is behind
+                     data-portal-ui>May differ from the listen port when the server is behind
                     NAT.</small
                   >
                 </div>
@@ -1839,11 +1839,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="form-group iface-field-card is-readonly">
                   <div class="iface-field-label">
                     <i class="fa-solid fa-wand-magic-sparkles"></i
-                    ><label for="i-ep-effective">Peers get</label>
+                    ><label for="i-ep-effective" data-portal-ui>Peers get</label>
                   </div>
                   <input class="input" id="i-ep-effective" disabled />
                   <small id="i-ep-source"
-                    >Saving affects configs exported from now on.
+                     data-portal-ui>Saving affects configs exported from now on.
                     Already-downloaded configs are never rewritten.</small
                   >
                 </div>
@@ -1851,37 +1851,37 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
               <div class="iface-actionbar">
                 <div class="iface-actionbar__copy">
-                  <strong>Apply changes</strong>
+                  <strong data-portal-ui>Apply changes</strong>
                   <span
-                    >Save editable values, or change the current runtime
+                     data-portal-ui>Save editable values, or change the current runtime
                     state.</span
                   >
                 </div>
                 <div class="iface-actions">
-                  <button class="btn iface-save-btn" id="iface-save">
+                  <button class="btn iface-save-btn" id="iface-save" data-portal-ui>
                     <i class="fa-solid fa-floppy-disk"></i> Save changes
                   </button>
-                  <button class="btn secondary iface-up-btn" id="iface-up">
+                  <button class="btn secondary iface-up-btn" id="iface-up" data-portal-ui>
                     <i class="fa-solid fa-play"></i> Bring up
                   </button>
-                  <button class="btn danger iface-down-btn" id="iface-down">
+                  <button class="btn danger iface-down-btn" id="iface-down" data-portal-ui>
                     <i class="fa-solid fa-stop"></i> Bring down
                   </button>
                   <button
                     class="btn secondary"
                     id="iface-ep-save"
                     type="button"
-                  >
+                   data-portal-ui>
                     <i class="fa-solid fa-tower-broadcast"></i> Save endpoint
                   </button>
                   <button
                     class="btn secondary"
                     id="iface-ep-clear"
                     type="button"
-                  >
+                   data-portal-ui>
                     <i class="fa-solid fa-eraser"></i> Clear endpoint
                   </button>
-                  <button class="btn danger" id="iface-ep-apply" type="button">
+                  <button class="btn danger" id="iface-ep-apply" type="button" data-portal-ui>
                     <i class="fa-solid fa-arrows-turn-to-dots"></i> Apply to
                     existing peers
                   </button>
@@ -1898,12 +1898,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         <div class="traffic-overview">
           <div class="traffic-overview__identity">
             <span class="traffic-overview__icon"
-              ><i class="fa-solid fa-route"></i
+               data-portal-ui><i class="fa-solid fa-route"></i
             ></span>
             <div>
-              <span class="traffic-kicker">WireGuard forwarding policy</span>
+              <span class="traffic-kicker" data-portal-ui>WireGuard forwarding policy</span>
               <div class="traffic-overview__headline">
-                <h2>Traffic Control</h2>
+                <h2 data-portal-ui>Traffic Control</h2>
                 <button
                   class="traffic-inline-info"
                   id="traffic-how-trigger"
@@ -1912,7 +1912,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   aria-haspopup="dialog"
                   aria-expanded="false"
                   title="How blocking works"
-                >
+                 data-portal-ui>
                   <i class="fa-solid fa-circle-info"></i>
                 </button>
                 <div
@@ -1923,45 +1923,45 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   hidden
                 >
                   <div class="traffic-inline-popover__head">
-                    <strong>How blocking works</strong>
+                    <strong data-portal-ui>How blocking works</strong>
                     <button
                       class="traffic-inline-popover__close"
                       id="traffic-how-close"
                       type="button"
                       aria-label="Close"
-                    >
+                     data-portal-ui>
                       <i class="fa-solid fa-xmark"></i>
                     </button>
                   </div>
                   <div class="traffic-inline-popover__body">
                     <span
-                      ><i class="fa-solid fa-check"></i
-                      ><b>Client traffic path</b
+                       data-portal-ui><i class="fa-solid fa-check"></i
+                      ><b data-portal-ui>Client traffic path</b
                       ><small
-                        >Filters forwarded WireGuard traffic only.</small
+                         data-portal-ui>Filters forwarded WireGuard traffic only.</small
                       ></span
                     >
                     <span
-                      ><i class="fa-solid fa-check"></i><b>Peer-safe</b
-                      ><small>Does not modify AllowedIPs.</small></span
+                       data-portal-ui><i class="fa-solid fa-check"></i><b data-portal-ui>Peer-safe</b
+                      ><small data-portal-ui>Does not modify AllowedIPs.</small></span
                     >
                     <span
-                      ><i class="fa-solid fa-check"></i><b>Dedicated rules</b
+                       data-portal-ui><i class="fa-solid fa-check"></i><b data-portal-ui>Dedicated rules</b
                       ><small
-                        >Uses only <code>inet wgpanel_traffic</code>.</small
+                         data-portal-ui>Uses only <code>inet wgpanel_traffic</code>.</small
                       ></span
                     >
                     <span
-                      ><i class="fa-solid fa-circle-info"></i
-                      ><b>Domain refresh</b
+                       data-portal-ui><i class="fa-solid fa-circle-info"></i
+                      ><b data-portal-ui>Domain refresh</b
                       ><small
-                        >Re-apply if a site's DNS addresses change.</small
+                         data-portal-ui>Re-apply if a site's DNS addresses change.</small
                       ></span
                     >
                   </div>
                 </div>
               </div>
-              <p>
+              <p data-portal-ui>
                 Block domains, IP ranges or countries for a whole WireGuard
                 interface or one specific peer.
               </p>
@@ -1969,15 +1969,15 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           </div>
           <div class="traffic-overview__status">
             <span class="traffic-state" id="traffic-engine-state"
-              ><i class="fa-solid fa-circle"></i> Loading</span
+               data-portal-ui><i class="fa-solid fa-circle"></i> Loading</span
             >
             <span class="traffic-state" id="traffic-rule-state"
-              ><i class="fa-solid fa-shield"></i> 0 policies</span
+               data-portal-ui><i class="fa-solid fa-shield"></i> 0 policies</span
             >
             <div class="traffic-overview__enforcement" id="traffic-capability">
-              <span class="traffic-mini-loading">Checking enforcement…</span>
+              <span class="traffic-mini-loading" data-portal-ui>Checking enforcement…</span>
             </div>
-            <button class="btn secondary" id="traffic-refresh" type="button">
+            <button class="btn secondary" id="traffic-refresh" type="button" data-portal-ui>
               <i class="fa-solid fa-rotate"></i> Refresh
             </button>
           </div>
@@ -1986,9 +1986,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         <div class="traffic-note">
           <i class="fa-solid fa-circle-info"></i>
           <div>
-            <b>WireGuard traffic only.</b
+            <b data-portal-ui>WireGuard traffic only.</b
             ><span
-              >Rules are applied on the forwarded client path. They do not
+               data-portal-ui>Rules are applied on the forwarded client path. They do not
               change AllowedIPs or block traffic generated by the server
               itself.</span
             >
@@ -1999,23 +1999,23 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           <header class="traffic-card__head traffic-policy-head">
             <div class="traffic-card__title">
               <span class="traffic-card__icon"
-                ><i class="fa-solid fa-list-check"></i
+                 data-portal-ui><i class="fa-solid fa-list-check"></i
               ></span>
               <div>
-                <strong>Policies</strong
-                ><small>Choose a policy to inspect, test or edit.</small>
+                <strong data-portal-ui>Policies</strong
+                ><small data-portal-ui>Choose a policy to inspect, test or edit.</small>
               </div>
             </div>
             <div class="traffic-policy-head__actions">
               <span class="traffic-dirty" id="traffic-dirty" hidden
-                ><i class="fa-solid fa-spinner fa-spin"></i> Applying
+                 data-portal-ui><i class="fa-solid fa-spinner fa-spin"></i> Applying
                 changes…</span
               >
               <button
                 class="btn traffic-add-policy-main"
                 id="traffic-add-policy"
                 type="button"
-              >
+               data-portal-ui>
                 <i class="fa-solid fa-plus"></i> Add policy
               </button>
             </div>
@@ -2024,9 +2024,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div class="traffic-empty" id="traffic-empty">
               <i class="fa-solid fa-route"></i
               ><span
-                ><b>No traffic policies yet</b
+                 data-portal-ui><b data-portal-ui>No traffic policies yet</b
                 ><small
-                  >Create a policy and it will be saved and applied
+                   data-portal-ui>Create a policy and it will be saved and applied
                   automatically.</small
                 ></span
               >
@@ -2043,12 +2043,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           <header class="traffic-card__head">
             <div class="traffic-card__title">
               <span class="traffic-card__icon"
-                ><i class="fa-solid fa-shield-circle-check"></i
+                 data-portal-ui><i class="fa-solid fa-shield-circle-check"></i
               ></span>
               <div>
-                <strong id="traffic-verify-heading">Check policy setup</strong
+                <strong id="traffic-verify-heading" data-portal-ui>Check policy setup</strong
                 ><small
-                  >Confirms that the live WireGuard and nftables rules are ready
+                   data-portal-ui>Confirms that the live WireGuard and nftables rules are ready
                   for this policy.</small
                 >
               </div>
@@ -2057,7 +2057,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               class="btn secondary sm"
               id="traffic-verify-close"
               type="button"
-            >
+             data-portal-ui>
               <i class="fa-solid fa-xmark"></i> Close
             </button>
           </header>
@@ -2072,12 +2072,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           <header class="traffic-card__head">
             <div class="traffic-card__title">
               <span class="traffic-card__icon"
-                ><i class="fa-solid fa-crosshairs"></i
+                 data-portal-ui><i class="fa-solid fa-crosshairs"></i
               ></span>
               <div>
-                <strong id="traffic-manual-heading">Test destination</strong
+                <strong id="traffic-manual-heading" data-portal-ui>Test destination</strong
                 ><small
-                  >Check whether a domain or IP would be blocked by one selected
+                   data-portal-ui>Check whether a domain or IP would be blocked by one selected
                   policy.</small
                 >
               </div>
@@ -2086,7 +2086,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               class="btn secondary sm"
               id="traffic-manual-close"
               type="button"
-            >
+             data-portal-ui>
               <i class="fa-solid fa-xmark"></i> Close
             </button>
           </header>
@@ -2114,7 +2114,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     hidden
                   ></div>
                 </div>
-                <button class="btn" id="traffic-test-target-run" type="button">
+                <button class="btn" id="traffic-test-target-run" type="button" data-portal-ui>
                   <i class="fa-solid fa-play"></i> Test destination
                 </button>
               </div>
@@ -2130,7 +2130,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               <div class="traffic-manual-test__note">
                 <i class="fa-solid fa-circle-info"></i
                 ><span
-                  >This checks the live nftables sets and the exact WireGuard
+                   data-portal-ui>This checks the live nftables sets and the exact WireGuard
                   peer/interface rule. It predicts the live verdict but does not
                   impersonate the peer or generate fake peer traffic.</span
                 >
@@ -2142,9 +2142,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         <div class="traffic-apply-notice" id="traffic-apply-notice" hidden>
           <i class="fa-solid fa-rotate fa-spin"></i
           ><span
-            ><b>Applying Traffic Control changes…</b
+             data-portal-ui><b data-portal-ui>Applying Traffic Control changes…</b
             ><small
-              >Policy changes are saved and activated automatically.</small
+               data-portal-ui>Policy changes are saved and activated automatically.</small
             ></span
           >
         </div>
@@ -2168,12 +2168,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <header class="traffic-policy-dialog__head">
               <div class="traffic-card__title">
                 <span class="traffic-card__icon"
-                  ><i class="fa-solid fa-sliders"></i
+                   data-portal-ui><i class="fa-solid fa-sliders"></i
                 ></span>
                 <div>
-                  <strong id="traffic-editor-title">Add policy</strong
+                  <strong id="traffic-editor-title" data-portal-ui>Add policy</strong
                   ><small id="traffic-editor-subtitle"
-                    >Choose who is protected and what destinations should be
+                     data-portal-ui>Choose who is protected and what destinations should be
                     blocked. Changes are saved and applied automatically.</small
                   >
                 </div>
@@ -2183,7 +2183,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 id="traffic-policy-close"
                 type="button"
                 aria-label="Close policy editor"
-              >
+               data-portal-ui>
                 <i class="fa-solid fa-xmark"></i>
               </button>
             </header>
@@ -2193,7 +2193,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 class="traffic-form-grid traffic-form-grid--top traffic-form-grid--modal"
               >
                 <div class="form-group traffic-form-group--wide">
-                  <label for="traffic-policy-name">Policy name</label>
+                  <label for="traffic-policy-name" data-portal-ui>Policy name</label>
                   <input
                     class="input"
                     id="traffic-policy-name"
@@ -2202,31 +2202,31 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   />
                 </div>
                 <div class="form-group">
-                  <label for="traffic-location">Runs on</label>
+                  <label for="traffic-location" data-portal-ui>Runs on</label>
                   <select class="input" id="traffic-location">
-                    <option value="local">Local panel</option>
-                    <option value="node">Remote node</option>
+                    <option value="local" data-portal-ui>Local panel</option>
+                    <option value="node" data-portal-ui>Remote node</option>
                   </select>
                 </div>
                 <div class="form-group" id="traffic-node-wrap" hidden>
-                  <label for="traffic-node">Node</label>
+                  <label for="traffic-node" data-portal-ui>Node</label>
                   <select class="input" id="traffic-node"></select>
                 </div>
                 <div class="form-group">
-                  <label for="traffic-interface">WireGuard interface</label>
+                  <label for="traffic-interface" data-portal-ui>WireGuard interface</label>
                   <select class="input" id="traffic-interface"></select>
                 </div>
                 <div class="form-group">
-                  <label for="traffic-source-mode">Protect</label>
+                  <label for="traffic-source-mode" data-portal-ui>Protect</label>
                   <select class="input" id="traffic-source-mode">
-                    <option value="interface">
+                    <option value="interface" data-portal-ui>
                       Every peer on this interface
                     </option>
-                    <option value="peer">One specific peer</option>
+                    <option value="peer" data-portal-ui>One specific peer</option>
                   </select>
                 </div>
                 <div class="form-group" id="traffic-peer-wrap" hidden>
-                  <label for="traffic-peer">WireGuard peer</label>
+                  <label for="traffic-peer" data-portal-ui>WireGuard peer</label>
                   <select class="input" id="traffic-peer"></select>
                   <div class="small-text muted" id="traffic-peer-address"></div>
                 </div>
@@ -2235,9 +2235,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               <div class="traffic-block-builder">
                 <div class="traffic-block-builder__head">
                   <div>
-                    <b>What should this policy block?</b
+                    <b data-portal-ui>What should this policy block?</b
                     ><small
-                      >Add one or more destinations. Each item becomes a
+                       data-portal-ui>Add one or more destinations. Each item becomes a
                       removable chip.</small
                     >
                   </div>
@@ -2251,9 +2251,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   >
                     <div class="traffic-destination-card__head">
                       <span
-                        ><i class="fa-solid fa-globe"></i
-                        ><b>Domains / sites</b></span
-                      ><span class="traffic-mini-badge">DNS based</span>
+                         data-portal-ui><i class="fa-solid fa-globe"></i
+                        ><b data-portal-ui>Domains / sites</b></span
+                      ><span class="traffic-mini-badge" data-portal-ui>DNS based</span>
                     </div>
                     <div
                       class="traffic-token-list"
@@ -2271,7 +2271,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                         class="btn secondary sm"
                         type="button"
                         data-traffic-token-add="domains"
-                      >
+                       data-portal-ui>
                         <i class="fa-solid fa-plus"></i> Add
                       </button>
                     </div>
@@ -2282,7 +2282,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     ></div>
                     <textarea id="traffic-domains" hidden></textarea>
                     <small
-                      >Suggestions use real domains already saved in Traffic
+                       data-portal-ui>Suggestions use real domains already saved in Traffic
                       Control. Start typing to filter, or focus the field to
                       browse saved destinations.</small
                     >
@@ -2293,9 +2293,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   >
                     <div class="traffic-destination-card__head">
                       <span
-                        ><i class="fa-solid fa-network-wired"></i
-                        ><b>IP / CIDR</b></span
-                      ><span class="traffic-mini-badge">IPv4 + IPv6</span>
+                         data-portal-ui><i class="fa-solid fa-network-wired"></i
+                        ><b data-portal-ui>IP / CIDR</b></span
+                      ><span class="traffic-mini-badge" data-portal-ui>IPv4 + IPv6</span>
                     </div>
                     <div
                       class="traffic-token-list"
@@ -2313,7 +2313,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                         class="btn secondary sm"
                         type="button"
                         data-traffic-token-add="cidrs"
-                      >
+                       data-portal-ui>
                         <i class="fa-solid fa-plus"></i> Add
                       </button>
                     </div>
@@ -2324,7 +2324,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     ></div>
                     <textarea id="traffic-cidrs" hidden></textarea>
                     <small
-                      >Suggestions use real IP/CIDR values already saved in
+                       data-portal-ui>Suggestions use real IP/CIDR values already saved in
                       Traffic Control. Start typing to filter, or focus the
                       field to browse saved destinations.</small
                     >
@@ -2335,9 +2335,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   >
                     <div class="traffic-destination-card__head">
                       <span
-                        ><i class="fa-solid fa-earth-asia"></i
-                        ><b>Countries</b></span
-                      ><span class="traffic-mini-badge">Geo IP</span>
+                         data-portal-ui><i class="fa-solid fa-earth-asia"></i
+                        ><b data-portal-ui>Countries</b></span
+                      ><span class="traffic-mini-badge" data-portal-ui>Geo IP</span>
                     </div>
                     <div
                       class="traffic-token-list"
@@ -2355,7 +2355,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                         class="btn secondary sm"
                         type="button"
                         data-traffic-token-add="countries"
-                      >
+                       data-portal-ui>
                         <i class="fa-solid fa-plus"></i> Add
                       </button>
                     </div>
@@ -2366,7 +2366,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     ></div>
                     <textarea id="traffic-countries" hidden></textarea>
                     <small
-                      >Type a country name or two-letter code. The best matches
+                       data-portal-ui>Type a country name or two-letter code. The best matches
                       appear first; for example, China becomes CN and Iran
                       becomes IR.</small
                     >
@@ -2376,14 +2376,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             </div>
             <footer class="traffic-policy-dialog__foot">
               <label class="traffic-policy-toggle"
-                ><span
-                  ><b>Policy enabled</b
+                 data-portal-ui><span
+                   data-portal-ui><b data-portal-ui>Policy enabled</b
                   ><small
-                    >Disabled policies stay saved but are not loaded into
+                     data-portal-ui>Disabled policies stay saved but are not loaded into
                     nftables.</small
                   ></span
                 ><span class="switch sm"
-                  ><input
+                   data-portal-ui><input
                     id="traffic-policy-enabled"
                     type="checkbox"
                     checked /><span class="slider"></span></span
@@ -2393,14 +2393,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   class="btn secondary"
                   id="traffic-policy-cancel"
                   type="button"
-                >
+                 data-portal-ui>
                   Cancel
                 </button>
                 <button
                   class="btn traffic-add-btn"
                   id="traffic-policy-save"
                   type="button"
-                >
+                 data-portal-ui>
                   <i class="fa-solid fa-plus"></i> Add policy
                 </button>
               </div>
@@ -2413,12 +2413,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
     <section class="panel" data-panel="telegram">
       <header class="modern-only modern-section-intro">
         <span class="modern-feature-icon"
-          ><i class="fa-brands fa-telegram"></i
+           data-portal-ui><i class="fa-brands fa-telegram"></i
         ></span>
         <div>
-          <span class="modern-eyebrow">COMMUNICATIONS</span>
-          <h2>Telegram hub</h2>
-          <p>
+          <span class="modern-eyebrow" data-portal-ui>COMMUNICATIONS</span>
+          <h2 data-portal-ui>Telegram hub</h2>
+          <p data-portal-ui>
             Connect your bot, manage recipients and choose the events that
             matter.
           </p>
@@ -2427,9 +2427,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
       <div class="cards">
         <div class="card full" id="card-telegram">
           <div class="card-header">
-            <i class="fa-brands fa-telegram"></i><span>Telegram delivery</span>
-            <span class="card-value">
-              <button class="btn secondary" id="tg-test">
+            <i class="fa-brands fa-telegram"></i><span data-portal-ui>Telegram delivery</span>
+            <span class="card-value" data-portal-ui>
+              <button class="btn secondary" id="tg-test" data-portal-ui>
                 <i class="fa-solid fa-paper-plane"></i> Send test
               </button>
 
@@ -2437,7 +2437,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 class="btn secondary"
                 id="open-logs-telegram"
                 style="margin-left: 8px"
-              >
+               data-portal-ui>
                 <i class="fa-brands fa-telegram"></i> Bot logs
               </button>
 
@@ -2445,7 +2445,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 class="btn secondary"
                 id="open-logs-admin-top"
                 style="margin-left: 8px"
-              >
+               data-portal-ui>
                 <i class="fa-solid fa-user-shield"></i> Admin logs
               </button>
             </span>
@@ -2455,32 +2455,32 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div class="tg-chips tg-status-strip">
               <div class="tg-status-card">
                 <i class="fas fa-bell" aria-hidden="true"></i
-                ><small class="modern-only">Delivery</small
-                ><span class="chip" id="tg-chip-enabled">Notifications: —</span
+                ><small class="modern-only" data-portal-ui>Delivery</small
+                ><span class="chip" id="tg-chip-enabled" data-portal-ui>Notifications: —</span
                 ><em class="modern-only">Selected panel events</em>
               </div>
               <div class="tg-status-card">
                 <i class="fas fa-key" aria-hidden="true"></i
-                ><small class="modern-only">Bot credentials</small
-                ><span class="chip" id="tg-chip-token">Token: —</span
+                ><small class="modern-only" data-portal-ui>Bot credentials</small
+                ><span class="chip" id="tg-chip-token" data-portal-ui>Token: —</span
                 ><em class="modern-only">Stored token status</em>
               </div>
               <div class="tg-status-card">
                 <i class="fas fa-users" aria-hidden="true"></i
-                ><small class="modern-only">Recipients</small
-                ><span class="chip" id="tg-chip-admins">Recipients: —</span
+                ><small class="modern-only" data-portal-ui>Recipients</small
+                ><span class="chip" id="tg-chip-admins" data-portal-ui>Recipients: —</span
                 ><em class="modern-only">Active administrators</em>
               </div>
               <div class="tg-status-card">
                 <i class="fas fa-robot" aria-hidden="true"></i
-                ><small class="modern-only">Connection</small
-                ><span class="chip" id="tg-chip-bot">Bot: —</span
+                ><small class="modern-only" data-portal-ui>Connection</small
+                ><span class="chip" id="tg-chip-bot" data-portal-ui>Bot: —</span
                 ><em class="modern-only">Latest bot status</em>
               </div>
               <div class="tg-status-card">
                 <i class="fas fa-clock" aria-hidden="true"></i
-                ><small class="modern-only">Last activity</small
-                ><span class="chip" id="tg-chip-seen">Last seen: —</span
+                ><small class="modern-only" data-portal-ui>Last activity</small
+                ><span class="chip" id="tg-chip-seen" data-portal-ui>Last seen: —</span
                 ><em class="modern-only">Most recent heartbeat</em>
               </div>
             </div>
@@ -2488,7 +2488,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
             <div class="section-head inline tg-master-card">
               <div class="head-text">
                 <div class="h5">
-                  <label class="switch sm">
+                  <label class="switch sm" data-portal-ui>
                     <input type="checkbox" id="tg-enabled" />
                     <span class="slider"></span>
                   </label>
@@ -2506,23 +2506,23 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 type="button"
                 data-tg-view="connection"
                 aria-pressed="true"
-              >
+               data-portal-ui>
                 Connection & recipients</button
               ><button
                 type="button"
                 data-tg-view="notifications"
                 aria-pressed="false"
-              >
+               data-portal-ui>
                 Notification rules
               </button>
             </nav>
             <div class="tg-accordion" data-tg-view="connection">
               <details id="tg-acc-token" class="acc">
-                <summary class="acc-bar">
+                <summary class="acc-bar" data-portal-ui>
                   <span
-                    ><i class="fa-solid fa-plug"></i> Bot connection
+                     data-portal-ui><i class="fa-solid fa-plug"></i> Bot connection
                     <small class="tg-summary-note"
-                      >Connect or rotate the Telegram bot token.</small
+                       data-portal-ui>Connect or rotate the Telegram bot token.</small
                     ></span
                   >
                   <span class="chev" aria-hidden="true"></span>
@@ -2554,7 +2554,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                         for="tg-token"
                         class="sr-only"
                         style="position: absolute; left: -9999px"
-                        >Bot token</label
+                         data-portal-ui>Bot token</label
                       >
                       <input
                         class="input flex"
@@ -2565,14 +2565,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                         autocomplete="new-password"
                         spellcheck="false"
                       />
-                      <button class="btn" id="tg-update-token" type="button">
+                      <button class="btn" id="tg-update-token" type="button" data-portal-ui>
                         <i class="fa-solid fa-save"></i> Save Token
                       </button>
                       <button
                         class="btn secondary"
                         id="tg-clear-token"
                         type="button"
-                      >
+                       data-portal-ui>
                         <i class="fa-solid fa-ban"></i> Clear
                       </button>
                     </div>
@@ -2587,7 +2587,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               <div class="admin-card tg-recipient-card">
                 <div class="admin-card-head">
                   <div class="left">
-                    <h4 class="h4 tight">Recipients</h4>
+                    <h4 class="h4 tight" data-portal-ui>Recipients</h4>
                     <div class="muted small">
                       Only active recipients receive notifications. DM
                       <code>/start</code> to the bot, then add the numeric
@@ -2595,7 +2595,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     </div>
                   </div>
                   <div class="left-actions">
-                    <button class="btn" id="tg-add-admin">
+                    <button class="btn" id="tg-add-admin" data-portal-ui>
                       <i class="fa-solid fa-plus"></i> Add recipient
                     </button>
                   </div>
@@ -2605,11 +2605,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   <table class="table compact" id="tg-admins-table">
                     <thead>
                       <tr>
-                        <th style="width: 160px">ID</th>
-                        <th>Username</th>
-                        <th>Note</th>
-                        <th style="width: 120px">Status</th>
-                        <th style="width: 120px">Actions</th>
+                        <th style="width: 160px" data-portal-ui>ID</th>
+                        <th data-portal-ui>Username</th>
+                        <th data-portal-ui>Note</th>
+                        <th style="width: 120px" data-portal-ui>Status</th>
+                        <th style="width: 120px" data-portal-ui>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2620,12 +2620,12 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
               </div>
 
               <details id="tg-acc-notify" class="acc tg-notify-acc" open>
-                <summary class="acc-bar">
-                  <span>
+                <summary class="acc-bar" data-portal-ui>
+                  <span data-portal-ui>
                     <i class="fa-solid fa-bell"></i>
                     Notification rules
                     <small class="tg-summary-note"
-                      >Choose exactly which events Telegram should
+                       data-portal-ui>Choose exactly which events Telegram should
                       report.</small
                     >
                   </span>
@@ -2635,9 +2635,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <div class="acc-body tg-notify-body" id="tg-acc-notify-body">
                   <div class="tg-notify-intro">
                     <div>
-                      <strong>Event notifications</strong>
+                      <strong data-portal-ui>Event notifications</strong>
                       <span
-                        >Messages are sent only after a real state change.
+                         data-portal-ui>Messages are sent only after a real state change.
                         Repeated checks do not create duplicate alerts.</span
                       >
                     </div>
@@ -2646,21 +2646,21 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                         class="btn secondary sm"
                         id="tg-notify-critical"
                         type="button"
-                      >
+                       data-portal-ui>
                         <i class="fa-solid fa-shield-halved"></i> Critical only
                       </button>
                       <button
                         class="btn secondary sm"
                         id="tg-notify-all"
                         type="button"
-                      >
+                       data-portal-ui>
                         <i class="fa-solid fa-check-double"></i> Select all
                       </button>
                       <button
                         class="btn secondary sm"
                         id="tg-notify-none"
                         type="button"
-                      >
+                       data-portal-ui>
                         <i class="fa-solid fa-xmark"></i> Clear
                       </button>
                     </div>
@@ -2670,65 +2670,65 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     <section class="tg-notify-group">
                       <header>
                         <span class="tg-notify-group-icon system"
-                          ><i class="fa-solid fa-server"></i
+                           data-portal-ui><i class="fa-solid fa-server"></i
                         ></span>
                         <div>
-                          <strong>Panel and nodes</strong>
-                          <small>Availability and recovery events.</small>
+                          <strong data-portal-ui>Panel and nodes</strong>
+                          <small data-portal-ui>Availability and recovery events.</small>
                         </div>
                       </header>
                       <div class="tg-notify-grid">
-                        <label class="tg-notify-row critical">
-                          <span class="tg-notify-copy">
-                            <b>Panel stopped or unreachable</b>
+                        <label class="tg-notify-row critical" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Panel stopped or unreachable</b>
                             <small
-                              >Reports watchdog detection of panel
+                               data-portal-ui>Reports watchdog detection of panel
                               failure.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-app-down" />
                             <span class="slider"></span>
                           </span>
                         </label>
 
-                        <label class="tg-notify-row">
-                          <span class="tg-notify-copy">
-                            <b>Panel started or recovered</b>
+                        <label class="tg-notify-row" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Panel started or recovered</b>
                             <small
-                              >Reports startup and recovery after an
+                               data-portal-ui>Reports startup and recovery after an
                               outage.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-app-up" />
                             <span class="slider"></span>
                           </span>
                         </label>
 
-                        <label class="tg-notify-row critical">
-                          <span class="tg-notify-copy">
-                            <b>Node went offline</b>
+                        <label class="tg-notify-row critical" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Node went offline</b>
                             <small
-                              >Reports the node name, address, and failed
+                               data-portal-ui>Reports the node name, address, and failed
                               checks.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-node-down" />
                             <span class="slider"></span>
                           </span>
                         </label>
 
-                        <label class="tg-notify-row">
-                          <span class="tg-notify-copy">
-                            <b>Node came online</b>
+                        <label class="tg-notify-row" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Node came online</b>
                             <small
-                              >Reports recovery and approximate outage
+                               data-portal-ui>Reports recovery and approximate outage
                               duration.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-node-up" />
                             <span class="slider"></span>
                           </span>
@@ -2739,65 +2739,65 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     <section class="tg-notify-group">
                       <header>
                         <span class="tg-notify-group-icon wireguard"
-                          ><i class="fa-solid fa-network-wired"></i
+                           data-portal-ui><i class="fa-solid fa-network-wired"></i
                         ></span>
                         <div>
-                          <strong>WireGuard</strong>
-                          <small>Interface and peer lifecycle events.</small>
+                          <strong data-portal-ui>WireGuard</strong>
+                          <small data-portal-ui>Interface and peer lifecycle events.</small>
                         </div>
                       </header>
                       <div class="tg-notify-grid">
-                        <label class="tg-notify-row critical">
-                          <span class="tg-notify-copy">
-                            <b>Interface went down</b>
+                        <label class="tg-notify-row critical" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Interface went down</b>
                             <small
-                              >Local or node interface is no longer
+                               data-portal-ui>Local or node interface is no longer
                               active.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-iface-down" />
                             <span class="slider"></span>
                           </span>
                         </label>
 
-                        <label class="tg-notify-row">
-                          <span class="tg-notify-copy">
-                            <b>Interface came up</b>
+                        <label class="tg-notify-row" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Interface came up</b>
                             <small
-                              >Reports interface recovery or successful
+                               data-portal-ui>Reports interface recovery or successful
                               start.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-iface-up" />
                             <span class="slider"></span>
                           </span>
                         </label>
 
-                        <label class="tg-notify-row">
-                          <span class="tg-notify-copy">
-                            <b>Peer expired</b>
+                        <label class="tg-notify-row" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Peer expired</b>
                             <small
-                              >Reports timer expiration and automatic
+                               data-portal-ui>Reports timer expiration and automatic
                               disable.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-peer-expired" />
                             <span class="slider"></span>
                           </span>
                         </label>
 
-                        <label class="tg-notify-row">
-                          <span class="tg-notify-copy">
-                            <b>Peer traffic limit reached</b>
+                        <label class="tg-notify-row" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Peer traffic limit reached</b>
                             <small
-                              >Reports data-limit enforcement and peer
+                               data-portal-ui>Reports data-limit enforcement and peer
                               disable.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-peer-limit" />
                             <span class="slider"></span>
                           </span>
@@ -2808,66 +2808,66 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     <section class="tg-notify-group">
                       <header>
                         <span class="tg-notify-group-icon operations"
-                          ><i class="fa-solid fa-gears"></i
+                           data-portal-ui><i class="fa-solid fa-gears"></i
                         ></span>
                         <div>
-                          <strong>Backups and updates</strong>
+                          <strong data-portal-ui>Backups and updates</strong>
                           <small
-                            >Operational completion and failure events.</small
+                             data-portal-ui>Operational completion and failure events.</small
                           >
                         </div>
                       </header>
                       <div class="tg-notify-grid">
-                        <label class="tg-notify-row">
-                          <span class="tg-notify-copy">
-                            <b>Backup completed</b>
+                        <label class="tg-notify-row" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Backup completed</b>
                             <small
-                              >Reports successful scheduled or manual backup
+                               data-portal-ui>Reports successful scheduled or manual backup
                               creation.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-backup-success" />
                             <span class="slider"></span>
                           </span>
                         </label>
 
-                        <label class="tg-notify-row critical">
-                          <span class="tg-notify-copy">
-                            <b>Backup failed</b>
+                        <label class="tg-notify-row critical" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Backup failed</b>
                             <small
-                              >Reports the failed stage and available error
+                               data-portal-ui>Reports the failed stage and available error
                               detail.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-backup-failed" />
                             <span class="slider"></span>
                           </span>
                         </label>
 
-                        <label class="tg-notify-row">
-                          <span class="tg-notify-copy">
-                            <b>Update completed</b>
+                        <label class="tg-notify-row" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Update completed</b>
                             <small
-                              >Reports successful panel or node update.</small
+                               data-portal-ui>Reports successful panel or node update.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-update-success" />
                             <span class="slider"></span>
                           </span>
                         </label>
 
-                        <label class="tg-notify-row critical">
-                          <span class="tg-notify-copy">
-                            <b>Update or rollback failed</b>
+                        <label class="tg-notify-row critical" data-portal-ui>
+                          <span class="tg-notify-copy" data-portal-ui>
+                            <b data-portal-ui>Update or rollback failed</b>
                             <small
-                              >Reports failed install, validation, restart, or
+                               data-portal-ui>Reports failed install, validation, restart, or
                               rollback.</small
                             >
                           </span>
-                          <span class="switch sm">
+                          <span class="switch sm" data-portal-ui>
                             <input type="checkbox" id="tg-n-update-failed" />
                             <span class="slider"></span>
                           </span>
@@ -2877,11 +2877,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   </div>
 
                   <div class="tg-notify-savebar">
-                    <span>
+                    <span data-portal-ui>
                       <i class="fa-solid fa-circle-info"></i>
                       Changes apply to future events.
                     </span>
-                    <button class="btn" id="tg-save" type="button">
+                    <button class="btn" id="tg-save" type="button" data-portal-ui>
                       <i class="fa-solid fa-floppy-disk"></i>
                       Save notification rules
                     </button>
@@ -2897,21 +2897,21 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
     <section class="panel" data-panel="admin">
       <header class="modern-only modern-section-intro">
         <span class="modern-feature-icon"
-          ><i class="fas fa-user-shield"></i
+           data-portal-ui><i class="fas fa-user-shield"></i
         ></span>
         <div>
-          <span class="modern-eyebrow">ACCESS MANAGEMENT</span>
-          <h2>Administrator workspace</h2>
-          <p>Manage panel access and review administrator activity.</p>
+          <span class="modern-eyebrow" data-portal-ui>ACCESS MANAGEMENT</span>
+          <h2 data-portal-ui>Administrator workspace</h2>
+          <p data-portal-ui>Manage panel access and review administrator activity.</p>
         </div>
       </header>
       <div class="cards">
         <div class="card full">
           <div class="card-header">
             <i class="fa-solid fa-user-shield" aria-hidden="true"></i>
-            <span>Admin</span>
-            <span class="card-value">
-              <span id="admin-2fa-badge" class="badge gray">2FA: OFF</span>
+            <span data-portal-ui>Admin</span>
+            <span class="card-value" data-portal-ui>
+              <span id="admin-2fa-badge" class="badge gray" data-portal-ui>2FA: OFF</span>
             </span>
           </div>
 
@@ -2935,7 +2935,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     placeholder="azumi"
                     autocomplete="username"
                   />
-                  <button id="admin-rename" class="btn" type="submit">
+                  <button id="admin-rename" class="btn" type="submit" data-portal-ui>
                     <i class="fa-solid fa-save"></i> Save
                   </button>
                 </div>
@@ -2988,7 +2988,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                     placeholder="Repeat new password"
                     autocomplete="new-password"
                   />
-                  <button id="pw-save" class="btn" type="submit">
+                  <button id="pw-save" class="btn" type="submit" data-portal-ui>
                     <i class="fa-solid fa-key"></i> Update
                   </button>
                 </div>
@@ -3022,7 +3022,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                 <h4
                   class="kicker"
                   style="margin: 0; font-weight: 700; font-size: 13px"
-                >
+                 data-portal-ui>
                   Two-Factor Authentication (TOTP)
                 </h4>
                 <span
@@ -3030,34 +3030,34 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                   class="badge gray"
                   title="Stored recovery codes count"
                   style="display: none"
-                >
+                 data-portal-ui>
                   codes: 0
                 </span>
               </div>
 
               <div id="twofa-off" style="display: none">
-                <p class="muted" style="margin: 0 0 8px">
-                  2FA is currently <strong>disabled</strong>.
+                <p class="muted" style="margin: 0 0 8px" data-portal-ui>
+                  2FA is currently <strong data-portal-ui>disabled</strong>.
                 </p>
                 <div
                   class="twofa-actions"
                   style="display: flex; gap: 8px; align-items: center"
                 >
-                  <button id="twofa-begin" class="btn">
+                  <button id="twofa-begin" class="btn" data-portal-ui>
                     <i class="fa-solid fa-shield-halved"></i> Enable 2FA
                   </button>
                 </div>
               </div>
 
               <div id="twofa-on" style="display: none">
-                <p class="muted" style="margin: 0 0 8px">
-                  2FA is <strong>enabled</strong>.
+                <p class="muted" style="margin: 0 0 8px" data-portal-ui>
+                  2FA is <strong data-portal-ui>enabled</strong>.
                 </p>
                 <div
                   class="twofa-actions"
                   style="display: flex; gap: 8px; align-items: center"
                 >
-                  <button id="twofa-disable" class="btn secondary">
+                  <button id="twofa-disable" class="btn secondary" data-portal-ui>
                     <i class="fa-solid fa-ban"></i> Disable 2FA
                   </button>
                 </div>
@@ -3122,11 +3122,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
                         autocomplete="one-time-code"
                         style="max-width: 160px"
                       />
-                      <button id="twofa-confirm" class="btn">
+                      <button id="twofa-confirm" class="btn" data-portal-ui>
                         <i class="fa-solid fa-check"></i> Confirm
                       </button>
                     </div>
-                    <p class="small-text" style="margin-top: 8px">
+                    <p class="small-text" style="margin-top: 8px" data-portal-ui>
                       After confirming, you’ll receive one-time recovery codes.
                       Store them safely.
                     </p>
@@ -3155,17 +3155,17 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 <div id="tg-add-modal" class="modal">
   <div class="modal-backdrop" data-close></div>
   <div class="modal-content" style="max-width: 560px">
-    <h3 style="margin: 0 0 10px 0">Add Telegram recipient</h3>
+    <h3 style="margin: 0 0 10px 0" data-portal-ui>Add Telegram recipient</h3>
     <div class="form-group">
-      <label for="tg-new-id">Telegram numeric ID</label
+      <label for="tg-new-id" data-portal-ui>Telegram numeric ID</label
       ><input class="input" id="tg-new-id" placeholder="e.g. 6325621171" />
     </div>
     <div class="form-group">
-      <label for="tg-new-username">@username (optional)</label
+      <label for="tg-new-username" data-portal-ui>@username (optional)</label
       ><input class="input" id="tg-new-username" placeholder="@username" />
     </div>
     <div class="form-group">
-      <label for="tg-new-note">Note (optional)</label
+      <label for="tg-new-note" data-portal-ui>Note (optional)</label
       ><input class="input" id="tg-new-note" placeholder="Owner / SRE / etc." />
     </div>
     <div
@@ -3176,8 +3176,8 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         margin-top: 6px;
       "
     >
-      <button class="btn secondary" id="tg-add-cancel">Cancel</button>
-      <button class="btn" id="tg-add-save">
+      <button class="btn secondary" id="tg-add-cancel" data-portal-ui>Cancel</button>
+      <button class="btn" id="tg-add-save" data-portal-ui>
         <i class="fa-solid fa-check"></i> Save
       </button>
     </div>
@@ -3193,10 +3193,10 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 >
   <div class="modal-backdrop" data-close></div>
   <div class="modal-content log-studio" style="max-width: 840px">
-    <h3 id="modern-bot-log-title" style="margin: 0 0 0.5rem 0">
+    <h3 id="modern-bot-log-title" style="margin: 0 0 0.5rem 0" data-portal-ui>
       Telegram Logs
     </h3>
-    <p class="modern-only modern-description">
+    <p class="modern-only modern-description" data-portal-ui>
       Bot runtime and delivery events. Filter by severity or time range.
     </p>
     <div
@@ -3220,11 +3220,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         class="input"
         style="width: 180px"
       >
-        <option value="">All levels</option>
-        <option value="error">Errors</option>
-        <option value="warning">Warnings</option>
-        <option value="info">Info</option>
-        <option value="heartbeat">Heartbeat</option>
+        <option value="" data-portal-ui>All levels</option>
+        <option value="error" data-portal-ui>Errors</option>
+        <option value="warning" data-portal-ui>Warnings</option>
+        <option value="info" data-portal-ui>Info</option>
+        <option value="heartbeat" data-portal-ui>Heartbeat</option>
       </select>
       <input
         id="tg-from"
@@ -3240,7 +3240,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         type="datetime-local"
         style="width: 210px"
       />
-      <button class="btn secondary" id="tg-logs-apply">
+      <button class="btn secondary" id="tg-logs-apply" data-portal-ui>
         <i class="fa-solid fa-filter"></i> Apply
       </button>
     </div>
@@ -3253,13 +3253,13 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         margin-top: 10px;
       "
     >
-      <button class="btn danger" id="tg-logs-clear">
+      <button class="btn danger" id="tg-logs-clear" data-portal-ui>
         <i class="fa-solid fa-trash"></i> Clear
       </button>
-      <button class="btn" id="tg-logs-refresh">
+      <button class="btn" id="tg-logs-refresh" data-portal-ui>
         <i class="fa-solid fa-rotate-right"></i> Refresh
       </button>
-      <button class="btn secondary" id="tg-logs-close" data-modal-close>
+      <button class="btn secondary" id="tg-logs-close" data-modal-close data-portal-ui>
         Close
       </button>
     </div>
@@ -3275,8 +3275,8 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 >
   <div class="modal-backdrop" data-close></div>
   <div class="modal-content log-studio" style="max-width: 1024px">
-    <h3 id="modern-admin-log-title" style="margin: 0 0 0.5rem 0">Admin Logs</h3>
-    <p class="modern-only modern-description">
+    <h3 id="modern-admin-log-title" style="margin: 0 0 0.5rem 0" data-portal-ui>Admin Logs</h3>
+    <p class="modern-only modern-description" data-portal-ui>
       Audit administrator actions across the panel.
     </p>
 
@@ -3301,14 +3301,14 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         class="input"
         style="width: 200px"
       >
-        <option value="">All actions</option>
-        <option value="peer_create">peer_create</option>
-        <option value="peer_delete">peer_delete</option>
-        <option value="peer_enable">peer_enable</option>
-        <option value="peer_disable">peer_disable</option>
-        <option value="peer_reset_timer">peer_reset_timer</option>
-        <option value="peer_reset_data">peer_reset_data</option>
-        <option value="log">log</option>
+        <option value="" data-portal-ui>All actions</option>
+        <option value="peer_create" data-portal-ui>peer_create</option>
+        <option value="peer_delete" data-portal-ui>peer_delete</option>
+        <option value="peer_enable" data-portal-ui>peer_enable</option>
+        <option value="peer_disable" data-portal-ui>peer_disable</option>
+        <option value="peer_reset_timer" data-portal-ui>peer_reset_timer</option>
+        <option value="peer_reset_data" data-portal-ui>peer_reset_data</option>
+        <option value="log" data-portal-ui>log</option>
       </select>
       <input
         id="al-from"
@@ -3324,9 +3324,9 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         type="datetime-local"
         style="width: 210px"
       />
-      <label class="toggle-row">
-        <span class="small">Auto-refresh</span>
-        <label class="switch sm">
+      <label class="toggle-row" data-portal-ui>
+        <span class="small" data-portal-ui>Auto-refresh</span>
+        <label class="switch sm" data-portal-ui>
           <input type="checkbox" id="al-autoref" />
           <span class="slider"></span>
         </label>
@@ -3344,11 +3344,11 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
       <table class="table" id="al-table" style="min-width: 760px">
         <thead>
           <tr>
-            <th style="width: 190px">Time (Local)</th>
-            <th style="width: 180px">Telegram Admin ID</th>
-            <th style="width: 140px">Action</th>
-            <th>Details</th>
-            <th style="width: 70px">Copy</th>
+            <th style="width: 190px" data-portal-ui>Time (Local)</th>
+            <th style="width: 180px" data-portal-ui>Telegram Admin ID</th>
+            <th style="width: 140px" data-portal-ui>Action</th>
+            <th data-portal-ui>Details</th>
+            <th style="width: 70px" data-portal-ui>Copy</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -3363,16 +3363,16 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
         margin-top: 10px;
       "
     >
-      <button type="button" class="btn danger" id="btn-clear-admin-logs">
+      <button type="button" class="btn danger" id="btn-clear-admin-logs" data-portal-ui>
         <i class="fa-solid fa-trash-can"></i> Clear
       </button>
-      <button class="btn secondary" id="al-export">
+      <button class="btn secondary" id="al-export" data-portal-ui>
         <i class="fa-solid fa-download"></i> Export CSV
       </button>
-      <button class="btn" id="al-refresh">
+      <button class="btn" id="al-refresh" data-portal-ui>
         <i class="fa-solid fa-rotate-right"></i> Refresh
       </button>
-      <button type="button" class="btn secondary" data-close>Close</button>
+      <button type="button" class="btn secondary" data-close data-portal-ui>Close</button>
     </div>
   </div>
 </div>
@@ -3399,17 +3399,17 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
       <div class="logsheet__badges" aria-hidden="true">
         <span class="pill gray" id="iflog-nodechip" style="display: none"
-          >Node</span
+           data-portal-ui>Node</span
         >
-        <span class="pill gray" id="iflog-ifacechip">wg0</span>
+        <span class="pill gray" id="iflog-ifacechip" data-portal-ui>wg0</span>
       </div>
     </header>
 
     <section class="logsheet__toolbar">
       <div class="label-stack">
-        <span class="label-strong">Source</span>
+        <span class="label-strong" data-portal-ui>Source</span>
         <small class="muted"
-          >Pick Local or a specific Node, then interface</small
+           data-portal-ui>Pick Local or a specific Node, then interface</small
         >
       </div>
 
@@ -3423,7 +3423,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           hidden
         />
         <label for="iflog-scope-local" role="tab"
-          ><i class="fa-regular fa-computer"></i> Local</label
+           data-portal-ui><i class="fa-regular fa-computer"></i> Local</label
         >
 
         <input
@@ -3434,7 +3434,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           hidden
         />
         <label for="iflog-scope-node" role="tab"
-          ><i class="fa-solid fa-server"></i> Node</label
+           data-portal-ui><i class="fa-solid fa-server"></i> Node</label
         >
       </div>
 
@@ -3465,21 +3465,21 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
           class="btn ghost"
           aria-pressed="true"
           title="Toggle wrap"
-        >
+         data-portal-ui>
           <i class="fa-solid fa-align-left"></i>
-          <span class="btn-txt">Wrap</span>
+          <span class="btn-txt" data-portal-ui>Wrap</span>
         </button>
-        <button id="iflog-copy" class="btn ghost" title="Copy">
+        <button id="iflog-copy" class="btn ghost" title="Copy" data-portal-ui>
           <i class="fa-solid fa-copy"></i>
-          <span class="btn-txt">Copy</span>
+          <span class="btn-txt" data-portal-ui>Copy</span>
         </button>
-        <button id="iflog-dl" class="btn ghost" title="Download">
+        <button id="iflog-dl" class="btn ghost" title="Download" data-portal-ui>
           <i class="fa-solid fa-file-lines"></i>
-          <span class="btn-txt">Download</span>
+          <span class="btn-txt" data-portal-ui>Download</span>
         </button>
-        <button id="iflog-refresh" class="btn" title="Refresh">
+        <button id="iflog-refresh" class="btn" title="Refresh" data-portal-ui>
           <i class="fa-solid fa-rotate"></i>
-          <span class="btn-txt">Refresh</span>
+          <span class="btn-txt" data-portal-ui>Refresh</span>
         </button>
       </div>
     </section>
@@ -3498,7 +3498,7 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
 
     <footer class="logsheet__foot">
       <small class="muted" id="iflog-last" aria-live="polite"></small>
-      <button class="btn secondary" data-close>Close</button>
+      <button class="btn secondary" data-close data-portal-ui>Close</button>
     </footer>
   </div>
 </div>
@@ -3510,10 +3510,10 @@ set use_fa_brands = true %} {% endblock %} {% block head_extras %}
     <div class="ui-confirm__title" id="ui-confirm-title">Confirm</div>
     <div class="ui-confirm__body" id="ui-confirm-body">Are you sure?</div>
     <div class="ui-confirm__actions">
-      <button type="button" class="btn secondary" id="ui-confirm-cancel">
+      <button type="button" class="btn secondary" id="ui-confirm-cancel" data-portal-ui>
         Cancel
       </button>
-      <button type="button" class="btn danger" id="ui-confirm-ok">OK</button>
+      <button type="button" class="btn danger" id="ui-confirm-ok" data-portal-ui>OK</button>
     </div>
   </div>
 </div>

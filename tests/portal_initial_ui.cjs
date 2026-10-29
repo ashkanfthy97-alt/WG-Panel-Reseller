@@ -165,13 +165,13 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
       if (url.pathname === '/reseller/api/accounts') {
         if (route.request().method() === 'POST') {
           childPayload = route.request().postDataJSON();
-          const child = {...childPayload,id:2,parent_id:1,active:false,enabled:true,expires_at:0,creation_fee_toman:3000000,interfaces:[3],assigned_interfaces:[{id:3,name:'wg_r2',listen_port:51825}],interface_provision:{state:'complete',port:51825},approval_status:'pending'};
+          const child = {...childPayload,id:2,parent_id:1,active:false,enabled:true,expires_at:0,creation_fee_toman:5000000,interfaces:[3],assigned_interfaces:[{id:3,name:'wg_r2',listen_port:51825}],interface_provision:{state:'complete',port:51825},approval_status:'pending'};
           children.push(child);
           return route.fulfill({status:201,json:{account:child,interface:{id:3,name:'wg_r2',listen_port:51825},signin_url:'/login'}});
         }
-        return route.fulfill({json:{accounts:children,interfaces:[{id:1,name:'wg0'}],creation_fee:{amount:3000000,currency:'toman',one_time:true,payment_gateway:false}}});
+        return route.fulfill({json:{accounts:children,interfaces:[{id:1,name:'wg0'}],creation_fee:{amount:5000000,currency:'toman',one_time:true,payment_gateway:false}}});
       }
-      if (url.pathname === '/resellers/api/accounts') return route.fulfill({json:{accounts:[{...account,direct_child_count:1,descendant_count:1},...children],interfaces:[{id:1,name:'wg0'}],audit:[],operations:[],summary:{total_resellers:2,subresellers:1,total_creation_fee_toman:3000000,pending_approvals:1}}});
+      if (url.pathname === '/resellers/api/accounts') return route.fulfill({json:{accounts:[{...account,direct_child_count:1,descendant_count:1},...children],interfaces:[{id:1,name:'wg0'}],audit:[],operations:[],summary:{total_resellers:2,subresellers:1,total_creation_fee_toman:5000000,pending_approvals:1}}});
       const file = url.pathname === '/reseller/assets/reseller.js' ? 'deploy/linux/reseller_ui/reseller.js' : url.pathname.endsWith('/portal-locale.js') ? 'static/js/portal-locale.js' : null;
       if (file) return route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,file),'utf8')});
       if (url.pathname === '/reseller/assets/reseller.css') return route.fulfill({contentType:'text/css',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/reseller.css'),'utf8')});
@@ -227,7 +227,7 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     assert.equal(await page.locator('#bot-disable').isVisible(),true);
     await page.locator('[data-reseller-section="children"]').click();
     await page.locator('#add-child').click();
-    assert.match(await page.locator('#child-fee-amount').textContent(), /[3۳]/);
+    assert.match(await page.locator('#child-fee-amount').textContent(), /[5۵]/);
     await page.locator('#child-username').fill('child-dealer');
     await page.locator('#child-password').fill('a-safe-child-password');
     assert.equal(await page.locator('#child-form input').count(),2,'Parent enters only username and password');
@@ -240,7 +240,7 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     assert.match(await page.locator('#child-rows').textContent(), /51825/);
     await page.goto('http://panel.test/resellers');
     await page.waitForFunction(() => document.getElementById('account-rows')?.textContent.includes('child-dealer'));
-    assert.match(await page.locator('#summary-creation-fees').textContent(), /[3۳]/);
+    assert.match(await page.locator('#summary-creation-fees').textContent(), /[5۵]/);
     await page.locator('#provision-endpoint-host').waitFor({state:'visible'});
     await page.locator('#provision-endpoint-host').fill('draft.example.test');
     const originalDirection=await page.locator('html').getAttribute('dir');
@@ -359,6 +359,82 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     }
     account.active=true; account.approval_status='approved';
     await context.close();
+    // Sign-out and authenticator setup use isolated, fully simulated accounts.
+    for(const language of ['fa','en']) for(const width of [1440,390]){
+      const context=await browser.newContext({viewport:{width,height:1000}});
+      await context.addInitScript(value=>localStorage.setItem('wgportal-language',value),language);
+      const securityAccount={...account,active:true,approval_status:'approved',creation_fee_toman:5000000};
+      let signedIn=true,enabled=false,logoutCalls=0,createStarted=false,releaseCreate;
+      const heldCreate=new Promise(resolve=>{releaseCreate=resolve;});
+      const recovery=Array.from({length:10},(_,i)=>'recovery-private-'+i);
+      await context.route('**/*',async route=>{
+        const request=route.request(),url=new URL(request.url()),method=request.method();
+        const json=(value,status=200)=>route.fulfill({status,json:{...value,csrf:'security-test-csrf'}});
+        if(url.pathname==='/reseller')return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/index.html'),'utf8')});
+        if(url.pathname==='/login')return route.fulfill({contentType:'text/html',body:'<html><body><h1>ورود</h1><form id="logged-out-login"></form></body></html>'});
+        if(url.pathname==='/reseller/assets/reseller.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/reseller.js'),'utf8')});
+        if(url.pathname==='/reseller/assets/reseller.css')return route.fulfill({contentType:'text/css',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/reseller.css'),'utf8')});
+        if(method!=='GET')assert.equal(request.headers()['x-reseller-csrf'],'security-test-csrf');
+        if(url.pathname==='/reseller/api/session')return json({account:signedIn?securityAccount:null,activation:{amount:securityAccount.creation_fee_toman}});
+        if(url.pathname==='/reseller/api/logout'){logoutCalls++;signedIn=false;return json({ok:true,signin_url:'/login'});}
+        if(url.pathname==='/reseller/api/security')return json({enabled,recovery_codes_remaining:enabled?10:0});
+        if(url.pathname.startsWith('/reseller/api/security/')){
+          const body=request.postDataJSON();
+          assert.equal(body.password,'correct-temporary-password');
+          if(url.pathname.endsWith('/setup'))return json({secret:'JBSWY3DPEHPK3PXP',otpauth_uri:'otpauth://totp/private',qr_data_uri:null,expires_in:600});
+          assert.deepEqual(Object.keys(body).sort(),['otp','password']);
+          if(body.otp!=='123456')return json({error:'invalid_otp',message:'کد تأیید درست نیست.'},400);
+          enabled=url.pathname.endsWith('/enable');return json({enabled,...(enabled?{recovery_codes:recovery}:{})});
+        }
+        if(url.pathname==='/reseller/api/peers'&&method==='POST'){
+          createStarted=true;await heldCreate;
+          return json({id:1,ok:true},201).catch(()=>{});
+        }
+        if(url.pathname==='/reseller/api/peers')return json({peers:[]});
+        if(url.pathname==='/reseller/api/accounts')return json({accounts:[],creation_fee:{amount:5000000}});
+        if(url.pathname==='/reseller/api/bot')return json({bot:{configured:false},native_csrf:'native'});
+        return route.fulfill({body:''});
+      });
+      const page=await context.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
+      await page.goto('http://panel.test/reseller#security');
+      await page.locator('#security-setup').waitFor({state:'visible'});
+      await page.locator('#security-password').fill('correct-temporary-password');
+      await page.locator('#security-setup').click();
+      await page.locator('#security-enrollment').waitFor({state:'visible'});
+      assert.equal(await page.locator('#security-secret').inputValue(),'JBSWY3DPEHPK3PXP');
+      await page.locator('#security-otp').fill('wrong');await page.locator('#security-enable').click();
+      await page.waitForFunction(()=>document.querySelector('#security-result').textContent.includes('کد'));
+      await page.waitForFunction(()=>!document.querySelector('#security-enable').disabled);
+      assert.equal(enabled,false);
+      await page.locator('#security-otp').fill('۱۲۳۴۵۶');await page.locator('#security-enable').click();
+      await page.locator('#security-recovery').waitFor({state:'visible'});
+      assert.equal(enabled,true);assert.equal(await page.locator('#security-recovery-codes').inputValue(),recovery.join('\n'));
+      assert.equal(await page.locator('#security-password').inputValue(),'');
+      await page.locator('[data-reseller-section="overview"]').click();
+      assert.equal(await page.locator('#security-recovery-codes').inputValue(),'');
+      await page.locator('[data-reseller-section="security"]').click();
+      await page.locator('#security-password').fill('correct-temporary-password');await page.locator('#security-otp').fill('123456');
+      await page.locator('#security-disable').click();await page.waitForFunction(()=>!document.querySelector('#security-setup').hidden);
+      assert.equal(enabled,false);
+      securityAccount.active=false;securityAccount.approval_status='pending';securityAccount.creation_fee_toman=3000000;
+      await page.reload();await page.locator('#security-title').waitFor({state:'visible'});
+      assert.equal(await page.locator('[data-reseller-section="services"]').isVisible(),false);
+      assert.match(await page.locator('#payment-fee').textContent(),language==='fa'?/۳.*۰۰۰.*۰۰۰/:/3.*000.*000/,'Historical fee remains accurate');
+      securityAccount.active=true;securityAccount.approval_status='approved';
+      await page.goto('http://panel.test/reseller#services');await page.reload();
+      await page.locator('[data-reseller-section="services"]').click();
+      await page.locator('#peer-name').fill('in-flight-before-logout');
+      await page.locator('#peer-form button[type=submit]').click();
+      for(let count=0;!createStarted&&count<100;count++)await page.waitForTimeout(10);
+      assert(createStarted,'A real UI mutation is held busy before logout');
+      await page.locator('#logout').click();await page.waitForURL('**/login');
+      assert.equal(logoutCalls,1,'Logout is never swallowed by another in-flight action');
+      releaseCreate();
+      await page.goto('http://panel.test/reseller');await page.waitForURL('**/login');
+      assert.equal(await page.locator('#logged-out-login').count(),1);
+      assert.deepEqual(errors,[],'Security and logout do not cause runtime errors');
+      await context.close();
+    }
     // New operations stay completely mocked, including rotating CSRF and uncertain outcomes.
     for (const language of ['fa','en']) for (const width of [1440,390]) {
       const operationsContext=await browser.newContext({viewport:{width,height:1000}});
@@ -387,7 +463,7 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
           }
           return json({accounts:operationAccounts,interfaces:[{id:1,name:'wg0'}],audit:[],operations:[]});
         }
-        if(url.pathname==='/reseller/api/accounts'&&method==='GET')return json({accounts:operationAccounts.filter(value=>value.parent_id===1),creation_fee:{amount:3000000}});
+        if(url.pathname==='/reseller/api/accounts'&&method==='GET')return json({accounts:operationAccounts.filter(value=>value.parent_id===1),creation_fee:{amount:5000000}});
         if(/\/accounts\/\d+\/approval$/.test(url.pathname)) {
           const id=Number(url.pathname.split('/').at(-2));approvalCalls.push(id);
           assert.deepEqual(request.postDataJSON(),{approved:true,days:30});
@@ -410,7 +486,7 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
           if(id===52)return json({error:'delete_uncertain',message:'native deletion outcome unknown'},502);
           if(url.pathname.includes('/peers/'))operationPeers.splice(operationPeers.findIndex(value=>value.id===id),1);
           else operationAccounts.find(value=>value.id===id).deleted=true;
-          return json({ok:true,resources_preserved:!url.pathname.includes('/peers/')});
+          return json({ok:true,resources_preserved:!url.pathname.includes('/peers/'),...(!url.pathname.includes('/peers/')?{warning:'bot_cleanup_pending'}:{})});
         }
         if(url.pathname==='/reseller/api/bot')return json({native_csrf:'mock-native',bot:{configured:false,enabled:false,status:'not_configured'}});
         return route.fulfill({body:''});
@@ -447,6 +523,7 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
       await operationsPage.waitForFunction(()=>document.querySelector('#account-rows tr[data-account-id="13"]')&&!document.querySelector('#account-rows tr[data-account-id="13"] button'));
       assert.equal(await operationsPage.locator('#account-rows tr[data-account-id="13"] button').count(),0,'Archived row is readonly');
       assert.equal(deleteCalls[0],'/resellers/api/accounts/13');
+      await operationsPage.waitForFunction(()=>document.querySelector('#notice').textContent.match(/پاک‌سازی|cleanup/));
       ownerCreateUncertain=true;
       await operationsPage.locator('#add-reseller').click();
       await operationsPage.locator('#account-username').fill('uncertain-owner');

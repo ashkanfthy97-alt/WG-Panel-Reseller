@@ -4,9 +4,9 @@
   dir="{{ 'ltr' if request.cookies.get('wgportal-language') == 'en' else 'rtl' }}"
   data-render-design="{{ 'legacy' if request.args.get('design', request.cookies.get('wg-design')) == 'legacy' else 'modern' }}"
 >
-  <head>
+  <head><script src="/static/js/portal-translations-fa.js?v=20261029"></script><script src="/static/js/portal-locale.js?v=20261029"></script>
     <meta charset="utf-8" />
-    <script src="{{ url_for('static', filename='js/portal-locale.js') }}?v=hierarchy1"></script>
+    
     <title>{% block title %}WG Portal{% endblock %}</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
@@ -253,7 +253,7 @@
         aria-controls="panel-sidebar"
         aria-expanded="false"
         aria-label="Open menu"
-      >
+       data-portal-ui>
         <span class="wg-mobile-menu-lines" aria-hidden="true"
           ><i></i><i></i><i></i
         ></span>
@@ -268,7 +268,7 @@
           class="nx-logo modern-only"
           alt=""
         />
-        <strong>WG Portal</strong>
+        <strong data-portal-ui>WG Portal</strong>
       </div>
     </header>
     <button
@@ -289,8 +289,8 @@
           class="nx-logo modern-only"
           alt=""
         />
-        <span class="brand-title">WG Portal</span>
-        <span class="brand-abbr" aria-hidden="true">WG</span>
+        <span class="brand-title" data-portal-ui>WG Portal</span>
+        <span class="brand-abbr" aria-hidden="true" data-portal-ui>WG</span>
       </div>
 
       <div class="sb2-body">
@@ -303,9 +303,9 @@
             class="sb2-link{{ ' active' if ep == 'index' else '' }}"
             data-tip="Dashboard"
             aria-current="{{ 'page' if ep == 'index' else '' }}"
-          >
+           data-portal-ui>
             <i class="fas fa-gauge-simple" aria-hidden="true"></i
-            ><span class="sb2-text">Dashboard</span>
+            ><span class="sb2-text" data-portal-ui>Dashboard</span>
           </a>
 
           <a
@@ -313,9 +313,9 @@
             class="sb2-link{{ ' active' if ep == 'users' else '' }}"
             data-tip="Peers"
             aria-current="{{ 'page' if ep == 'users' else '' }}"
-          >
+           data-portal-ui>
             <i class="fas fa-people-group" aria-hidden="true"></i
-            ><span class="sb2-text">Peers</span>
+            ><span class="sb2-text" data-portal-ui>Peers</span>
           </a>
 
           <a
@@ -323,9 +323,9 @@
             class="sb2-link{{ ' active' if ep.startswith('subscriptions') or request.path.startswith('/subscriptions') else '' }}"
             data-tip="Subscriptions"
             aria-current="{{ 'page' if ep.startswith('subscriptions') or request.path.startswith('/subscriptions') else '' }}"
-          >
+           data-portal-ui>
             <i class="fas fa-link" aria-hidden="true"></i
-            ><span class="sb2-text">Subscriptions</span>
+            ><span class="sb2-text" data-portal-ui>Subscriptions</span>
           </a>
 
           {% if HAS_NODES %}
@@ -335,9 +335,9 @@
             class="sb2-link{{ ' active' if ep.startswith('nodes') else '' }}"
             data-tip="Nodes"
             aria-current="{{ 'page' if ep.startswith('nodes') else '' }}"
-          >
+           data-portal-ui>
             <i class="fas fa-server" aria-hidden="true"></i
-            ><span class="sb2-text">Nodes</span>
+            ><span class="sb2-text" data-portal-ui>Nodes</span>
           </a>
           {% endif %}
 
@@ -346,18 +346,18 @@
             href="{{ url_for('operations.page') }}"
             class="sb2-link{{ ' active' if ep == 'operations.page' else '' }}"
             data-tip="Panel Center"
-          >
+           data-portal-ui>
             <i class="fas fa-stethoscope" aria-hidden="true"></i
-            ><span class="sb2-text">Panel Center</span>
+            ><span class="sb2-text" data-portal-ui>Panel Center</span>
           </a>
           <a
             href="{{ url_for('logs_page') }}"
             class="sb2-link{{ ' active' if ep.startswith('logs') else '' }}"
             data-tip="Activity logs"
             aria-current="{{ 'page' if ep.startswith('logs') else '' }}"
-          >
+           data-portal-ui>
             <i class="fa fa-file-alt" aria-hidden="true"></i
-            ><span class="sb2-text">Activity logs</span>
+            ><span class="sb2-text" data-portal-ui>Activity logs</span>
           </a>
 
           <a
@@ -365,9 +365,9 @@
             class="sb2-link{{ ' active' if ep.startswith('backup') else '' }}"
             data-tip="Backup"
             aria-current="{{ 'page' if ep.startswith('backup') else '' }}"
-          >
+           data-portal-ui>
             <i class="fas fa-box-archive" aria-hidden="true"></i
-            ><span class="sb2-text">Backup</span>
+            ><span class="sb2-text" data-portal-ui>Backup</span>
           </a>
 
           {% if HAS_SETTINGS %}
@@ -377,9 +377,9 @@
             data-tip="Settings"
             data-settings-nav="panel"
             aria-current="{{ 'page' if ep in ['settings_page','settings'] else '' }}"
-          >
+           data-portal-ui>
             <i class="fas fa-sliders" aria-hidden="true"></i
-            ><span class="sb2-text">Settings</span>
+            ><span class="sb2-text" data-portal-ui>Settings</span>
           </a>
           {% endif %}
 
@@ -388,21 +388,21 @@
             class="sb2-link{{ ' active' if ep == 'api_docs_page' else '' }}"
             data-tip="API Docs"
             aria-current="{{ 'page' if ep == 'api_docs_page' else '' }}"
-          >
+           data-portal-ui>
             <i class="fa-solid fa-code" aria-hidden="true"></i
-            ><span class="sb2-text">API Docs</span>
+            ><span class="sb2-text" data-portal-ui>API Docs</span>
           </a>
         </nav>
 
         <nav class="nx-nav modern-only" aria-label="Primary">
           <details class="nx-workspace-picker">
-            <summary>
-              <i class="fas fa-layer-group"></i><span>Main workspace</span
+            <summary data-portal-ui>
+              <i class="fas fa-layer-group"></i><span data-portal-ui>Main workspace</span
               ><i class="fas fa-chevron-down"></i>
             </summary>
-            <a href="/">Overview</a>{% if HAS_NODES %}<a
+            <a href="/" data-portal-ui>Overview</a>{% if HAS_NODES %}<a
               href="{{ url_for('nodes') }}"
-              >Manage nodes</a
+               data-portal-ui>Manage nodes</a
             >{% endif %}
           </details>
           <div class="sb2-section">Navigation</div>
@@ -429,44 +429,44 @@
             class="sb2-link{{ ' active' if ep == 'nodes' else '' }}"
             href="{{ url_for('nodes') }}"
             data-tip="Nodes"
-            ><i class="fas fa-server"></i><span class="sb2-text">Nodes</span></a
+             data-portal-ui><i class="fas fa-server"></i><span class="sb2-text" data-portal-ui>Nodes</span></a
           >{% endif %}
           <div class="sb2-section nx-nav-divider">Management</div>
           <a
             class="sb2-link{{ ' active' if ep == 'operations.page' else '' }}"
             href="{{ url_for('operations.page') }}"
             data-tip="Panel Center"
-            ><i class="fas fa-chart-simple"></i
-            ><span class="sb2-text">Panel Center</span></a
+             data-portal-ui><i class="fas fa-chart-simple"></i
+            ><span class="sb2-text" data-portal-ui>Panel Center</span></a
           >
           <a
             class="sb2-link{{ ' active' if ep == 'logs_page' else '' }}"
             href="{{ url_for('logs_page') }}"
             data-tip="Activity logs"
-            ><i class="fas fa-file-lines"></i
-            ><span class="sb2-text">Activity logs</span></a
+             data-portal-ui><i class="fas fa-file-lines"></i
+            ><span class="sb2-text" data-portal-ui>Activity logs</span></a
           >
           <a
             class="sb2-link{{ ' active' if ep == 'backup_page' else '' }}"
             href="{{ url_for('backup_page') }}"
             data-tip="Backup"
-            ><i class="fas fa-box-archive"></i
-            ><span class="sb2-text">Backup</span></a
+             data-portal-ui><i class="fas fa-box-archive"></i
+            ><span class="sb2-text" data-portal-ui>Backup</span></a
           >
           {% if HAS_SETTINGS %}<a
             class="sb2-link{{ ' active' if ep == 'settings_page' else '' }}"
             href="{{ url_for('settings_page') }}?tab=panel"
             data-tip="Settings"
             data-settings-nav="panel"
-            ><i class="fas fa-gear"></i
-            ><span class="sb2-text">Settings</span></a
+             data-portal-ui><i class="fas fa-gear"></i
+            ><span class="sb2-text" data-portal-ui>Settings</span></a
           >{% endif %}
           <a
             class="sb2-link{{ ' active' if ep == 'api_docs_page' else '' }}"
             href="/api-docs"
             data-tip="API Docs"
-            ><i class="fas fa-code"></i
-            ><span class="sb2-text">API Docs</span></a
+             data-portal-ui><i class="fas fa-code"></i
+            ><span class="sb2-text" data-portal-ui>API Docs</span></a
           >
         </nav>
         <div class="sb2-bottom">
@@ -479,11 +479,11 @@
             aria-controls="panel-update-modal"
             data-tip="Open Update Center"
           >
-            <span class="sb2-update-icon">
+            <span class="sb2-update-icon" data-portal-ui>
               <i class="fas fa-code-branch" aria-hidden="true"></i>
             </span>
             <span class="sb2-update-copy">
-              <span class="sb2-update-k">Update center</span>
+              <span class="sb2-update-k" data-portal-ui>Update center</span>
               <strong class="sb2-update-versions">
                 <span id="sb2-version-current"
                   >v{{ PANEL_VERSION|default('1.0.0') }}</span
@@ -497,17 +497,17 @@
                 <span id="sb2-version-latest" hidden></span>
               </strong>
               <small class="sb2-update-hint" id="sb2-update-hint"
-                >Checking releases…</small
+                 data-portal-ui>Checking releases…</small
               >
             </span>
-            <span class="sb2-update-badges">
+            <span class="sb2-update-badges" data-portal-ui>
               <span
                 class="sb2-node-update-count"
                 id="sb2-node-update-count"
                 hidden
               ></span>
               <span class="sb2-update-state" id="sb2-version-state"
-                >checking</span
+                 data-portal-ui>checking</span
               >
             </span>
             <i
@@ -544,14 +544,14 @@
                   current_user.username|default(current_user.name|default('Admin'))
                   }}</strong
                 >
-                {% if is_admin %}<small>Admin</small>{% endif %}
+                {% if is_admin %}<small data-portal-ui>Admin</small>{% endif %}
               </span>
               <a
                 class="sb2-account-logout"
                 href="{{ url_for('logout') }}"
                 aria-label="Logout"
                 title="Logout"
-              >
+               data-portal-ui>
                 <i class="fas fa-right-from-bracket" aria-hidden="true"></i>
               </a>
             </div>
@@ -568,7 +568,7 @@
                 data-theme-choice="light"
                 title="Light mode"
                 aria-label="Light mode"
-              >
+               data-portal-ui>
                 <i class="fas fa-sun"></i>
               </button>
               <button
@@ -576,7 +576,7 @@
                 data-theme-choice="auto"
                 title="Use system theme"
                 aria-label="Use system theme"
-              >
+               data-portal-ui>
                 <i class="fas fa-desktop"></i>
               </button>
               <button
@@ -584,15 +584,15 @@
                 data-theme-choice="dark"
                 title="Dark mode"
                 aria-label="Dark mode"
-              >
+               data-portal-ui>
                 <i class="fas fa-moon"></i>
               </button>
             </div>
           </div>
 
           <div class="design-switch" role="group" aria-label="Panel design">
-            <button type="button" data-design-choice="modern">Modern</button>
-            <button type="button" data-design-choice="legacy">Legacy</button>
+            <button type="button" data-design-choice="modern" data-portal-ui>Modern</button>
+            <button type="button" data-design-choice="legacy" data-portal-ui>Legacy</button>
           </div>
           <div class="sb2-footer-actions">
             <a
@@ -602,7 +602,7 @@
               class="sb2-footer-icon"
               aria-label="GitHub repository"
               title="GitHub repository"
-            >
+             data-portal-ui>
               <i class="fa-brands fa-github" aria-hidden="true"></i>
             </a>
 
@@ -613,9 +613,9 @@
               data-tip="Collapse / Expand sidebar"
               aria-pressed="false"
               aria-label="Collapse sidebar"
-            >
+             data-portal-ui>
               <i class="fas fa-angles-left" aria-hidden="true"></i>
-              <span>Collapse</span>
+              <span data-portal-ui>Collapse</span>
             </button>
           </div>
         </div>
@@ -625,7 +625,7 @@
     <main class="main" id="main-content">
       <header class="nx-topbar modern-only">
         <div class="nx-breadcrumb">
-          <i class="fas fa-house"></i><span>Workspace</span><span>/</span
+          <i class="fas fa-house"></i><span data-portal-ui>Workspace</span><span>/</span
           ><b
             >{{
             {'index':'Overview','settings_page':'Settings','subscriptions_page':'Subscriptions','logs_page':'Activity','users':'Peers','nodes':'Nodes','operations.page':'Panel
@@ -640,15 +640,15 @@
             class="nx-search-trigger"
             data-nx-search
             aria-haspopup="dialog"
-          >
-            <i class="fas fa-magnifying-glass"></i><span>Search panel…</span
+           data-portal-ui>
+            <i class="fas fa-magnifying-glass"></i><span data-portal-ui>Search panel…</span
             ><kbd>⌘ / Ctrl K</kbd></button
           ><a
             href="{{ url_for('logs_page') }}"
             class="nx-icon-button"
             title="Activity logs"
             aria-label="Activity logs"
-            ><i class="far fa-bell"></i></a
+             data-portal-ui><i class="far fa-bell"></i></a
           ><a
             href="{{ url_for('settings_page') }}?tab=admin"
             class="nx-avatar"
@@ -699,11 +699,11 @@
       <section class="pu-dialog">
         <header class="pu-head">
           <div class="pu-title-wrap">
-            <span class="pu-logo"><i class="fas fa-cloud-arrow-down"></i></span>
+            <span class="pu-logo" data-portal-ui><i class="fas fa-cloud-arrow-down"></i></span>
             <div>
-              <span class="ws-eyebrow">RELEASE MANAGEMENT</span>
-              <h2 id="pu-title">Update center</h2>
-              <p>Safely update the local panel and registered nodes.</p>
+              <span class="ws-eyebrow" data-portal-ui>RELEASE MANAGEMENT</span>
+              <h2 id="pu-title" data-portal-ui>Update center</h2>
+              <p data-portal-ui>Safely update the local panel and registered nodes.</p>
             </div>
           </div>
           <button
@@ -711,30 +711,30 @@
             type="button"
             data-pu-close
             aria-label="Close"
-          >
+           data-portal-ui>
             <i class="fas fa-xmark"></i>
           </button>
         </header>
 
         <div class="pu-summary">
           <div>
-            <span>Local panel</span
-            ><strong id="pu-local-summary">Checking…</strong>
+            <span data-portal-ui>Local panel</span
+            ><strong id="pu-local-summary" data-portal-ui>Checking…</strong>
           </div>
           <div>
-            <span>Registered nodes</span><strong id="pu-node-count">—</strong>
+            <span data-portal-ui>Registered nodes</span><strong id="pu-node-count">—</strong>
           </div>
-          <button class="pu-refresh" id="pu-refresh" type="button">
-            <i class="fas fa-rotate"></i><span>Refresh</span>
+          <button class="pu-refresh" id="pu-refresh" type="button" data-portal-ui>
+            <i class="fas fa-rotate"></i><span data-portal-ui>Refresh</span>
           </button>
         </div>
 
         <div class="pu-body">
           <div class="ws-update-intro">
             <div>
-              <span class="ws-eyebrow">YOUR INFRASTRUCTURE</span>
-              <h3>Keep your fleet up to date.</h3>
-              <p>
+              <span class="ws-eyebrow" data-portal-ui>YOUR INFRASTRUCTURE</span>
+              <h3 data-portal-ui>Keep your fleet up to date.</h3>
+              <p data-portal-ui>
                 Review installed versions and available releases before
                 updating.
               </p>
@@ -743,16 +743,16 @@
           </div>
           <section class="pu-target pu-local" data-target-kind="local">
             <div class="pu-target-main">
-              <span class="pu-target-icon"><i class="fas fa-server"></i></span>
+              <span class="pu-target-icon" data-portal-ui><i class="fas fa-server"></i></span>
               <div class="pu-target-copy">
                 <div class="pu-target-title">
-                  <strong>Local panel</strong>
-                  <span class="pu-pill" id="pu-local-state">Checking</span>
+                  <strong data-portal-ui>Local panel</strong>
+                  <span class="pu-pill" id="pu-local-state" data-portal-ui>Checking</span>
                 </div>
                 <div class="pu-versions">
-                  <span>Current <b id="pu-local-current">—</b></span>
+                  <span data-portal-ui>Current <b id="pu-local-current">—</b></span>
                   <i class="fas fa-arrow-right"></i>
-                  <span>Latest <b id="pu-local-latest">—</b></span>
+                  <span data-portal-ui>Latest <b id="pu-local-latest">—</b></span>
                 </div>
               </div>
               <button
@@ -760,13 +760,13 @@
                 id="pu-update-local"
                 type="button"
                 disabled
-              >
-                <i class="fas fa-download"></i><span>Update local</span>
+               data-portal-ui>
+                <i class="fas fa-download"></i><span data-portal-ui>Update local</span>
               </button>
             </div>
             <div class="pu-progress" id="pu-local-progress" hidden>
               <div class="pu-progress-top">
-                <span id="pu-local-stage">Preparing update…</span>
+                <span id="pu-local-stage" data-portal-ui>Preparing update…</span>
                 <b id="pu-local-percent">0%</b>
               </div>
               <div class="pu-track"><i id="pu-local-bar"></i></div>
@@ -775,9 +775,9 @@
 
           <div class="pu-section-title">
             <div>
-              <strong>Remote nodes</strong>
+              <strong data-portal-ui>Remote nodes</strong>
               <span
-                >Each node updates independently and restarts its own
+                 data-portal-ui>Each node updates independently and restarts its own
                 agent.</span
               >
             </div>
@@ -786,9 +786,9 @@
               id="pu-update-all"
               class="pu-update-all"
               disabled
-            >
+             data-portal-ui>
               <i class="fas fa-layer-group"></i
-              ><span>Update all available</span>
+              ><span data-portal-ui>Update all available</span>
             </button>
           </div>
 
@@ -803,19 +803,19 @@
           <div class="pu-safety">
             <i class="fas fa-shield-halved"></i>
             <span
-              >Every update creates a code backup, validates Python, installs
+               data-portal-ui>Every update creates a code backup, validates Python, installs
               dependencies, and reports rollback status.</span
             >
           </div>
-          <button type="button" class="pu-log-toggle" id="pu-log-toggle">
-            <i class="fas fa-terminal"></i><span>Update log</span>
+          <button type="button" class="pu-log-toggle" id="pu-log-toggle" data-portal-ui>
+            <i class="fas fa-terminal"></i><span data-portal-ui>Update log</span>
           </button>
         </footer>
 
         <div class="pu-log-drawer" id="pu-log-drawer" hidden>
           <div class="pu-log-head">
-            <strong><i class="fas fa-terminal"></i> Update activity</strong>
-            <button type="button" id="pu-log-clear">Clear view</button>
+            <strong data-portal-ui><i class="fas fa-terminal"></i> Update activity</strong>
+            <button type="button" id="pu-log-clear" data-portal-ui>Clear view</button>
           </div>
           <pre id="pu-log-output">No update activity yet.</pre>
         </div>
@@ -826,22 +826,22 @@
       <a
         href="{{ url_for('index') }}"
         class="{{ 'active' if request.endpoint == 'index' else '' }}"
-        ><i class="fas fa-house"></i><span>Overview</span></a
+         data-portal-ui><i class="fas fa-house"></i><span data-portal-ui>Overview</span></a
       >
       <a
         href="{{ url_for('users') }}"
         class="{{ 'active' if request.endpoint == 'users' else '' }}"
-        ><i class="fas fa-users"></i><span>Peers</span></a
+         data-portal-ui><i class="fas fa-users"></i><span data-portal-ui>Peers</span></a
       >
       <a
         href="{{ url_for('logs_page') }}"
         class="{{ 'active' if request.endpoint == 'logs_page' else '' }}"
-        ><i class="far fa-file-lines"></i><span>Activity</span></a
+         data-portal-ui><i class="far fa-file-lines"></i><span data-portal-ui>Activity</span></a
       >
       <a
         href="{{ url_for('settings_page') }}?tab=panel"
         class="{{ 'active' if request.endpoint == 'settings_page' else '' }}"
-        ><i class="fas fa-gear"></i><span>Settings</span></a
+         data-portal-ui><i class="fas fa-gear"></i><span data-portal-ui>Settings</span></a
       >
     </nav>
     <dialog
@@ -850,13 +850,13 @@
       aria-labelledby="nx-command-title"
     >
       <div class="nx-command-head">
-        <h2 id="nx-command-title">Go to…</h2>
+        <h2 id="nx-command-title" data-portal-ui>Go to…</h2>
         <button type="button" data-nx-search-close aria-label="Close search">
           ×
         </button>
       </div>
       <label class="nx-command-search"
-        ><i class="fas fa-magnifying-glass"></i
+         data-portal-ui><i class="fas fa-magnifying-glass"></i
         ><input
           id="nx-command-input"
           placeholder="Search pages and tools"
@@ -864,8 +864,8 @@
           aria-label="Search panel pages"
       /></label>
       <div id="nx-command-results"></div>
-      <p id="nx-command-empty" hidden>No matching pages.</p>
-      <small>Navigate with Tab · Close with Esc</small>
+      <p id="nx-command-empty" hidden data-portal-ui>No matching pages.</p>
+      <small data-portal-ui>Navigate with Tab · Close with Esc</small>
     </dialog>
     <dialog
       id="account-dialog"
@@ -875,8 +875,8 @@
       <form id="account-profile-form">
         <header>
           <div>
-            <span class="ws-eyebrow">YOUR ACCOUNT</span>
-            <h2 id="account-title">Profile & appearance</h2>
+            <span class="ws-eyebrow" data-portal-ui>YOUR ACCOUNT</span>
+            <h2 id="account-title" data-portal-ui>Profile & appearance</h2>
           </div>
           <button type="button" data-account-close aria-label="Close profile">
             ×
@@ -888,11 +888,11 @@
             <strong
               >{{ current_user.username|default('Administrator') }}</strong
             >
-            <p>Choose how you appear in this panel.</p>
+            <p data-portal-ui>Choose how you appear in this panel.</p>
           </div>
         </div>
         <fieldset>
-          <legend>Choose an avatar</legend>
+          <legend data-portal-ui>Choose an avatar</legend>
           <div class="account-presets">
             {% for avatar in
             ['orbit','mountain','wave','forest','sunrise','initials','astronaut','fox','robot','owl','cat','prism']
@@ -908,57 +908,57 @@
           </div>
         </fieldset>
         <label class="account-upload"
-          >Upload a picture<input
+           data-portal-ui>Upload a picture<input
             id="account-image"
             type="file"
             accept="image/png,image/jpeg,image/webp"
           /><small
-            >PNG, JPEG or WebP, up to 5 MB. Cropped to a square and resized
+             data-portal-ui>PNG, JPEG or WebP, up to 5 MB. Cropped to a square and resized
             before saving.</small
           ></label
         >
         <fieldset class="auth-preferences">
-          <legend>Login & registration</legend>
+          <legend data-portal-ui>Login & registration</legend>
           <label
-            >Page style<select id="account-auth-design">
-              <option value="follow">Follow workspace</option>
-              <option value="modern">Modern</option>
-              <option value="legacy">Legacy</option>
+             data-portal-ui>Page style<select id="account-auth-design">
+              <option value="follow" data-portal-ui>Follow workspace</option>
+              <option value="modern" data-portal-ui>Modern</option>
+              <option value="legacy" data-portal-ui>Legacy</option>
             </select></label
           ><small
-            >Saved on this browser. Uses your selected light or dark
+             data-portal-ui>Saved on this browser. Uses your selected light or dark
             mode.</small
           >
         </fieldset>
         <fieldset class="workspace-preferences">
-          <legend>Workspace appearance</legend>
-          <small>Saved on this browser. Modern layout only.</small
+          <legend data-portal-ui>Workspace appearance</legend>
+          <small data-portal-ui>Saved on this browser. Modern layout only.</small
           ><label
-            >Sidebar lighting<select id="workspace-lighting">
-              <option value="subtle">Ambient violet</option>
-              <option value="aurora">Violet & blue</option>
-              <option value="none">Plain</option>
+             data-portal-ui>Sidebar lighting<select id="workspace-lighting">
+              <option value="subtle" data-portal-ui>Ambient violet</option>
+              <option value="aurora" data-portal-ui>Violet & blue</option>
+              <option value="none" data-portal-ui>Plain</option>
             </select></label
           ><label
-            >Motion<select id="workspace-motion">
-              <option value="auto">Follow device preference</option>
-              <option value="off">Off</option>
+             data-portal-ui>Motion<select id="workspace-motion">
+              <option value="auto" data-portal-ui>Follow device preference</option>
+              <option value="off" data-portal-ui>Off</option>
             </select></label
           ><label
-            >Navigation spacing<select id="workspace-density">
-              <option value="comfortable">Comfortable</option>
-              <option value="compact">Compact</option>
+             data-portal-ui>Navigation spacing<select id="workspace-density">
+              <option value="comfortable" data-portal-ui>Comfortable</option>
+              <option value="compact" data-portal-ui>Compact</option>
             </select></label
           >
         </fieldset>
         <p id="account-status" role="status"></p>
         <footer>
           <a href="{{ url_for('settings_page') }}?tab=admin"
-            >Password & security</a
-          ><button type="submit" id="account-save" class="btn">
+             data-portal-ui>Password & security</a
+          ><button type="submit" id="account-save" class="btn" data-portal-ui>
             Save profile</button
           ><a class="account-signout" href="{{ url_for('logout') }}"
-            ><i class="fas fa-right-from-bracket"></i> Sign out</a
+             data-portal-ui><i class="fas fa-right-from-bracket"></i> Sign out</a
           >
         </footer>
       </form>

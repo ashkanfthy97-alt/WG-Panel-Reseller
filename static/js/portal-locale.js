@@ -1,4 +1,4 @@
-/* Translate the shared shell without replacing native elements or event bindings. */
+/* Translate explicitly identified UI text without replacing native controls or data. */
 (() => {
   "use strict";
   const dictionary = new Map(Object.entries({
@@ -28,14 +28,23 @@
     "No peers yet. Create your first peer to get started.":"هنوز Peerی وجود ندارد. برای شروع اولین Peer را بسازید.","Unable to load peers. Use Refresh to try again.":"دریافت Peerها ناموفق بود. دوباره تازه‌سازی کنید.","Peer data unavailable":"اطلاعات Peerها در دسترس نیست","Policy data unavailable":"اطلاعات دسترسی‌ها در دسترس نیست","Subscription check unavailable":"بررسی اشتراک‌ها در دسترس نیست","Open subscriptions to inspect current access policies.":"برای بررسی دسترسی‌ها، صفحهٔ اشتراک‌ها را باز کنید.","Node status unavailable":"وضعیت سرورها در دسترس نیست","Local server":"سرور محلی","Health data unavailable":"اطلاعات سلامت در دسترس نیست","Health summary unavailable":"خلاصهٔ سلامت در دسترس نیست","Health check unavailable":"بررسی سلامت در دسترس نیست","Health details require administrator access":"جزئیات سلامت به دسترسی مدیر نیاز دارد",
     "Workspace tools":"ابزارهای مدیریت","Live traffic window":"بازهٔ ترافیک زنده","Open Panel Center":"باز کردن مرکز عملیات","Connected peers during this session":"Peerهای متصل در این نشست","Active subscriptions during this session":"اشتراک‌های فعال در این نشست","Server traffic during this session":"ترافیک سرور در این نشست","API response times during this session":"زمان پاسخ API در این نشست","Live download and upload bandwidth in megabits per second":"پهنای باند زندهٔ دریافت و ارسال بر حسب مگابیت بر ثانیه","CPU usage":"مصرف پردازنده","Memory usage":"مصرف حافظه","Disk usage":"مصرف دیسک"
   }).forEach(([key,value]) => dictionary.set(key,value));
+  Object.entries(window.WGPortalPersian || {}).forEach(([key,value]) => dictionary.set(key,value));
+  Object.entries({"Close":"بستن","Authenticator or recovery code (if enabled)":"کد برنامهٔ احراز هویت یا بازیابی (اگر فعال است)","Enter authenticator or recovery code":"کد برنامه یا کد بازیابی را وارد کنید","If two-factor login is enabled, enter a fresh authenticator code or one recovery code.":"اگر ورود دومرحله‌ای فعال است، کد تازهٔ برنامه یا یکی از کدهای بازیابی را وارد کنید."}).forEach(([key,value])=>dictionary.set(key,value));
+  Object.entries({"Usage overview":"نمای کلی مصرف","Install WireGuard":"نصب وایرگارد","Configs":"کانفیگ‌ها","Support":"پشتیبانی"}).forEach(([key,value])=>dictionary.set(key,value));
   const originals = new WeakMap();
   const attributeOriginals = new WeakMap();
   let language = document.documentElement.lang === "en" ? "en" : "fa";
-  try { if(localStorage.getItem("wgportal-language") === "en") language = "en"; } catch { /* Storage is optional. */ }
-  const selector = ".sb2-text,.sb2-section,.nx-workspace-picker a,.nx-workspace-picker summary span,.nx-mobile-nav a,.nx-breadcrumb span,.nx-breadcrumb b,.nx-search-trigger span,.account-signout,.auth-header .muted,.auth-card .hint,label,button[type=submit],h1,h2,#nx-dashboard :is(p,span,small,strong,b,th,dt,dd,button,a),.peerx-form-modal :is(p,span,small,strong,b,legend,label,button),#iface-create-modal :is(p,span,small,strong,b,legend,label,button),.portal-interface-defaults :is(p,span,small,strong,b,label,button)";
+  try { const saved=localStorage.getItem("wgportal-language"); if(saved === "en" || saved === "fa") language = saved; } catch { /* Storage is optional. */ }
+  const selector = "[data-portal-ui],.sb2-text,.sb2-section,.nx-workspace-picker a,.nx-workspace-picker summary span,.nx-mobile-nav a,.nx-breadcrumb span,.nx-breadcrumb b,.nx-search-trigger span,.account-signout,.auth-header .muted,.auth-card .hint,label,button,legend,th,.modal-title,.empty-state,.help-text,.status-text,[role=alert],[role=status],.toast,.toast-message,.status-pill,.badge,#peer-status-label,#activation-label,#time-left,#data-left,#nx-dashboard :is(p,span,small,strong,b,th,dt,dd,button,a),.peerx-form-modal :is(p,span,small,strong,b,legend,label,button),#iface-create-modal :is(p,span,small,strong,b,legend,label,button),.portal-interface-defaults :is(p,span,small,strong,b,label,button)";
+  const protectedData = "script,style,pre,code,kbd,samp,textarea,[contenteditable=true],[data-no-translate],[translate=no],#peer-name,#sub-name,#peer-address,#peer-endpoint,#peer-public-key,.peer-name,.client-name,.node-name,.node-title,.profile-name,.profile-label,[data-peer-name],[data-node-name],[data-profile-name],.nx-peer-identity";
   function localized(key) {
     if (dictionary.has(key)) return dictionary.get(key);
+    const compact=String(key).replace(/\s+/g," ").trim();
+    if(dictionary.has(compact)) return dictionary.get(compact);
     const patterns = [
+      [/^(\d+) documented methods$/,n=>`${n} روش مستند`],
+      [/^Endpoint for (.+)\.$/,name=>`مسیر عملیات ${name}.`],
+      [/^Node agent endpoint for (.+)\.$/,name=>`مسیر عامل سرور: ${name}.`],
       [/^(\d+) peers in inventory$/,n=>`${n} Peer در فهرست`],
       [/^(\d+) total access policies$/,n=>`${n} سیاست دسترسی`],
       [/^(\d+) online · (\d+) offline or blocked$/,(a,b)=>`${a} آنلاین · ${b} آفلاین یا مسدود`],
@@ -46,7 +55,7 @@
       [/^Expiring within 7 days\.(?: (\d+) other policies are blocked or disabled\.)?$/,n=>`انقضا در ۷ روز آینده.${n ? ` ${n} دسترسی دیگر مسدود یا غیرفعال است.` : ""}`],
       [/^Updated (.+) · (.+)$/,(time,zone)=>`آخرین دریافت ${time} · ${zone}`]
     ];
-    for (const [pattern, format] of patterns) {const match = key.match(pattern);if(match) return format(...match.slice(1));}
+    for (const [pattern, format] of patterns) {const match = compact.match(pattern);if(match) return format(...match.slice(1));}
     return null;
   }
   function translateNode(node) {
@@ -78,22 +87,32 @@
     document.documentElement.lang = language;
     document.documentElement.dir = language === "fa" ? "rtl" : "ltr";
     document.querySelectorAll(selector).forEach((element) => {
-      if(element.closest("[data-portal-fa]") || (element.closest("#nx-recent-peers") && !element.matches(".nx-status-pill,.nx-empty"))) return;
+      if(element.closest(protectedData) || element.closest("[data-portal-fa]") || (element.closest("#nx-recent-peers") && !element.matches(".nx-status-pill,.nx-empty"))) return;
       element.childNodes.forEach((node) => {
         if(node.nodeType !== Node.TEXT_NODE) return;
         translateNode(node);
       });
     });
     document.querySelectorAll("[data-portal-fa][data-portal-en]").forEach((element)=>{const value=element.getAttribute(`data-portal-${language}`);if(element.textContent!==value)element.textContent=value;});
-    document.querySelectorAll("#nx-dashboard [aria-label],.nx-topbar [aria-label]").forEach((element)=>{
-      const source=attributeOriginals.get(element) || element.getAttribute("aria-label");
-      if(!dictionary.has(source)) return;
-      attributeOriginals.set(element,source);
-      element.setAttribute("aria-label",language === "fa" ? dictionary.get(source) : source);
+    document.querySelectorAll("[placeholder],[title],[aria-label]").forEach((element)=>{
+      if(element.closest(protectedData)) return;
+      const originalsByName=attributeOriginals.get(element) || {};
+      ["placeholder","title","aria-label"].forEach(name=>{
+        if(!element.hasAttribute(name)) return;
+        if(name !== "placeholder" && !element.matches("[data-portal-ui],button,input,select,label,a[role=button],.status-pill,.badge,[role=status],[role=alert]")) return;
+        const current=element.getAttribute(name), previous=originalsByName[name];
+        const source=previous && current===previous.rendered ? previous.source : current;
+        const translated=localized(source);
+        if(translated===null) return;
+        const rendered=language === "fa" ? translated : source;
+        originalsByName[name]={source,rendered};
+        if(current!==rendered) element.setAttribute(name,rendered);
+      });
+      attributeOriginals.set(element,originalsByName);
     });
-    document.querySelectorAll("#portal-language-toggle,#portal-language-toggle-mobile").forEach((toggle)=>{toggle.textContent = language === "fa" ? "EN" : "فارسی";toggle.setAttribute("aria-label",language === "fa" ? "Switch to English" : "تغییر زبان به فارسی");});
+    document.querySelectorAll("#portal-language-toggle,#portal-language-toggle-mobile").forEach((toggle)=>{const value=language === "fa" ? "EN" : "فارسی";if(toggle.textContent!==value)toggle.textContent=value;toggle.setAttribute("aria-label",language === "fa" ? "Switch to English" : "تغییر زبان به فارسی");});
     const management = document.getElementById("portal-management-link");
-    if(management) management.textContent = language === "fa" ? "مدیریت اتصال و سرویس‌ها" : "Secure management";
+    if(management){const value=language === "fa" ? "مدیریت اتصال و سرویس‌ها" : "Secure management";if(management.textContent!==value)management.textContent=value;}
     try {localStorage.setItem("wgportal-language",language);} catch { /* This page still uses the selected language. */ }
     document.cookie = "wgportal-language=" + language + "; Path=/; Max-Age=31536000; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : "");
     renderResellerSummary();
@@ -153,23 +172,19 @@
     apply();
     themeCharts();
     loadResellerSummary();
+    window.WGPortalLocaleReady = true;
     document.getElementById("nx-refresh")?.addEventListener("click", loadResellerSummary);
-    const dashboard = document.getElementById("nx-dashboard");
-    if(dashboard){
+    // Native tabs insert controls and status messages after loading. Observe the
+    // common body once; exact dictionaries and protected data boundaries still apply.
+    if(document.body){
       let queued=false;
       const observer=new MutationObserver(()=>{
         if(queued) return;
         queued=true;requestAnimationFrame(()=>{queued=false;apply();});
       });
-      observer.observe(dashboard,{subtree:true,childList:true,characterData:true});
+      observer.observe(document.body,{subtree:true,childList:true,characterData:true});
       window.addEventListener("pagehide",()=>observer.disconnect(),{once:true});
     }
-    document.querySelectorAll('.peerx-form-modal,#iface-create-modal,.portal-interface-defaults').forEach(modal => {
-      let queued = false;
-      const observer = new MutationObserver(() => {if (queued) return;queued = true;requestAnimationFrame(() => {queued = false;apply();});});
-      observer.observe(modal,{subtree:true,childList:true,characterData:true});
-      window.addEventListener('pagehide', () => observer.disconnect(), {once:true});
-    });
     window.addEventListener("wg-theme-change",themeCharts);
     window.addEventListener("storage",(event)=>{if(event.key === "wgportal-language"){language=event.newValue === "en" ? "en" : "fa";apply();themeCharts();}});
   }

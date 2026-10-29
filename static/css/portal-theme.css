@@ -95,3 +95,13 @@ html[dir=rtl] :is(.peerx-modal-head,.peerx-section-head){text-align:right}html[d
 @media(max-width:760px){body > :is(#peer-modal,#edit-peer-modal,#bulk-modal,#iface-create-modal){padding:8px!important}body > :is(#peer-modal,#edit-peer-modal,#bulk-modal,#iface-create-modal) > .modal-content{width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;max-height:calc(100dvh - 16px)!important}.portal-interface-defaults .iface-create-grid{grid-template-columns:1fr}.portal-interface-defaults .wide{grid-column:auto}}
 
 .portal-summary-values{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:1000px){.portal-summary-values{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.portal-summary-values{grid-template-columns:1fr}}
+
+/* Persian layout uses logical flow; protocol data stays copyable and LTR. */
+html[dir=rtl] body{direction:rtl;text-align:right}
+html[dir=rtl] :is(h1,h2,h3,h4,label,legend,th,.modal-title,.help-text,.form-group,.page-header,.card-header){text-align:start}
+html[dir=rtl] :is(input[type=email],input[type=url],input[type=number],input[autocomplete=one-time-code],input[id*=endpoint],input[id*=address],input[id*=dns],input[id*=port],input[id*=key],input[id*=token],input[id*=secret],textarea[id*=config],textarea[id*=key],pre,code,kbd,samp,[data-no-translate],[translate=no]){direction:ltr;text-align:left;unicode-bidi:plaintext}
+html[dir=rtl] :is(.input-group,.form-row,.row-actions,.modal-actions,.card-actions){gap:.6rem}
+html[dir=rtl] :is(.table-wrap,.table-scroll,.table-responsive){max-width:100%;overflow-x:auto}
+html[dir=rtl] :is(p,label,legend,.hint,.help-text,.modal-title){overflow-wrap:anywhere;line-height:1.8}
+html[dir=rtl] :is(dialog,.modal-content,.sheet,.panel){text-align:start}
+@media(max-width:760px){html[dir=rtl] :is(.form-grid,.settings-grid,.form-row){min-width:0}html[dir=rtl] :is(input,select,textarea){max-width:100%;box-sizing:border-box}html[dir=rtl] dialog{max-width:calc(100vw - 24px);box-sizing:border-box}}

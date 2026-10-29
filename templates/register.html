@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
-  <head>
+<html lang="{{ 'en' if request.cookies.get('wgportal-language') == 'en' else 'fa' }}" dir="{{ 'ltr' if request.cookies.get('wgportal-language') == 'en' else 'rtl' }}">
+  <head><script src="/static/js/portal-translations-fa.js?v=20261029"></script><script src="/static/js/portal-locale.js?v=20261029"></script>
     <script src="{{ url_for('static', filename='js/auth-appearance.js') }}"></script>
     <meta charset="utf-8" />
-    <title>WG Portal — Register</title>
+    <title data-portal-ui>WG Portal — Register</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
 
     <link
@@ -673,8 +673,8 @@
           <div class="t">WG Portal</div>
         </div>
 
-        <h2>Create Admin Account</h2>
-        <p class="hint">Set up your administrator credentials.</p>
+        <h2 data-portal-ui>Create Admin Account</h2>
+        <p class="hint" data-portal-ui>Set up your administrator credentials.</p>
 
         <form
           method="post"
@@ -685,7 +685,7 @@
 
           {% if require_token %}
           <div class="form-group">
-            <label for="setup_token">Setup token</label>
+            <label for="setup_token" data-portal-ui>Setup token</label>
             <input
               id="setup_token"
               name="setup_token"
@@ -698,7 +698,7 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label for="username">Username</label>
+              <label for="username" data-portal-ui>Username</label>
               <input
                 id="username"
                 name="username"
@@ -712,7 +712,7 @@
               />
             </div>
             <div class="form-group">
-              <label for="email">Email (optional)</label>
+              <label for="email" data-portal-ui>Email (optional)</label>
               <input
                 id="email"
                 name="email"
@@ -725,7 +725,7 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label for="password">Password</label>
+              <label for="password" data-portal-ui>Password</label>
               <input
                 id="password"
                 name="password"
@@ -736,7 +736,7 @@
               />
             </div>
             <div class="form-group">
-              <label for="password2">Confirm password</label>
+              <label for="password2" data-portal-ui>Confirm password</label>
               <input
                 id="password2"
                 name="password2"
@@ -757,9 +757,9 @@
             </div>
             <div class="twofa-row-right">
               <span id="twofa-status-pill" class="pill pill--off"
-                ><span class="dot"></span> Disabled</span
+                 data-portal-ui><span class="dot"></span> Disabled</span
               >
-              <button type="button" class="btn" id="twofa-open">Set up</button>
+              <button type="button" class="btn" id="twofa-open" data-portal-ui>Set up</button>
             </div>
           </section>
 
@@ -788,16 +788,16 @@
               <div class="wizard">
                 <div class="wiz-card">
                   <div class="wiz-step">Step 1</div>
-                  <h3>Add to authenticator</h3>
-                  <p class="muted">
-                    Click <b>Generate</b>, then scan the QR with Google
+                  <h3 data-portal-ui>Add to authenticator</h3>
+                  <p class="muted" data-portal-ui>
+                    Click <b data-portal-ui>Generate</b>, then scan the QR with Google
                     Authenticator, 1Password, or any TOTP app. <br />Can’t scan?
                     Enter the key manually.
                   </p>
 
                   <div class="wiz-grid">
                     <div class="qr-box" id="twofa-qr">
-                      <button type="button" class="btn" id="twofa-generate">
+                      <button type="button" class="btn" id="twofa-generate" data-portal-ui>
                         Generate
                       </button>
                     </div>
@@ -811,7 +811,7 @@
                           id="twofa-copy"
                           title="Copy secret"
                           aria-label="Copy secret"
-                        >
+                         data-portal-ui>
                           <i class="fas fa-copy"></i>
                         </button>
                       </div>
@@ -825,7 +825,7 @@
 
                 <div class="wiz-card">
                   <div class="wiz-step">Step 2</div>
-                  <h3>Verify &amp; enable</h3>
+                  <h3 data-portal-ui>Verify &amp; enable</h3>
                   <div class="verify-row">
                     <input
                       id="twofa-code"
@@ -835,9 +835,9 @@
                       maxlength="6"
                       autocomplete="one-time-code"
                     />
-                    <button class="btn" id="twofa-verify">Enable</button>
+                    <button class="btn" id="twofa-verify" data-portal-ui>Enable</button>
                   </div>
-                  <p class="muted">
+                  <p class="muted" data-portal-ui>
                     After enabling, you’ll enter a 6-digit code each time you
                     log in.
                   </p>
@@ -845,8 +845,8 @@
 
                 <div class="wiz-card" id="twofa-recovery" hidden>
                   <div class="wiz-step">Step 3</div>
-                  <h3>Recovery codes</h3>
-                  <p class="muted">
+                  <h3 data-portal-ui>Recovery codes</h3>
+                  <p class="muted" data-portal-ui>
                     Store these single-use codes in a safe place. They let you
                     in if you lose your phone.
                   </p>
@@ -857,7 +857,7 @@
                       id="twofa-download"
                       title="Save recovery codes"
                       aria-label="Save recovery codes"
-                    >
+                     data-portal-ui>
                       <i class="fas fa-save" style="margin-right: 6px"></i> Save
                     </button>
                     <button
@@ -865,7 +865,7 @@
                       id="twofa-copy-recovery"
                       title="Copy recovery codes"
                       aria-label="Copy recovery codes"
-                    >
+                     data-portal-ui>
                       <i class="fas fa-copy" style="margin-right: 6px"></i> Copy
                     </button>
                   </div>
@@ -875,8 +875,8 @@
           </div>
 
           <div class="actions">
-            <button type="submit" class="btn">Create Account</button>
-            <a href="{{ url_for('login') }}" class="btn ghost">Back to login</a>
+            <button type="submit" class="btn" data-portal-ui>Create Account</button>
+            <a href="{{ url_for('login') }}" class="btn ghost" data-portal-ui>Back to login</a>
           </div>
 
           {% with msgs = get_flashed_messages(with_categories=true) %} {% if
@@ -1265,5 +1265,5 @@
         });
       });
     </script>
-  <script defer src="/static/js/portal-locale.js"></script></body>
+  </body>
 </html>

@@ -10,7 +10,7 @@
 {% endblock %} {% block responsive_extras %} {% endblock %} {% block content %}
 
 <div class="dashboard-topbar">
-  <h1 class="page-title"><i class="fa-solid fa-chart-simple"></i> Dashboard</h1>
+  <h1 class="page-title" data-portal-ui><i class="fa-solid fa-chart-simple"></i> Dashboard</h1>
 
   <div
     class="panel-version-chip"
@@ -18,23 +18,23 @@
     data-current-version="{{ PANEL_VERSION }}"
     title="Panel update status"
   >
-    <span class="chip-icon" aria-hidden="true">
+    <span class="chip-icon" aria-hidden="true" data-portal-ui>
       <i class="fas fa-code-branch"></i>
     </span>
 
     <span class="pv-copy">
       <span class="pv-primary">
-        <span class="pv-label">Panel</span>
+        <span class="pv-label" data-portal-ui>Panel</span>
         <strong class="panel-version-number" id="panel-version-current"
           >v{{ PANEL_VERSION }}</strong
         >
       </span>
       <span class="panel-version-note" id="panel-version-note"
-        >Checking GitHub main…</span
+         data-portal-ui>Checking GitHub main…</span
       >
     </span>
 
-    <span class="panel-version-status" id="panel-version-status">Checking</span>
+    <span class="panel-version-status" id="panel-version-status" data-portal-ui>Checking</span>
 
     <span class="pv-actions">
       <button
@@ -43,7 +43,7 @@
         id="panel-version-refresh"
         aria-label="Check panel version"
         title="Check GitHub main"
-      >
+       data-portal-ui>
         <i class="fas fa-rotate"></i>
       </button>
 
@@ -55,7 +55,7 @@
         rel="noopener"
         aria-label="Open GitHub repository"
         title="Open GitHub repository"
-      >
+       data-portal-ui>
         <i class="fa-brands fa-github"></i>
       </a>
     </span>
@@ -76,27 +76,27 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
     aria-haspopup="dialog"
     aria-controls="health-center-drawer"
     aria-expanded="false"
-  >
+   data-portal-ui>
     <span class="hc-strip-icon" id="health-center-icon"
-      ><i class="fas fa-heart-pulse" aria-hidden="true"></i
+       data-portal-ui><i class="fas fa-heart-pulse" aria-hidden="true"></i
     ></span>
-    <span class="hc-strip-copy">
-      <small>Health Center</small>
-      <strong id="health-center-headline">Checking panel health…</strong>
+    <span class="hc-strip-copy" data-portal-ui>
+      <small data-portal-ui>Health Center</small>
+      <strong id="health-center-headline" data-portal-ui>Checking panel health…</strong>
     </span>
-    <span class="hc-strip-counts" aria-label="Health summary">
+    <span class="hc-strip-counts" aria-label="Health summary" data-portal-ui>
       <span class="hc-count healthy"
-        ><b id="hc-count-healthy">—</b><small>Healthy</small></span
+         data-portal-ui><b id="hc-count-healthy">—</b><small data-portal-ui>Healthy</small></span
       >
       <span class="hc-count review"
-        ><b id="hc-count-review">—</b><small>Review</small></span
+         data-portal-ui><b id="hc-count-review">—</b><small data-portal-ui>Review</small></span
       >
       <span class="hc-count attention"
-        ><b id="hc-count-attention">—</b><small>Attention</small></span
+         data-portal-ui><b id="hc-count-attention">—</b><small data-portal-ui>Attention</small></span
       >
     </span>
     <span class="hc-strip-arrow"
-      ><span>Open</span><i class="fas fa-chevron-right" aria-hidden="true"></i
+       data-portal-ui><span data-portal-ui>Open</span><i class="fas fa-chevron-right" aria-hidden="true"></i
     ></span>
   </button>
 </section>
@@ -119,11 +119,11 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
     <header class="hc-panel-head">
       <div class="hc-panel-title">
         <span class="hc-title-icon"
-          ><i class="fas fa-heart-pulse" aria-hidden="true"></i
+           data-portal-ui><i class="fas fa-heart-pulse" aria-hidden="true"></i
         ></span>
         <div>
-          <small>System overview</small>
-          <h2 id="hc-title">Health Center</h2>
+          <small data-portal-ui>System overview</small>
+          <h2 id="hc-title" data-portal-ui>Health Center</h2>
         </div>
       </div>
       <div class="hc-panel-actions">
@@ -133,7 +133,7 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
           id="health-center-refresh"
           title="Refresh health"
           aria-label="Refresh health"
-        >
+         data-portal-ui>
           <i class="fas fa-rotate" aria-hidden="true"></i>
         </button>
         <button
@@ -142,7 +142,7 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
           data-hc-close
           title="Close"
           aria-label="Close Health Center"
-        >
+         data-portal-ui>
           <i class="fas fa-xmark" aria-hidden="true"></i>
         </button>
       </div>
@@ -150,18 +150,18 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
     <div class="hc-overall" id="hc-overall">
       <span class="hc-overall-dot" aria-hidden="true"></span>
       <div>
-        <small>Overall</small><strong id="hc-overall-title">Checking…</strong>
-        <p id="hc-overall-meta">Read-only summary of core panel services.</p>
+        <small data-portal-ui>Overall</small><strong id="hc-overall-title" data-portal-ui>Checking…</strong>
+        <p id="hc-overall-meta" data-portal-ui>Read-only summary of core panel services.</p>
       </div>
     </div>
     <div class="hc-list" id="hc-list" aria-live="polite"></div>
     <footer class="hc-panel-foot">
       <span
-        ><i class="fas fa-shield-halved" aria-hidden="true"></i> Read-only.
+         data-portal-ui><i class="fas fa-shield-halved" aria-hidden="true"></i> Read-only.
         Health Center never repairs or changes configuration.</span
       >
       <a href="/operations"
-        >Open Operations <i class="fas fa-arrow-right" aria-hidden="true"></i
+         data-portal-ui>Open Operations <i class="fas fa-arrow-right" aria-hidden="true"></i
       ></a>
     </footer>
   </section>
@@ -172,22 +172,22 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
   <section class="card metric-pro cpu">
     <div class="head">
       <div class="icon"><i class="fas fa-microchip"></i></div>
-      <h4>CPU Usage</h4>
+      <h4 data-portal-ui>CPU Usage</h4>
       <div id="cpu-val" class="value">--%</div>
     </div>
 
     <div class="sub">
       <span class="pill"
-        ><span class="small">Cores</span> <b id="cores">—</b></span
+         data-portal-ui><span class="small" data-portal-ui>Cores</span> <b id="cores">—</b></span
       >
       <span class="pill"
-        ><span class="small">Threads</span> <b id="threads">—</b></span
+         data-portal-ui><span class="small" data-portal-ui>Threads</span> <b id="threads">—</b></span
       >
-      <span class="pill" title="1m / 5m / 15m">
-        <span class="small">Load</span>
+      <span class="pill" title="1m / 5m / 15m" data-portal-ui>
+        <span class="small" data-portal-ui>Load</span>
         <b id="cpu-load">—%</b>
         <small class="muted"
-          >(<span id="load1-top">—</span>/<span id="load5-top">—</span>/<span
+           data-portal-ui>(<span id="load1-top">—</span>/<span id="load5-top">—</span>/<span
             id="load15-top"
             >—</span
           >)</small
@@ -201,24 +201,24 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
   <section class="card metric-pro mem">
     <div class="head">
       <div class="icon"><i class="fas fa-memory"></i></div>
-      <h4>Memory Usage</h4>
+      <h4 data-portal-ui>Memory Usage</h4>
       <div id="mem-val" class="value">--%</div>
     </div>
 
     <div class="sub">
       <span class="pill"
-        ><span class="dot" style="background: #8b5cf6"></span
-        ><span class="small">Used</span> <b id="mem-used">—</b></span
+         data-portal-ui><span class="dot" style="background: #8b5cf6"></span
+        ><span class="small" data-portal-ui>Used</span> <b id="mem-used">—</b></span
       >
       <span class="pill"
-        ><span class="dot" style="background: #e5e7eb"></span
-        ><span class="small">Free</span> <b id="mem-free">—</b></span
+         data-portal-ui><span class="dot" style="background: #e5e7eb"></span
+        ><span class="small" data-portal-ui>Free</span> <b id="mem-free">—</b></span
       >
       <span class="pill"
-        ><span class="small">Total</span> <b id="mem-total">—</b></span
+         data-portal-ui><span class="small" data-portal-ui>Total</span> <b id="mem-total">—</b></span
       >
-      <span class="pill" title="Swap used / total">
-        <span class="small">Swap</span> <b id="swap-used">—</b
+      <span class="pill" title="Swap used / total" data-portal-ui>
+        <span class="small" data-portal-ui>Swap</span> <b id="swap-used">—</b
         ><small class="muted"> / </small><b id="swap-total">—</b>
       </span>
     </div>
@@ -230,21 +230,21 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
   <section class="card metric-pro disk">
     <div class="head">
       <div class="icon"><i class="fas fa-hdd"></i></div>
-      <h4>Disk Usage</h4>
+      <h4 data-portal-ui>Disk Usage</h4>
       <div id="disk-val" class="value">--%</div>
     </div>
 
     <div class="sub">
       <span class="pill"
-        ><span class="dot" style="background: #f59e0b"></span
-        ><span class="small">Used</span> <b id="disk-used">—</b></span
+         data-portal-ui><span class="dot" style="background: #f59e0b"></span
+        ><span class="small" data-portal-ui>Used</span> <b id="disk-used">—</b></span
       >
       <span class="pill"
-        ><span class="dot" style="background: #e5e7eb"></span
-        ><span class="small">Free</span> <b id="disk-free">—</b></span
+         data-portal-ui><span class="dot" style="background: #e5e7eb"></span
+        ><span class="small" data-portal-ui>Free</span> <b id="disk-free">—</b></span
       >
       <span class="pill"
-        ><span class="small">Total</span> <b id="disk-total">—</b></span
+         data-portal-ui><span class="small" data-portal-ui>Total</span> <b id="disk-total">—</b></span
       >
     </div>
 
@@ -255,33 +255,33 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
   <section class="card metric-pro net wide">
     <div class="head">
       <div class="icon"><i class="fas fa-network-wired"></i></div>
-      <h4>Network I/O</h4>
+      <h4 data-portal-ui>Network I/O</h4>
       <div id="net-val" class="value">--/-- MB/s</div>
     </div>
 
     <div class="sub">
       <span class="pill"
-        ><span class="dot" style="background: #3b82f6"></span
-        ><span class="small">RX</span> <b id="rx-last">—</b></span
+         data-portal-ui><span class="dot" style="background: #3b82f6"></span
+        ><span class="small" data-portal-ui>RX</span> <b id="rx-last">—</b></span
       >
       <span class="pill"
-        ><span class="dot" style="background: #f472b6"></span
-        ><span class="small">TX</span> <b id="tx-last">—</b></span
+         data-portal-ui><span class="dot" style="background: #f472b6"></span
+        ><span class="small" data-portal-ui>TX</span> <b id="tx-last">—</b></span
       >
       <span class="pill"
-        ><span class="small">RX total</span> <b id="rx-total">—</b></span
+         data-portal-ui><span class="small" data-portal-ui>RX total</span> <b id="rx-total">—</b></span
       >
       <span class="pill"
-        ><span class="small">TX total</span> <b id="tx-total">—</b></span
+         data-portal-ui><span class="small" data-portal-ui>TX total</span> <b id="tx-total">—</b></span
       >
       <span class="pill"
-        ><span class="small">Conn</span> <b id="conn-total">0</b></span
+         data-portal-ui><span class="small" data-portal-ui>Conn</span> <b id="conn-total">0</b></span
       >
       <span class="pill"
-        ><span class="small">Unique</span> <b id="conn-uniq">0</b></span
+         data-portal-ui><span class="small" data-portal-ui>Unique</span> <b id="conn-uniq">0</b></span
       >
-      <span class="pill">
-        <span class="small">Unique public IPs</span>
+      <span class="pill" data-portal-ui>
+        <span class="small" data-portal-ui>Unique public IPs</span>
         <b id="uniq-pub-count">0</b>
       </span>
     </div>
@@ -293,32 +293,32 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
 <div class="grid-info dash-bottom">
   <section class="card info-pro overview-card">
     <div class="overview-head">
-      <span class="chip-icon"><i class="fas fa-layer-group"></i></span>
-      <span>System Overview</span>
+      <span class="chip-icon" data-portal-ui><i class="fas fa-layer-group"></i></span>
+      <span data-portal-ui>System Overview</span>
       <span class="ov-sub"
-        >IPs, peers, app and Telegram in one compact rail</span
+         data-portal-ui>IPs, peers, app and Telegram in one compact rail</span
       >
     </div>
 
     <div class="overview-rail">
       <div class="ov-block ip-overview">
         <div class="ov-title">
-          <i class="fas fa-route"></i><span>Endpoint & Public IP</span>
+          <i class="fas fa-route"></i><span data-portal-ui>Endpoint & Public IP</span>
         </div>
         <div class="ov-lines">
           <div class="ov-line">
-            <span class="ov-k">Public v4</span>
+            <span class="ov-k" data-portal-ui>Public v4</span>
             <span class="ov-v"
-              ><span class="copyable" data-copy-target="#ipv4"
-                ><span id="ipv4" class="mono">—</span
+               data-portal-ui><span class="copyable" data-copy-target="#ipv4"
+                 data-portal-ui><span id="ipv4" class="mono">—</span
                 ><i class="fas fa-copy copy-ico"></i></span
             ></span>
           </div>
           <div class="ov-line">
-            <span class="ov-k">Public v6</span>
+            <span class="ov-k" data-portal-ui>Public v6</span>
             <span class="ov-v"
-              ><span class="copyable" data-copy-target="#ipv6"
-                ><span id="ipv6" class="mono">—</span
+               data-portal-ui><span class="copyable" data-copy-target="#ipv6"
+                 data-portal-ui><span id="ipv6" class="mono">—</span
                 ><i class="fas fa-copy copy-ico"></i></span
             ></span>
           </div>
@@ -331,7 +331,7 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
 
       <div class="ov-block peers-mini">
         <div class="ov-title">
-          <i class="fas fa-users"></i><span>Peers</span>
+          <i class="fas fa-users"></i><span data-portal-ui>Peers</span>
           <div
             class="scope-toggle mini-scope"
             role="tablist"
@@ -344,11 +344,11 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
               value="local"
               checked
             />
-            <label for="ps-local" role="tab" aria-selected="true">Local</label>
+            <label for="ps-local" role="tab" aria-selected="true" data-portal-ui>Local</label>
             <input type="radio" id="ps-nodes" name="peer-scope" value="nodes" />
-            <label for="ps-nodes" role="tab" aria-selected="false">Nodes</label>
+            <label for="ps-nodes" role="tab" aria-selected="false" data-portal-ui>Nodes</label>
             <input type="radio" id="ps-total" name="peer-scope" value="total" />
-            <label for="ps-total" role="tab" aria-selected="false">Total</label>
+            <label for="ps-total" role="tab" aria-selected="false" data-portal-ui>Total</label>
           </div>
         </div>
         <div class="ov-peer-grid">
@@ -356,50 +356,50 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
             class="ov-peer"
             title="Real connection status: latest WireGuard handshake"
           >
-            <b id="count-online">0</b><span><i class="dot ok"></i>Online</span>
+            <b id="count-online">0</b><span data-portal-ui><i class="dot ok"></i>Online</span>
           </div>
           <div
             class="ov-peer"
             title="Real connection status: no recent WireGuard handshake"
           >
             <b id="count-offline">0</b
-            ><span><i class="dot warn"></i>Offline</span>
+            ><span data-portal-ui><i class="dot warn"></i>Offline</span>
           </div>
           <div
             class="ov-peer"
             title="Expired, data limit reached, or manually blocked"
           >
             <b id="count-blocked">0</b
-            ><span><i class="dot mut"></i>Blocked</span>
+            ><span data-portal-ui><i class="dot mut"></i>Blocked</span>
           </div>
           <div class="ov-peer" title="Total peers">
-            <b id="count-total">0</b><span><i class="dot mut"></i>Total</span>
+            <b id="count-total">0</b><span data-portal-ui><i class="dot mut"></i>Total</span>
           </div>
         </div>
       </div>
 
       <div class="ov-block health-block">
         <div class="ov-title">
-          <i class="fas fa-heartbeat"></i><span>Health</span>
+          <i class="fas fa-heartbeat"></i><span data-portal-ui>Health</span>
         </div>
         <div class="ov-health">
           <div class="health-line">
             <i class="fas fa-cube"></i>
-            <span class="h-name">App</span>
+            <span class="h-name" data-portal-ui>App</span>
             <span id="app-status" class="badge">—</span>
-            <span class="h-meta">Since <span id="app-since">—</span></span>
+            <span class="h-meta" data-portal-ui>Since <span id="app-since">—</span></span>
           </div>
           <div class="health-line">
             <i class="fa-brands fa-telegram"></i>
-            <span class="h-name">Telegram</span>
+            <span class="h-name" data-portal-ui>Telegram</span>
             <span id="tg-status" class="badge">—</span>
-            <span class="h-meta">Last <span id="tg-last">—</span></span>
+            <span class="h-meta" data-portal-ui>Last <span id="tg-last">—</span></span>
           </div>
         </div>
         <div class="ov-actions">
-          <span class="small muted">Recent logs and app events</span>
+          <span class="small muted" data-portal-ui>Recent logs and app events</span>
           <a href="/logs" data-open="dash-logs" class="small"
-            ><i class="far fa-file-alt"></i> Logs</a
+             data-portal-ui><i class="far fa-file-alt"></i> Logs</a
           >
         </div>
       </div>
@@ -408,29 +408,29 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
 
   <section class="card info-pro sys-card compact-sys">
     <div class="title">
-      <span class="chip-icon"><i class="fas fa-microchip"></i></span>
-      <span>System Info</span>
+      <span class="chip-icon" data-portal-ui><i class="fas fa-microchip"></i></span>
+      <span data-portal-ui>System Info</span>
 
-      <span class="sys-head-actions">
+      <span class="sys-head-actions" data-portal-ui>
         <button
           class="sys-log-btn"
           type="button"
           data-open="dash-log-center"
           title="Open panel and node logs"
-        >
+         data-portal-ui>
           <i class="fas fa-file-lines"></i>
-          <span>Logs</span>
+          <span data-portal-ui>Logs</span>
         </button>
 
-        <span class="more-wrap">
+        <span class="more-wrap" data-portal-ui>
           <button
             class="more-pop"
             type="button"
             aria-haspopup="dialog"
             aria-expanded="false"
-          >
+           data-portal-ui>
             <i class="fas fa-circle-info"></i>
-            <span>More</span>
+            <span data-portal-ui>More</span>
           </button>
           <div
             class="popover"
@@ -460,7 +460,7 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
         <div class="kv-k">Hostname</div>
         <div class="kv-v">
           <span class="copyable" data-copy-target="#hostname"
-            ><span id="hostname" class="mono">—</span
+             data-portal-ui><span id="hostname" class="mono">—</span
             ><i class="far fa-copy copy-ico"></i
           ></span>
         </div>
@@ -494,8 +494,8 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
 >
   <div class="pop-head">
     <div class="title">
-      <span class="pop-icon"><i class="fas fa-file-lines"></i></span>
-      <span>Logs</span>
+      <span class="pop-icon" data-portal-ui><i class="fas fa-file-lines"></i></span>
+      <span data-portal-ui>Logs</span>
     </div>
 
     <div class="actions">
@@ -506,9 +506,9 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
         role="switch"
         aria-checked="true"
         title="Auto-refresh active log source"
-      >
+       data-portal-ui>
         <span class="dot"></span>
-        <span class="lab">Auto</span>
+        <span class="lab" data-portal-ui>Auto</span>
       </button>
 
       <button
@@ -516,7 +516,7 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
         class="icon-btn"
         type="button"
         title="Refresh active log source"
-      >
+       data-portal-ui>
         <i class="fas fa-rotate"></i>
       </button>
 
@@ -525,7 +525,7 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
         class="icon-btn"
         type="button"
         title="Close"
-      >
+       data-portal-ui>
         <i class="fas fa-times"></i>
       </button>
     </div>
@@ -540,9 +540,9 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
       aria-selected="true"
       aria-controls="dash-log-panel-pane"
       data-log-tab="panel"
-    >
+     data-portal-ui>
       <i class="fas fa-display"></i>
-      <span>Panel logs</span>
+      <span data-portal-ui>Panel logs</span>
     </button>
 
     {% if HAS_NODES %}
@@ -554,13 +554,13 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
       aria-selected="false"
       aria-controls="dash-log-node-pane"
       data-log-tab="node"
-    >
+     data-portal-ui>
       <i class="fas fa-server"></i>
-      <span>Node logs</span>
+      <span data-portal-ui>Node logs</span>
     </button>
     {% endif %}
 
-    <a href="/logs" class="dash-log-full-link" title="Open full logs page">
+    <a href="/logs" class="dash-log-full-link" title="Open full logs page" data-portal-ui>
       Open full
       <i class="fas fa-arrow-up-right-from-square"></i>
     </a>
@@ -589,17 +589,17 @@ current_user.is_superuser|default(false)) %} {% if dashboard_is_admin %}
     hidden
   >
     <div class="node-log-toolbar">
-      <label>
-        <span><i class="fas fa-server"></i> Node</span>
+      <label data-portal-ui>
+        <span data-portal-ui><i class="fas fa-server"></i> Node</span>
         <select id="dash-node-select">
-          <option value="">Loading nodes…</option>
+          <option value="" data-portal-ui>Loading nodes…</option>
         </select>
       </label>
 
-      <label>
-        <span><i class="fas fa-network-wired"></i> Interface</span>
+      <label data-portal-ui>
+        <span data-portal-ui><i class="fas fa-network-wired"></i> Interface</span>
         <select id="dash-node-iface-select" disabled>
-          <option value="">Select a node first</option>
+          <option value="" data-portal-ui>Select a node first</option>
         </select>
       </label>
     </div>
