@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 import test_reseller_bot as fixture
 from portal_bot_runtime import AsyncBotRuntime
+from portal_reseller_bot import BotError
 
 
 class GuidedBotChecks(unittest.TestCase):
@@ -14,6 +15,10 @@ class GuidedBotChecks(unittest.TestCase):
     configure = fixture.BotChecks.configure
     update = fixture.BotChecks.update
 
+    def callback(self,data,update_id=2000,owner=987654321):
+        return {'update_id':update_id,'callback_query':{'id':str(update_id),'data':data,
+            'from':{'id':owner},'message':{'chat':{'type':'private','id':owner}}}}
+
     def wizard(self, row, texts, start=1000):
         answers = []
         for index, text in enumerate(texts):
@@ -23,7 +28,7 @@ class GuidedBotChecks(unittest.TestCase):
     def test_main_menu_has_exact_four_emoji_actions(self):
         row,_ = self.configure()
         answer = self.manager.command(row,self.update('/start'))
-        buttons = answer[1][0]['reply_markup']['keyboard']
+        buttons = answer[1][0]['reply_markup']['inline_keyboard']
         self.assertEqual([item['text'] for line in buttons for item in line],
             ['➕ ساخت PEER','👥 ساخت نماینده','📦 ساخت انبوه','⚙️ تنظیمات'])
 
@@ -38,9 +43,13 @@ class GuidedBotChecks(unittest.TestCase):
         self.assertEqual(self.manager.completed_updates[(row['reseller_id'],row['revision'],1003)][1],1)
         items=answer[1]
         self.assertEqual(items[0]['document'],b'native-config')
-        self.assertTrue(any(item.get('photo',b'').startswith(b'\x89PNG') for item in items))
-        self.assertTrue(any('native-config' in item.get('text','') for item in items))
-        self.assertIn('/u/opaque-user-token',items[0]['caption'])
+        self.assertEqual([item['method'] for item in items],['sendDocument','sendPhoto'])
+        self.assertTrue(items[1]['photo'].startswith(b'\x89PNG'))
+        self.assertFalse(any('text' in item for item in items))
+        for item in items:
+            self.assertIn('<pre><code>native-config</code></pre>',item['caption'])
+            self.assertIn('/u/opaque-user-token',item['caption'])
+            self.assertEqual(item['parse_mode'],'HTML')
         self.assertTrue(all(len(item.get('caption',''))<=1024 for item in items))
 
     def test_private_owner_cancel_and_revision_do_not_resume_wizard(self):
@@ -132,13 +141,14 @@ class GuidedBotChecks(unittest.TestCase):
         asyncio.run(send())
         self.assertEqual(sync_calls,async_calls)
         self.assertEqual(sync_calls[0][2]['document'],b'native-config')
-        self.assertEqual(sync_calls[0][1]['filename'],'peer-1.conf')
+        self.assertEqual(sync_calls[0][1]['filename'],'customer.conf')
         self.assertTrue(any(method=='sendPhoto' for method,_,_ in sync_calls))
-        self.assertTrue(all(payload['chat_id']==987654321 and 'parse_mode' not in payload
+        self.assertTrue(all(payload['chat_id']==987654321 and payload.get('parse_mode')=='HTML'
                             for _,payload,_ in sync_calls))
 
     def test_long_config_file_is_not_truncated_and_oversized_preview_omitted(self):
         row,_=self.configure()
+        self.manager.command(row,self.update('/new long-config | 30 | 10'))
         original=self.manager.dispatch
         content=b'[Interface]\n'+b'# full configuration\n'*400
         def dispatch(snapshot,method,path,**kwargs):
@@ -149,6 +159,67 @@ class GuidedBotChecks(unittest.TestCase):
             answer=self.manager.bundle(row,1)
         self.assertEqual(answer[1][0]['document'],content)
         self.assertFalse(any('text' in item and 'full configuration' in item['text'] for item in answer[1]))
+        self.assertTrue(all(len(item['caption'].encode('utf-16-le'))//2<=1024 for item in answer[1]))
+
+    def test_inline_navigation_cancel_refresh_edit_back_preserve_ownership(self):
+        row,_=self.configure()
+        prompt=self.manager.command(row,self.callback('reseller:peer'))
+        self.assertEqual(prompt[0],'messages')
+        cancel=prompt[1][0]['reply_markup']['inline_keyboard'][0][0]['callback_data']
+        self.assertEqual(cancel,'reseller:cancel')
+        self.manager.command(row,self.callback(cancel,2001))
+        self.assertFalse(self.manager.wizards)
+        self.manager.command(row,self.update('/new card | 30 | 10'))
+        count=len(self.rows)
+        self.assertEqual(self.manager.command(row,self.callback('peer:bundle:1',2002))[0],'delivery')
+        self.assertEqual(self.manager.command(row,self.callback('peer:edit:1',2003))[0],'messages')
+        self.assertEqual(self.manager.command(row,self.callback('peers:menu',2004))[0],'messages')
+        self.assertEqual(len(self.rows),count)
+        self.assertIsNone(self.manager.command(row,self.callback('peer:bundle:1',2005,owner=12)))
+        self.rows[0]['public_key']='replaced-key'
+        for action in ('peer:bundle:1','peer:edit:1'):
+            self.assertIn('unavailable',self.manager.command(row,self.callback(action,2006))[1])
+
+    def test_photo_bad_request_fallback_and_other_errors_are_not_retried(self):
+        row,token=self.configure()
+        self.manager.command(row,self.update('/new fallback | 30 | 10'))
+        answer=self.manager.bundle(row,1)
+        for error_code in ('telegram_bad_request','telegram_invalid_token','telegram_rate_limited','telegram_connection_failed'):
+            for asynchronous in (False,True):
+                with self.subTest(error=error_code,asynchronous=asynchronous):
+                    calls=[]
+                    def record(method,payload,files):
+                        calls.append((method,payload,files))
+                        if method=='sendPhoto':
+                            raise BotError(error_code)
+                    class Sync:
+                        def call(inner,token,method,payload=None,**files):
+                            record(method,payload,files)
+                    class Async:
+                        async def call(inner,token,method,payload=None,**files):
+                            record(method,payload,files)
+                    async def run():
+                        runtime=AsyncBotRuntime(self.manager,Async())
+                        try:
+                            await runtime.send_answer(row,token,answer)
+                        finally:
+                            await runtime.close()
+                    def send():
+                        if asynchronous:
+                            asyncio.run(run())
+                        else:
+                            with patch.object(self.manager,'transport',return_value=Sync()):
+                                self.manager.send_answer(row,token,answer)
+                    if error_code=='telegram_bad_request':
+                        send()
+                        self.assertEqual([item[0] for item in calls],['sendDocument','sendPhoto','sendDocument'])
+                        self.assertEqual(calls[-1][2]['document'],answer[1][1]['photo'])
+                        self.assertEqual(calls[-1][1]['caption'],answer[1][1]['caption'])
+                        self.assertEqual(calls[-1][1]['filename'],'fallback-QR.png')
+                    else:
+                        with self.assertRaises(BotError):
+                            send()
+                        self.assertEqual([item[0] for item in calls],['sendDocument','sendPhoto'])
 
 
 if __name__=='__main__':

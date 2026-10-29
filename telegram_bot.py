@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+from telegram_peer_cards import safe_peer_name, peer_card_caption, bundle_keyboard
 import time, threading, queue
 from datetime import datetime, time as dtime, timezone
 import os, io, json, logging, math, re, asyncio, ipaddress
@@ -656,11 +657,8 @@ def scope_keyboard(prefix: str) -> InlineKeyboardMarkup:
 def _bundle_kb(p: Dict[str, Any]) -> InlineKeyboardMarkup:
     """Keyboard for the bundle card: no enable/disable here."""
     pid = int(p.get("id"))
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("↻ Refresh", callback_data=f"peer:bundle:{pid}"),
-         InlineKeyboardButton("◇ Edit",    callback_data=f"peer:edit:{pid}")],
-        [InlineKeyboardButton("← Back",     callback_data="peers:menu")]
-    ])
+    return InlineKeyboardMarkup([[InlineKeyboardButton(item['text'], callback_data=item['callback_data'])
+        for item in row] for row in bundle_keyboard(pid)['inline_keyboard']])
 
 
 def _html_pre(s: str) -> str:
@@ -706,7 +704,7 @@ async def send_peers(update: Update, pid: int):
         return
 
     raw_name = str(p.get("name") or f"peer-{pid}").strip()
-    safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", raw_name).strip("._") or f"peer-{pid}"
+    safe_name = safe_peer_name(pid, raw_name)
 
     try:
         short = get_shortlink(pid, p) if "get_shortlink" in globals() else ""
@@ -727,21 +725,7 @@ async def send_peers(update: Update, pid: int):
         )
         return
 
-    short_text = tg_escape(short) if short else "Unavailable"
-    cfg_block = f"<pre><code>{tg_escape(cfg)}</code></pre>"
-    full_caption = (
-        f"◇ <b>{tg_escape(raw_name)} · Configuration</b>\n<i>WireGuard client profile</i>\n\n"
-        f"{cfg_block}\n"
-        f"⌁ <b>Short link</b>\n{short_text}"
-    )
-    if len(full_caption) > 1024:
-        room = max(120, 820 - len(short_text) - len(raw_name))
-        preview = cfg[:room].rstrip() + "\n…"
-        full_caption = (
-            f"◇ <b>{tg_escape(raw_name)} · Configuration</b>\n<i>WireGuard client profile</i>\n\n"
-            f"<pre><code>{tg_escape(preview)}</code></pre>\n"
-            f"⌁ <b>Short link</b>\n{short_text}"
-        )
+    full_caption = peer_card_caption(raw_name, cfg, short)
 
     message = update.effective_message
     await message.reply_document(
@@ -757,19 +741,7 @@ async def send_peers(update: Update, pid: int):
         logging.getLogger(__name__).exception("Could not fetch peer QR %s", pid)
 
     if png:
-        qr_caption = (
-            f"▦ <b>{tg_escape(raw_name)} · QR code</b>\n<i>Scan with a WireGuard client</i>\n\n"
-            f"{cfg_block}\n"
-            f"⌁ <b>Short link</b>\n{short_text}"
-        )
-        if len(qr_caption) > 1024:
-            room = max(120, 820 - len(short_text) - len(raw_name))
-            preview = cfg[:room].rstrip() + "\n…"
-            qr_caption = (
-                f"▦ <b>{tg_escape(raw_name)} · QR code</b>\n<i>Scan with a WireGuard client</i>\n\n"
-                f"<pre><code>{tg_escape(preview)}</code></pre>\n"
-                f"⌁ <b>Short link</b>\n{short_text}"
-            )
+        qr_caption = peer_card_caption(raw_name, cfg, short, qr=True)
         try:
             await message.reply_photo(
                 photo=InputFile(io.BytesIO(png), filename=f"{safe_name}.png"),

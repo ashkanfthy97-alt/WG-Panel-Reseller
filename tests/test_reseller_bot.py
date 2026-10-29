@@ -74,7 +74,7 @@ class BotChecks(unittest.TestCase):
             kind,items=self.manager.command(row,update)
             self.assertEqual(kind,'delivery')
             self.assertEqual(items[0]['document'],b'native-config')
-            self.assertEqual(items[0]['filename'],'peer-1.conf')
+            self.assertEqual(items[0]['filename'],'customer.conf')
         self.assertEqual(len(self.rows),1,'Repeated Telegram update must not create another peer')
         self.assertEqual(self.manager.command(row,self.update('/config 1'))[1],b'native-config')
         self.assertEqual(self.manager.command(row,self.update('/link 1'))[1],'http://localhost/u/opaque-user-token')

@@ -30,13 +30,18 @@ class MenuChecks(unittest.TestCase):
         self.assertEqual(answer[0],'delivery')
         return row,answer
 
-    def test_new_and_list_offer_exact_four_peer_actions(self):
+    def test_new_cards_offer_native_controls_and_list_retains_four_actions(self):
         row,created=self.create()
-        for answer in (created,self.manager.command(row,self.update('/peers'))):
-            markup=next(item['reply_markup']['inline_keyboard'] for item in answer[1]
-                        if 'inline_keyboard' in item.get('reply_markup',{}))
-            self.assertEqual([b['callback_data'] for line in markup for b in line],
-                ['config:1','qr:1','link:1','manage:1'])
+        self.assertEqual(len(created[1]),2)
+        self.assertNotIn('reply_markup',created[1][0])
+        markup=created[1][1]['reply_markup']['inline_keyboard']
+        self.assertEqual([button['text'].split()[-1] for line in markup for button in line],
+                         ['Refresh','Edit','Back'])
+        answer=self.manager.command(row,self.update('/peers'))
+        markup=next(item['reply_markup']['inline_keyboard'] for item in answer[1]
+                    if 'inline_keyboard' in item.get('reply_markup',{}))
+        self.assertEqual([b['callback_data'] for line in markup for b in line],
+                         ['config:1','qr:1','link:1','manage:1'])
         self.assertEqual(self.manager.command(row,self.callback('config:1')),
                          ('document',b'native-config'))
         kind,image=self.manager.command(row,self.callback('qr:1'))

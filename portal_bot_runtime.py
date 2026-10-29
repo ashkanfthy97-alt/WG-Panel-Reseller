@@ -26,8 +26,8 @@ class AsyncTelegramTransport:
             raise BotError('unsupported_telegram_operation')
         payload = dict(payload or {})
         filename = payload.pop('filename', 'wireguard.conf')
-        files = ({'document': (filename, document, 'text/plain')}
-                 if document is not None else {'photo': ('wireguard.png', photo, 'image/png')}
+        files = ({'document': (filename, document, 'image/png' if filename.lower().endswith('.png') else 'text/plain')}
+                 if document is not None else {'photo': (filename if filename.lower().endswith('.png') else 'wireguard.png', photo, 'image/png')}
                  if photo is not None else None)
         try:
             timeout = self.httpx.Timeout(40 if method == 'getUpdates' else 15, connect=5, write=15, pool=15)
@@ -79,11 +79,24 @@ class AsyncBotRuntime:
                 payload = dict(item)
                 method = payload.pop('method')
                 files = {key: payload.pop(key) for key in ('document', 'photo') if key in payload}
-                await self.transport.call(token, method, {'chat_id': row['owner_id'], **payload}, **files)
+                telegram_data = {'chat_id': row['owner_id'], **payload}
+                try:
+                    await self.transport.call(token, method, telegram_data, **files)
+                except BotError as error:
+                    if method != 'sendPhoto' or error.code != 'telegram_bad_request':
+                        raise
+                    await self.transport.call(token, 'sendDocument',
+                        {**telegram_data, 'filename': telegram_data.get('filename') or 'wireguard-qr.png'}, document=files['photo'])
             return
         if kind in {'document', 'photo'}:
-            await self.transport.call(token, 'sendDocument' if kind == 'document' else 'sendPhoto',
-                {'chat_id': row['owner_id']}, **{kind: value})
+            try:
+                await self.transport.call(token, 'sendDocument' if kind == 'document' else 'sendPhoto',
+                    {'chat_id': row['owner_id']}, **{kind: value})
+            except BotError as error:
+                if kind != 'photo' or error.code != 'telegram_bad_request':
+                    raise
+                await self.transport.call(token, 'sendDocument',
+                    {'chat_id': row['owner_id'], 'filename': 'wireguard-qr.png'}, document=value)
             return
         for item in value if kind == 'messages' else [{'text': value}]:
             if not await self.blocking(self.manager.current, row) or not await self.blocking(self.manager.account, row):
@@ -119,6 +132,12 @@ class AsyncBotRuntime:
                         if (not isinstance(update, dict) or type(update.get('update_id')) is not int
                                 or update['update_id'] < fresh['offset']):
                             continue
+                        callback_id = self.manager.callback_id(row, update)
+                        if callback_id:
+                            try:
+                                await self.transport.call(token, 'answerCallbackQuery', {'callback_query_id': callback_id})
+                            except BotError:
+                                pass
                         inflight = asyncio.create_task(self.native_command(row, update))
                         answer = await asyncio.shield(inflight)
                         inflight = None
@@ -127,9 +146,6 @@ class AsyncBotRuntime:
                         await self.blocking(self.manager.store.progress, row, offset=update['update_id'] + 1)
                         fresh['offset'] = update['update_id'] + 1
                         if answer and await self.blocking(self.manager.current, row) and await self.blocking(self.manager.account, row):
-                            callback_id = self.manager.callback_id(row, update)
-                            if callback_id:
-                                await self.transport.call(token, 'answerCallbackQuery', {'callback_query_id': callback_id})
                             await self.send_answer(row, token, answer)
                     # Telegram long polls usually wait; a fake/empty immediate
                     # reply must not create a busy loop in tests or on errors.

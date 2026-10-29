@@ -26,6 +26,7 @@ from werkzeug.test import Client
 from werkzeug.wrappers import Response
 
 from deploy.linux.reseller_store import ResellerStore
+from telegram_peer_cards import safe_peer_name, peer_card_caption, bundle_keyboard
 
 
 class TelegramTokenFilter(logging.Filter):
@@ -62,13 +63,15 @@ def telegram_result(status, value):
     if status == 200 and value.get('ok') is True:
         return value.get('result')
     code = value.get('error_code', status)
-    if code in {401, 404}:
+    if status in {401, 404} or code in {401, 404}:
         raise BotError('telegram_invalid_token')
-    if code == 409:
+    if status == 409 or code == 409:
         raise BotError('telegram_conflict')
-    if code == 429:
+    if status == 429 or code == 429:
         parameters = value.get('parameters') or {}
         raise BotError('telegram_rate_limited', retry_after=parameters.get('retry_after', 30))
+    if status == 400 and code == 400:
+        raise BotError('telegram_bad_request')
     raise BotError('telegram_unavailable')
 
 
@@ -91,8 +94,8 @@ class TelegramTransport:
         try:
             with requests.Session() as client:
                 client.trust_env = False
-                files = ({'document': (filename, io.BytesIO(document), 'text/plain')}
-                         if document is not None else {'photo': ('wireguard.png', io.BytesIO(photo), 'image/png')}
+                files = ({'document': (filename, io.BytesIO(document), 'image/png' if filename.lower().endswith('.png') else 'text/plain')}
+                         if document is not None else {'photo': (filename if filename.lower().endswith('.png') else 'wireguard.png', io.BytesIO(photo), 'image/png')}
                          if photo is not None else None)
                 result = client.post('https://api.telegram.org/bot' + token + '/' + method,
                     data=telegram_payload(payload), files=files,
@@ -267,7 +270,9 @@ class BotManager:
     def callback_id(self, row, update):
         callback = update.get('callback_query') or {}
         value = callback.get('id')
-        return value if self.private_message(row, update) and isinstance(value, str) and len(value) <= 256 else None
+        # Acknowledge the Telegram spinner even for denied/unknown callbacks;
+        # command() separately enforces private owner identity and account scope.
+        return value if isinstance(value, str) and 1 <= len(value) <= 256 else None
 
     @staticmethod
     def peer_keyboard(peer_id):
@@ -284,14 +289,21 @@ class BotManager:
 
     @staticmethod
     def menu(settings=False):
-        rows = ([['💳 اعتبار / Credit', '📋 کانفیگ‌ها / Configs'],
-                 ['👥 زیرنماینده‌ها / Children', '📡 وضعیت / Status'], ['⬅️ بازگشت / Back']]
-                if settings else [['➕ ساخت PEER', '👥 ساخت نماینده'], ['📦 ساخت انبوه', '⚙️ تنظیمات']])
-        return {'keyboard': [[{'text': text} for text in items] for items in rows],
-                'resize_keyboard': True}
+        rows = ([[('💳 اعتبار / Credit', 'credit'), ('📋 کانفیگ‌ها / Configs', 'configs')],
+                 [('👥 زیرنماینده‌ها / Children', 'children'), ('📡 وضعیت / Status', 'status')],
+                 [('⬅️ بازگشت / Back', 'back')]] if settings else
+                [[('➕ ساخت PEER', 'peer'), ('👥 ساخت نماینده', 'child')],
+                 [('📦 ساخت انبوه', 'bulk'), ('⚙️ تنظیمات', 'settings')]])
+        return {'inline_keyboard': [[{'text': text, 'callback_data': 'reseller:' + action}
+                                     for text, action in items] for items in rows]}
 
     def bundle(self, row, peer_id):
         """Read every artifact through ownership-checked native reseller routes."""
+        peers_code, peers, _ = self.dispatch(row, 'GET', '/reseller/api/peers')
+        peer = next((item for item in peers.get('peers', [])
+                     if isinstance(item, dict) and item.get('id') == peer_id), None) if peers_code == 200 and isinstance(peers, dict) else None
+        if peer is None:
+            return ('text', 'مشتری در دسترس نیست. / Peer unavailable.')
         base = '/reseller/api/peers/' + str(peer_id)
         code, _, config = self.dispatch(row, 'GET', base + '/config')
         if code != 200:
@@ -299,23 +311,20 @@ class BotManager:
         qr_code, _, qr = self.dispatch(row, 'GET', base + '/qr')
         link_code, link, _ = self.dispatch(row, 'GET', base + '/user-link')
         url = link.get('url') if link_code == 200 and isinstance(link, dict) else None
-        caption = '◇ Peer ' + str(peer_id) + ' · Configuration / کانفیگ'
-        if isinstance(url, str) and len(url) <= 800 and urlsplit(url).scheme in {'http', 'https'}:
-            caption += '\n🔗 ' + url
-        items = [{'method': 'sendDocument', 'document': config,
-                  'filename': 'peer-' + str(peer_id) + '.conf', 'caption': caption}]
-        # Telegram messages may contain at most 4096 characters. Never shorten
-        # the actual download, and use plain text rather than HTML interpolation.
+        name = str(peer.get('name') or 'Peer ' + str(peer_id))
         preview = config.decode('utf-8', errors='replace') if isinstance(config, bytes) else str(config)
-        if len(preview) <= 3800:
-            items.append({'method': 'sendMessage', 'text': '◇ Configuration / کانفیگ\n' + preview})
+        keyboard = bundle_keyboard(peer_id)
+        items = [{'method': 'sendDocument', 'document': config,
+                  'filename': safe_peer_name(peer_id, name) + '.conf',
+                  'caption': peer_card_caption(name, preview, url), 'parse_mode': 'HTML'}]
         if qr_code == 200:
             items.append({'method': 'sendPhoto', 'photo': qr,
-                          'caption': caption.replace('◇', '▦', 1) + '\nScan with WireGuard / اسکن با وایرگارد',
-                          'reply_markup': self.peer_keyboard(peer_id)})
+                          'filename': safe_peer_name(peer_id, name) + '-QR.png',
+                          'caption': peer_card_caption(name, preview, url, qr=True),
+                          'parse_mode': 'HTML', 'reply_markup': keyboard})
         else:
-            items.append({'method': 'sendMessage', 'text': 'Peer ' + str(peer_id),
-                          'reply_markup': self.peer_keyboard(peer_id)})
+            items.append({'method': 'sendMessage', 'text': '⚠️ QR code unavailable. / کد QR در دسترس نیست.',
+                          'reply_markup': keyboard})
         return ('delivery', items)
 
     def command(self, row, update):
@@ -365,8 +374,20 @@ class BotManager:
             return self.bundle(row, receipt) if isinstance(receipt, int) else receipt
         text = str(message.get('text') or '').strip()
         if update.get('callback_query'):
-            self.clear_wizard(key)
-            return self._legacy_command(row, update)
+            navigation = {'reseller:peer': '➕ ساخت PEER', 'reseller:child': '👥 ساخت نماینده',
+                'reseller:bulk': '📦 ساخت انبوه', 'reseller:settings': '⚙️ تنظیمات',
+                'reseller:credit': '💳 اعتبار / Credit', 'reseller:configs': '📋 کانفیگ‌ها / Configs',
+                'reseller:children': '👥 زیرنماینده‌ها / Children', 'reseller:status': '📡 وضعیت / Status',
+                'reseller:back': '⬅️ بازگشت / Back', 'reseller:cancel': '❌ لغو / Cancel'}
+            text = navigation.get(update['callback_query'].get('data'))
+            if text is None:
+                self.clear_wizard(key)
+                return self._legacy_command(row, update)
+            # Reuse the existing validated wizard transitions, never synthesize
+            # a mutation from callback payload fields.
+            message = {**message, 'text': text, 'from': update['callback_query'].get('from') or {}}
+            update = {**update, 'message': message}
+            update.pop('callback_query', None)
         if text in {'/cancel', '⬅️ بازگشت / Back', '❌ لغو / Cancel', '/start', '/help'}:
             self.clear_wizard(key)
             self.prompts.pop(key, None)
@@ -402,7 +423,7 @@ class BotManager:
                 self.wizards[key] = {'action': action, 'fields': fields, 'values': {}, 'expires': now + 300,
                                      'operation': 'telegram-update-' + str(row['bot_id']) + '-' + str(update['update_id'])}
             return ('messages', [{'text': labels[fields[0]], 'reply_markup': {
-                'keyboard': [[{'text': '❌ لغو / Cancel'}]], 'resize_keyboard': True}}])
+                'inline_keyboard': [[{'text': '❌ لغو / Cancel', 'callback_data': 'reseller:cancel'}]]}}])
         wizard = self.wizards.get(key)
         if wizard and not text.startswith('/'):
             field = wizard['fields'][len(wizard['values'])]
@@ -476,7 +497,14 @@ class BotManager:
                 self.prompts.pop(prompt_key, None)
         if callback:
             value = callback.get('data') or ''
-            if value == 'credit':
+            native_action = re.fullmatch(r'peer:(bundle|edit):([1-9][0-9]{0,12})', value)
+            if native_action:
+                if native_action[1] == 'bundle':
+                    return self.bundle(row, int(native_action[2]))
+                value = 'manage:' + native_action[2]
+            if value == 'peers:menu':
+                text = '/peers'
+            elif value == 'credit':
                 text = '/credit'
             elif re.fullmatch(r'page:[0-9]{1,6}', value):
                 text = '/peers ' + value.split(':')[1]
@@ -490,7 +518,8 @@ class BotManager:
                 if action == 'manage':
                     return ('messages', [{'text': 'نام یا تمدید / Name or renewal', 'reply_markup': {
                         'inline_keyboard': [[{'text': 'تغییر نام / Rename', 'callback_data': 'rename:' + str(peer_id)},
-                                             {'text': 'تمدید / Renew', 'callback_data': 'renew:' + str(peer_id)}]]}}])
+                                             {'text': 'تمدید / Renew', 'callback_data': 'renew:' + str(peer_id)}],
+                                            [{'text': '← Back', 'callback_data': 'peer:bundle:' + str(peer_id)}]]}}])
                 if action in {'rename', 'renew'}:
                     with self.prompt_lock:
                         self.prompts[prompt_key] = (action, peer_id, time.monotonic() + 300)
@@ -543,7 +572,11 @@ class BotManager:
                 if start + 10 < len(peers):
                     messages.append({'text': 'صفحه بعد / Next page', 'reply_markup': {'inline_keyboard': [[
                         {'text': 'بعدی / Next', 'callback_data': 'page:' + str(page + 1)}]]}})
-                return ('messages', messages or [{'text': 'بدون مشتری / No peers'}])
+                if not messages:
+                    messages.append({'text': 'بدون مشتری / No peers'})
+                messages.append({'text': '← Back', 'reply_markup': {'inline_keyboard': [[
+                    {'text': '← Back', 'callback_data': 'reseller:back'}]]}})
+                return ('messages', messages)
         elif command in {'/config', '/link', '/qr'} and re.fullmatch(r'[1-9][0-9]{0,12}', argument):
             path = '/reseller/api/peers/' + argument + {'/config': '/config', '/link': '/user-link', '/qr': '/qr'}[command]
             code, result, body = self.dispatch(row, 'GET', path)
@@ -586,12 +619,26 @@ class BotManager:
                 payload = dict(item)
                 method = payload.pop('method')
                 files = {key: payload.pop(key) for key in ('document', 'photo') if key in payload}
-                self.transport().call(token, method, {'chat_id': row['owner_id'], **payload}, **files)
+                telegram_data = {'chat_id': row['owner_id'], **payload}
+                try:
+                    self.transport().call(token, method, telegram_data, **files)
+                except BotError as error:
+                    if method != 'sendPhoto' or error.code != 'telegram_bad_request':
+                        raise
+                    # Telegram rejects some valid QR images as photos. Only a
+                    # definite 400 permits a document retry of the same bytes.
+                    self.transport().call(token, 'sendDocument',
+                        {**telegram_data, 'filename': telegram_data.get('filename') or 'wireguard-qr.png'}, document=files['photo'])
             return
         if kind == 'document':
             self.transport().call(token, 'sendDocument', {'chat_id': row['owner_id']}, document=value)
         elif kind == 'photo':
-            self.transport().call(token, 'sendPhoto', {'chat_id': row['owner_id']}, photo=value)
+            try:
+                self.transport().call(token, 'sendPhoto', {'chat_id': row['owner_id']}, photo=value)
+            except BotError as error:
+                if error.code != 'telegram_bad_request':
+                    raise
+                self.transport().call(token, 'sendDocument', {'chat_id': row['owner_id'], 'filename': 'wireguard-qr.png'}, document=value)
         else:
             for item in value if kind == 'messages' else [{'text': value}]:
                 if not self.current(row) or not self.account(row):
@@ -626,15 +673,18 @@ class BotManager:
                         continue
                     if update['update_id'] < fresh['offset']:
                         continue
+                    callback_id = self.callback_id(row, update)
+                    if callback_id:
+                        try:
+                            self.transport().call(token, 'answerCallbackQuery', {'callback_query_id': callback_id})
+                        except BotError:
+                            pass  # An expired spinner must not replay paid operations.
                     answer = self.command(row, update)
                     # Create/renew already have durable idempotency at this point.
                     # Commit the offset before Telegram delivery, which must not
                     # cause the same paid operation to execute again on failure.
                     self.store.progress(row, offset=update['update_id'] + 1)
                     if answer and self.current(row) and self.account(row):
-                        callback_id = self.callback_id(row, update)
-                        if callback_id:
-                            self.transport().call(token, 'answerCallbackQuery', {'callback_query_id': callback_id})
                         self.send_answer(row, token, answer)
             except Exception as error:
                 self.store.progress(row, status=self.error_status(error))
