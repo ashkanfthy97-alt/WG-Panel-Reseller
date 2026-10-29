@@ -12,9 +12,19 @@ from flask import current_app, g, jsonify, request
 
 _threads = threading.RLock()
 _local = threading.local()
+PORT_MIN = 51825
+PORT_MAX = 52000
 
 
 class ProvisionError(ValueError):
+    pass
+
+
+class PortPoolExhausted(ProvisionError):
+    pass
+
+
+class NetworkPoolExhausted(ProvisionError):
     pass
 
 
@@ -94,13 +104,13 @@ def occupied_ports(rows, config_path, reservations=(), *, exclude_child=None, sc
 
 
 def suggest_port(occupied):
-    for port in range(20000, 65536):
+    for port in range(PORT_MIN, PORT_MAX + 1):
         if port not in occupied:
             return port
-    raise ProvisionError('پورت آزاد موجود نیست.')
+    raise PortPoolExhausted('در محدودهٔ ۵۱۸۲۵ تا ۵۲۰۰۰ پورت آزاد موجود نیست.')
 
 
-def child_network(rows):
+def child_network(rows, pool='10.0.0.0/8', prefix=24):
     networks = []
     for row in rows:
         for network in row.get('scope_networks', []):
@@ -114,10 +124,29 @@ def child_network(rows):
                     networks.append(ipaddress.ip_interface(address).network)
                 except ValueError as exc:
                     raise ProvisionError('شبکهٔ Interface موجود نامعتبر است.') from exc
-    for subnet in ipaddress.ip_network('10.0.0.0/8').subnets(new_prefix=24):
-        if not any(subnet.version == existing.version and subnet.overlaps(existing) for existing in networks):
-            return str(subnet.network_address + 1) + '/24'
-    raise ProvisionError('شبکهٔ آزاد موجود نیست.')
+    try:
+        network_pool = ipaddress.ip_network(pool)
+        if network_pool.version != 4 or type(prefix) is not int or not network_pool.prefixlen <= prefix <= 30:
+            raise ValueError('Invalid pool or child prefix')
+    except (ValueError, TypeError) as exc:
+        raise ProvisionError('محدودهٔ شبکهٔ پیش‌فرض معتبر نیست.') from exc
+    # Jump over occupied intervals rather than enumerating millions of child
+    # subnets under the process lock when a host/VPC network covers the pool.
+    start, end = int(network_pool.network_address), int(network_pool.broadcast_address)
+    size, candidate = 1 << (32 - prefix), start
+    occupied = sorted((max(start, int(item.network_address)), min(end, int(item.broadcast_address)))
+        for item in networks if item.version == 4 and item.overlaps(network_pool))
+    for low, high in occupied:
+        if high < candidate:
+            continue
+        if low > candidate + size - 1:
+            return str(ipaddress.IPv4Address(candidate + 1)) + '/' + str(prefix)
+        candidate = start + ((high - start) // size + 1) * size
+        if candidate + size - 1 > end:
+            break
+    if candidate + size - 1 <= end:
+        return str(ipaddress.IPv4Address(candidate + 1)) + '/' + str(prefix)
+    raise NetworkPoolExhausted('در محدودهٔ شبکهٔ پیش‌فرض، زیرشبکهٔ آزاد موجود نیست.')
 
 
 def interface_port_guard(fn):

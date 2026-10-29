@@ -19,11 +19,11 @@ class PortsChecks(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for offset, protocol in enumerate(('tcp','tcp6','udp','udp6')):
-                (root/protocol).write_text('header\n 0: 00000000:%04X 00000000:0000 07\n' % (20000+offset))
-            (root/'inactive.conf').write_text('[Interface]\nListenPort = 20004 # stopped\n')
-            ports = occupied_ports([{'listen_port':20005}], root,
-                [{'port':20006,'state':'uncertain'}], scanner=lambda:system_ports(root))
-            self.assertEqual(suggest_port(ports),20007)
+                (root/protocol).write_text('header\n 0: 00000000:%04X 00000000:0000 07\n' % (51825+offset))
+            (root/'inactive.conf').write_text('[Interface]\nListenPort = 51829 # stopped\n')
+            ports = occupied_ports([{'listen_port':51830}], root,
+                [{'port':51831,'state':'uncertain'}], scanner=lambda:system_ports(root))
+            self.assertEqual(suggest_port(ports),51832)
             (root/'udp6').unlink()
             with self.assertRaises(ProvisionError):
                 system_ports(root)

@@ -92,7 +92,7 @@ class HierarchyStoreChecks(unittest.TestCase):
         self.assertEqual(account['auth_version'], 3)
         with closing(sqlite3.connect(path)) as db:
             self.assertEqual(db.execute('SELECT password_hash FROM resellers WHERE id=7').fetchone()[0], 'hash-preserved')
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 4)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 5)
 
     def test_concurrent_v2_migration(self):
         path = self.legacy()
@@ -119,7 +119,7 @@ class HierarchyNativeChecks(unittest.TestCase):
     def test_child_creation_and_owner_summary(self):
         parent = self.account()
         self.login()
-        result = self.post('/reseller/api/accounts', dict(username='child', password='safe-password-long', max_peers=2))
+        result = self.post('/reseller/api/accounts', dict(username='child', password='safe-password-long'))
         self.assertEqual(result.status_code, 201, result.get_data(as_text=True))
         child = result.json['account']
         self.assertEqual(result.json['signin_url'], '/login')
@@ -140,7 +140,7 @@ class HierarchyNativeChecks(unittest.TestCase):
     def test_parent_cannot_forge_ownership_price_or_activation(self):
         self.account()
         self.login()
-        payload = dict(username='forged', password='safe-password-long', max_peers=2)
+        payload = dict(username='forged', password='safe-password-long')
         for field, value in (('parent_id', 999), ('creation_fee_toman', 0), ('enabled', True), ('days', 365)):
             result = self.post('/reseller/api/accounts', dict(payload, **{field: value}))
             self.assertIn(result.status_code, (400, 403))

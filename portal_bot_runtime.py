@@ -24,7 +24,9 @@ class AsyncTelegramTransport:
     async def call(self, token, method, payload=None, *, document=None, photo=None):
         if method not in TELEGRAM_METHODS:
             raise BotError('unsupported_telegram_operation')
-        files = ({'document': ('wireguard.conf', document, 'text/plain')}
+        payload = dict(payload or {})
+        filename = payload.pop('filename', 'wireguard.conf')
+        files = ({'document': (filename, document, 'text/plain')}
                  if document is not None else {'photo': ('wireguard.png', photo, 'image/png')}
                  if photo is not None else None)
         try:
@@ -69,6 +71,15 @@ class AsyncBotRuntime:
     async def send_answer(self, row, token, answer):
         kind, value = answer
         if not await self.blocking(self.manager.current, row) or not await self.blocking(self.manager.account, row):
+            return
+        if kind == 'delivery':
+            for item in value:
+                if not await self.blocking(self.manager.current, row) or not await self.blocking(self.manager.account, row):
+                    return
+                payload = dict(item)
+                method = payload.pop('method')
+                files = {key: payload.pop(key) for key in ('document', 'photo') if key in payload}
+                await self.transport.call(token, method, {'chat_id': row['owner_id'], **payload}, **files)
             return
         if kind in {'document', 'photo'}:
             await self.transport.call(token, 'sendDocument' if kind == 'document' else 'sendPhoto',

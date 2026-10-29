@@ -70,8 +70,11 @@ class BotChecks(unittest.TestCase):
             self.assertIsNone(self.manager.command(row,value))
         self.assertEqual(self.rows,[])
         update=self.update('/new customer | 30 | 10')
-        self.assertIn('Peer ID: 1',self.manager.command(row,update)[1][0]['text'])
-        self.assertIn('Peer ID: 1',self.manager.command(row,update)[1][0]['text'])
+        for _ in range(2):
+            kind,items=self.manager.command(row,update)
+            self.assertEqual(kind,'delivery')
+            self.assertEqual(items[0]['document'],b'native-config')
+            self.assertEqual(items[0]['filename'],'peer-1.conf')
         self.assertEqual(len(self.rows),1,'Repeated Telegram update must not create another peer')
         self.assertEqual(self.manager.command(row,self.update('/config 1'))[1],b'native-config')
         self.assertEqual(self.manager.command(row,self.update('/link 1'))[1],'http://localhost/u/opaque-user-token')
@@ -115,7 +118,7 @@ class BotChecks(unittest.TestCase):
             def call(inner,token,method,payload=None,**kwargs):
                 if method=='getUpdates':
                     return [update]
-                if method=='sendMessage':
+                if method in {'sendMessage','sendDocument','sendPhoto'}:
                     raise BotError('simulated_delivery_failure')
                 raise AssertionError(method)
         self.app.config['RESELLER_BOT_TRANSPORT']=FailedDelivery()

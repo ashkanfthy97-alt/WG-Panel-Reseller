@@ -8,6 +8,45 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
 (async () => {
   const browser = await chromium.launch({headless:true, executablePath:process.env.PORTAL_BROWSER_PATH || undefined});
   try {
+    // Render the operational dashboard script against owner mappings, never inferred from Interface.
+    for(const language of ['fa','en']) for(const width of [1440,390]){
+      const context=await browser.newContext({viewport:{width,height:1000}});
+      await context.addInitScript(value=>localStorage.setItem('wgportal-language',value),language);
+      let unavailable=false;
+      const peers=[1,2,3,4,5].map(id=>({id,public_key:'key-'+id,name:'connection-'+id,iface:'wg0',latest_handshake:100-id}));
+      const owners=[
+        {peer_id:1,public_key:'key-1',reseller:{id:10,username:'dealer-alpha',parent_id:null,deleted:false}},
+        {peer_id:2,public_key:'key-2',reseller:{id:11,username:'child-beta',parent_id:10,deleted:false}},
+        {peer_id:3,public_key:'key-3',reseller:{id:12,username:'<img src=x onerror=alert(1)>',parent_id:null,deleted:true}},
+        {peer_id:4,public_key:'OLD-KEY',reseller:{id:13,username:'WRONG-OWNER',deleted:false}}
+      ];
+      await context.route('**/*',route=>{
+        const url=new URL(route.request().url());
+        if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(rendered,'dashboard-modern.html'),'utf8')});
+        if(['/static/js/dashboard-modern.js','/static/js/portal-locale.js'].includes(url.pathname))return route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,url.pathname.slice(1)),'utf8')});
+        if(url.pathname==='/api/peers')return route.fulfill({json:{peers}});
+        if(url.pathname==='/resellers/api/peer-owners')return route.fulfill({status:unavailable?503:200,json:unavailable?{error:'owner_mapping_unavailable'}:{owners}});
+        if(url.pathname.startsWith('/api/')||url.pathname==='/resellers/api/summary')return route.fulfill({json:{subscriptions:[],nodes:[]}});
+        if(url.pathname.endsWith('.css'))return route.fulfill({contentType:'text/css',body:''});
+        return route.fulfill({contentType:'text/javascript',body:''});
+      });
+      const page=await context.newPage();
+      await page.goto('http://panel.test/');
+      const cells=page.locator('#nx-recent-peers .nx-connection-owner');
+      await page.waitForFunction(()=>document.querySelector('#nx-recent-peers')?.textContent.includes('dealer-alpha'));
+      assert.equal(await cells.count(),5);
+      assert.equal(await cells.nth(0).textContent(),'dealer-alpha');
+      assert.equal(await cells.nth(1).textContent(),'child-beta');
+      assert((await cells.nth(2).textContent()).includes(language==='fa'?'حساب بسته‌شده':'Closed account'));
+      assert.equal(await cells.nth(2).locator('img').count(),0,'Owner names are escaped');
+      assert.equal(await cells.nth(3).textContent(),language==='fa'?'بدون نماینده':'No reseller','Reused ID never inherits old owner');
+      assert.equal(await cells.nth(4).textContent(),language==='fa'?'بدون نماینده':'No reseller');
+      assert.equal(await page.locator('#nx-recent-peers tr').first().locator('td').count(),6);
+      unavailable=true;await page.reload();
+      await page.waitForFunction(()=>document.querySelectorAll('.nx-connection-owner').length===5);
+      assert((await cells.allTextContents()).every(text=>text===(language==='fa'?'نامشخص':'Unknown')),'Failed mapping is unknown, not admin/unowned');
+      await context.close();
+    }
     for (const language of ['fa', 'en', 'unavailable']) {
       const context = await browser.newContext();
       await context.addInitScript((value) => {
@@ -78,6 +117,8 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     let peerPayload, renamePayload, renewalPayload;
     let childPayload, delayUserLink=false, releaseUserLink, observeUserLink;
     let reservedCapacity=2, httpsBotValidated=false, botSaveError=null;
+    let defaultsPayload;
+    let interfaceDefaults={configured:true,defaults:{endpoint_host:'vpn.example.test',dns:'1.1.1.1,1.0.0.1',mtu:1420,allowed_ips:'0.0.0.0/0,::/0',persistent_keepalive:10,network_pool:'10.80.0.0/16',subnet_prefix:24,child_max_peers:10,auto_firewall:true},port_range:{min:51825,max:52000}};
     await context.route('**/*', route => {
       const url = new URL(route.request().url());
       if (url.pathname === '/login' && route.request().method() === 'POST') {signedIn=true;return route.fulfill({status:302,headers:{location:'/reseller'}});}
@@ -99,8 +140,10 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
         if(delayUserLink) return new Promise(resolve=>{releaseUserLink=()=>deliver().then(resolve);observeUserLink();});
         return deliver();
       }
-      if (url.pathname === '/reseller/api/accounts/2/interface-port') return route.fulfill({json:{port:23456}});
-      if (url.pathname === '/reseller/api/accounts/2/interface') {assert.deepEqual(route.request().postDataJSON(),{port:23456});children[0].interfaces=[3];children[0].assigned_interfaces=[{id:3,name:'wg_r2',listen_port:23456}];children[0].interface_provision={state:'complete',port:23456};return route.fulfill({status:201,json:{account:children[0],interface:{id:3,name:'wg_r2',listen_port:23456}}});}
+      if (url.pathname === '/resellers/api/interface-defaults') {
+        if(route.request().method()==='PUT'){defaultsPayload=route.request().postDataJSON();interfaceDefaults={...interfaceDefaults,defaults:defaultsPayload};}
+        return route.fulfill({json:interfaceDefaults});
+      }
       if (url.pathname === '/resellers/api/accounts/2/approval') {assert.deepEqual(route.request().postDataJSON(),{approved:true,days:30});children[0].approval_status='approved';return route.fulfill({json:{account:children[0]}});}
       if (url.pathname === '/reseller/api/peers') {
         if (route.request().method() === 'POST') {
@@ -122,9 +165,9 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
       if (url.pathname === '/reseller/api/accounts') {
         if (route.request().method() === 'POST') {
           childPayload = route.request().postDataJSON();
-          const child = {...childPayload,id:2,parent_id:1,active:false,enabled:true,expires_at:0,creation_fee_toman:3000000,interfaces:[],approval_status:'pending'};
+          const child = {...childPayload,id:2,parent_id:1,active:false,enabled:true,expires_at:0,creation_fee_toman:3000000,interfaces:[3],assigned_interfaces:[{id:3,name:'wg_r2',listen_port:51825}],interface_provision:{state:'complete',port:51825},approval_status:'pending'};
           children.push(child);
-          return route.fulfill({status:201,json:{account:child,signin_url:'/login'}});
+          return route.fulfill({status:201,json:{account:child,interface:{id:3,name:'wg_r2',listen_port:51825},signin_url:'/login'}});
         }
         return route.fulfill({json:{accounts:children,interfaces:[{id:1,name:'wg0'}],creation_fee:{amount:3000000,currency:'toman',one_time:true,payment_gateway:false}}});
       }
@@ -153,7 +196,7 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     await page.waitForFunction(() => document.getElementById('peer-rows')?.textContent.includes('limited-customer'));
     assert.deepEqual(Object.keys(peerPayload).sort(),['days','name','volume_gb']);
     await page.locator('[data-reseller-section="services"]').click();
-    await page.locator('#peer-rows button').last().click();
+    await page.locator('#peer-rows button').filter({hasText:/نام \/ تمدید|Name \/ renew/}).click();
     await page.locator('#peer-edit-name').fill('renamed-customer');
     await page.locator('#peer-edit-form button[type=submit]').click();
     await page.waitForFunction(() => document.getElementById('peer-rows')?.textContent.includes('renamed-customer'));
@@ -187,18 +230,28 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     assert.match(await page.locator('#child-fee-amount').textContent(), /[3۳]/);
     await page.locator('#child-username').fill('child-dealer');
     await page.locator('#child-password').fill('a-safe-child-password');
-    await page.locator('#child-limit').fill('2');
+    assert.equal(await page.locator('#child-form input').count(),2,'Parent enters only username and password');
+    assert.equal(await page.locator('#child-limit').count(),0);
     await page.locator('#child-form button[type=submit]').click();
     await page.waitForFunction(() => document.getElementById('child-rows')?.textContent.includes('child-dealer'));
-    assert.deepEqual(Object.keys(childPayload).sort(), ['max_peers','password','username']);
+    assert.deepEqual(Object.keys(childPayload).sort(), ['password','username']);
     assert.match(await page.locator('#signin-url').inputValue(), /\/login$/);
-    await page.locator('.child-port-propose').click();
-    await page.waitForFunction(() => document.querySelector('.child-port')?.value==='23456');
-    await page.locator('.child-interface-create').click();
-    await page.waitForFunction(() => !document.querySelector('.child-interface-create'));
+    assert.equal(await page.locator('.child-port-propose,.child-interface-create,.child-port').count(),0,'Parents cannot select technical settings');
+    assert.match(await page.locator('#child-rows').textContent(), /51825/);
     await page.goto('http://panel.test/resellers');
     await page.waitForFunction(() => document.getElementById('account-rows')?.textContent.includes('child-dealer'));
     assert.match(await page.locator('#summary-creation-fees').textContent(), /[3۳]/);
+    await page.locator('#provision-endpoint-host').waitFor({state:'visible'});
+    await page.locator('#provision-endpoint-host').fill('draft.example.test');
+    const originalDirection=await page.locator('html').getAttribute('dir');
+    await page.locator('#language-toggle').click();
+    assert.notEqual(await page.locator('html').getAttribute('dir'),originalDirection);
+    assert.equal(await page.locator('#provision-endpoint-host').inputValue(),'draft.example.test','Language preserves owner draft');
+    assert.equal(await page.locator('#provision-defaults-form input[name="port"]').count(),0,'Port is always allocated, not configurable');
+    await page.locator('#provision-defaults-save').click();
+    await page.waitForFunction(()=>document.getElementById('provision-defaults-result').textContent.length>0);
+    assert.equal(defaultsPayload.endpoint_host,'draft.example.test');
+    assert(!Object.keys(defaultsPayload).some(key=>key.includes('port')),'Owner defaults cannot override allocated ports');
     await page.locator('.account-approval').last().click();
     await page.waitForFunction(() => document.getElementById('account-rows')?.textContent.includes('child-dealer'));
     // Sidebar navigation is real HTML/CSS/JS; every network response stays mocked.
@@ -215,6 +268,18 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
         assert(language==='fa'?side.x>main.x:side.x<main.x,'Sidebar follows Persian/English direction');
       }
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'No page overflow');
+      await page.locator('[data-reseller-section="children"]').click();
+      await page.locator('#add-child').click();
+      const childBounds=await page.locator('#child-dialog').boundingBox();
+      assert(childBounds.x>=0 && childBounds.x+childBounds.width<=width+1,'Child dialog fits viewport');
+      assert.equal(await page.locator('#child-form input').count(),2);
+      const childSubmit=await page.locator('#child-form button[type=submit]').boundingBox();
+      assert(childSubmit.height<90,'Child submit button keeps normal form height');
+      for(const selector of ['#child-username','#child-password']) {
+        const input=await page.locator(selector).boundingBox();
+        assert(input.width>=150 && input.x>=childBounds.x && input.x+input.width<=childBounds.x+childBounds.width,'Child fields remain readable inside dialog');
+      }
+      await page.locator('#close-child-dialog').click();
       for(const section of ['services','children','bot','overview']) {
         const link=page.locator(`[data-reseller-section="${section}"]`);
         await link.click();
@@ -294,6 +359,111 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     }
     account.active=true; account.approval_status='approved';
     await context.close();
+    // New operations stay completely mocked, including rotating CSRF and uncertain outcomes.
+    for (const language of ['fa','en']) for (const width of [1440,390]) {
+      const operationsContext=await browser.newContext({viewport:{width,height:1000}});
+      await operationsContext.addInitScript(value=>localStorage.setItem('wgportal-language',value),language);
+      let token='operations-csrf-0', serial=0, bulkStatus=201, bulkCalls=[], deleteCalls=[], approvalCalls=[];
+      const operationPeers=[{id:51,name:'delete-success'},{id:52,name:'delete-uncertain'}];
+      const operationAccounts=[{...account,id:11,username:'approval-one',approval_status:'pending'}, {...account,id:12,username:'approval-two',approval_status:'pending'}, {...account,id:13,username:'archive-child',parent_id:1,approval_status:'approved'}];
+      await operationsContext.route('**/*',route=>{
+        const request=route.request(), url=new URL(request.url()), method=request.method();
+        const json=(value,status=200)=>route.fulfill({status,json:{...value,csrf:token}});
+        if(url.pathname==='/reseller'||url.pathname==='/resellers')return route.fulfill({contentType:'text/html',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/index.html'),'utf8')});
+        if(url.pathname==='/reseller/assets/reseller.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/reseller.js'),'utf8')});
+        if(url.pathname==='/reseller/assets/reseller.css')return route.fulfill({contentType:'text/css',body:fs.readFileSync(path.join(root,'deploy/linux/reseller_ui/reseller.css'),'utf8')});
+        if(method!=='GET')assert.equal(request.headers()['x-reseller-csrf'],token,'Every mutation uses the latest response CSRF');
+        if(url.pathname==='/reseller/api/session')return json({account});
+        if(url.pathname==='/resellers/api/interface-defaults')return json(interfaceDefaults);
+        if(url.pathname==='/resellers/api/accounts')return json({accounts:operationAccounts,interfaces:[{id:1,name:'wg0'}],audit:[],operations:[]});
+        if(url.pathname==='/reseller/api/accounts'&&method==='GET')return json({accounts:operationAccounts.filter(value=>value.parent_id===1),creation_fee:{amount:3000000}});
+        if(/\/accounts\/\d+\/approval$/.test(url.pathname)) {
+          const id=Number(url.pathname.split('/').at(-2));approvalCalls.push(id);
+          assert.deepEqual(request.postDataJSON(),{approved:true,days:30});
+          operationAccounts.find(value=>value.id===id).approval_status='approved';token='operations-csrf-'+(++serial);
+          return json({ok:true});
+        }
+        if(url.pathname==='/reseller/api/peers/bulk') {
+          const payload=request.postDataJSON(), key=request.headers()['idempotency-key'];
+          assert(key);bulkCalls.push({payload,key});
+          const created=[{id:71,name:payload.name_prefix+'-1'}];
+          if(bulkStatus===201)created.push({id:72,name:payload.name_prefix+'-2'});
+          for(const peer of created)if(!operationPeers.some(value=>value.id===peer.id))operationPeers.push(peer);
+          token='operations-csrf-'+(++serial);
+          return json({ok:bulkStatus===201,requested:2,created,failed:bulkStatus===201?[]:[{index:2,error:bulkStatus===409?'create_uncertain':'capacity_exhausted'}],uncertain:bulkStatus===409,complete:bulkStatus!==409},bulkStatus);
+        }
+        if(url.pathname==='/reseller/api/peers')return json({peers:operationPeers});
+        if(method==='DELETE') {
+          assert.deepEqual(request.postDataJSON(),{confirm:true});deleteCalls.push(url.pathname);
+          const id=Number(url.pathname.split('/').at(-1));token='operations-csrf-'+(++serial);
+          if(id===52)return json({error:'delete_uncertain',message:'native deletion outcome unknown'},502);
+          if(url.pathname.includes('/peers/'))operationPeers.splice(operationPeers.findIndex(value=>value.id===id),1);
+          else operationAccounts.find(value=>value.id===id).deleted=true;
+          return json({ok:true,resources_preserved:!url.pathname.includes('/peers/')});
+        }
+        if(url.pathname==='/reseller/api/bot')return json({native_csrf:'mock-native',bot:{configured:false,enabled:false,status:'not_configured'}});
+        return route.fulfill({body:''});
+      });
+      const operationsPage=await operationsContext.newPage();
+      const pageErrors=[];operationsPage.on('pageerror',error=>pageErrors.push(error.message));
+      await operationsPage.goto('http://panel.test/resellers');
+      for(const id of [11,12]) {
+        const row=operationsPage.locator(`#account-rows tr[data-account-id="${id}"]`);
+        await row.locator('.account-approval').click();
+        await operationsPage.waitForFunction(value=>document.querySelector(`#account-rows tr[data-account-id="${value}"] .account-approval`)?.textContent.match(/لغو|Revoke/),id);
+      }
+      assert.deepEqual(approvalCalls,[11,12],'Sequential approval targets each selected row');
+      await operationsPage.locator('#account-rows tr[data-account-id="13"] .danger').click();
+      assert.match(await operationsPage.locator('#delete-copy').textContent(),/خودکار حذف نمی‌شوند|not automatically deleted/);
+      const deletionBounds=await operationsPage.locator('#delete-dialog').boundingBox();
+      assert(deletionBounds.x>=0&&deletionBounds.x+deletionBounds.width<=width+1,'Delete dialog fits both directions and mobile');
+      await operationsPage.locator('#delete-cancel').click();assert.equal(deleteCalls.length,0,'Cancel must not mutate');
+      await operationsPage.locator('#account-rows tr[data-account-id="13"] .danger').click();
+      await operationsPage.locator('#delete-confirm').click();
+      await operationsPage.waitForFunction(()=>!document.querySelector('#delete-dialog').open);
+      await operationsPage.waitForFunction(()=>document.querySelector('#account-rows tr[data-account-id="13"]')&&!document.querySelector('#account-rows tr[data-account-id="13"] button'));
+      assert.equal(await operationsPage.locator('#account-rows tr[data-account-id="13"] button').count(),0,'Archived row is readonly');
+      assert.equal(deleteCalls[0],'/resellers/api/accounts/13');
+      for(const status of [201,207,409]) {
+        bulkStatus=status;bulkCalls=[];
+        await operationsPage.goto('http://panel.test/reseller#services');
+        await operationsPage.reload();
+        await operationsPage.locator('#bulk-name-prefix').fill('batch-'+status);
+        await operationsPage.locator('#bulk-count').fill('2');
+        const submit=operationsPage.locator('#bulk-peer-form button[type=submit]');
+        await submit.click();await operationsPage.waitForFunction(()=>document.querySelector('#bulk-outcomes li')&&!document.querySelector('#bulk-peer-form button[type=submit]').disabled);
+        assert.equal(await operationsPage.locator('#bulk-outcomes li').count(),2);
+        assert.equal(await operationsPage.locator('#bulk-name-prefix').getAttribute('readonly'),'');
+        assert.equal(await operationsPage.locator('#peer-rows a[download]').count()>0,true,'Created items use existing delivery actions');
+        const storageBefore=await operationsPage.evaluate(()=>Object.keys(sessionStorage).filter(key=>key.startsWith('wgportal-operation:')).sort());
+        assert(storageBefore.length>0);
+        await submit.click();await operationsPage.waitForFunction(()=>!document.querySelector('#bulk-peer-form button[type=submit]').disabled);
+        assert.equal(bulkCalls.length,2);assert.equal(bulkCalls[0].key,bulkCalls[1].key,'Recheck preserves batch identity');
+        assert.deepEqual(bulkCalls[0].payload,bulkCalls[1].payload);
+        const newBatch=operationsPage.locator('#bulk-peer-form button[type=button]');
+        assert.equal(await newBatch.isVisible(),status===201,'Partial/uncertain batches cannot silently start over');
+        if(status===201){await newBatch.click();assert.equal(await operationsPage.locator('#bulk-name-prefix').getAttribute('readonly'),null);}
+        else assert.deepEqual(await operationsPage.evaluate(()=>Object.keys(sessionStorage).filter(key=>key.startsWith('wgportal-operation:')).sort()),storageBefore,'Partial results retain their receipt');
+      }
+      await operationsPage.locator('#peer-rows tr').filter({hasText:'delete-success'}).locator('.danger').click();
+      await operationsPage.locator('#delete-cancel').click();assert.equal(deleteCalls.length,1);
+      await operationsPage.locator('#peer-rows tr').filter({hasText:'delete-success'}).locator('.danger').click();
+      await operationsPage.locator('#delete-confirm').click();
+      await operationsPage.waitForFunction(()=>!document.querySelector('#delete-dialog').open);
+      // The dialog closes after DELETE succeeds, before the awaited GET refresh renders.
+      // Wait for that visible outcome; a failed deletion or refresh still times out here.
+      await operationsPage.locator('#peer-rows tr').filter({hasText:'delete-success'}).waitFor({state:'detached'});
+      assert.equal(await operationsPage.locator('#peer-rows tr').filter({hasText:'delete-success'}).count(),0);
+      await operationsPage.locator('#peer-rows tr').filter({hasText:'delete-uncertain'}).locator('.danger').click();
+      await operationsPage.locator('#delete-confirm').click();
+      await operationsPage.waitForFunction(()=>document.querySelector('#delete-confirm').disabled&&document.querySelector('#delete-result').textContent.includes('native deletion outcome unknown'));
+      assert.equal(deleteCalls.filter(value=>value==='/reseller/api/peers/52').length,1);
+      await operationsPage.locator('#delete-cancel').click();
+      await operationsPage.waitForFunction(()=>Array.from(document.querySelectorAll('#peer-rows tr')).find(row=>row.textContent.includes('delete-uncertain'))?.querySelector('.danger')?.disabled);
+      assert.equal(await operationsPage.locator('#peer-rows tr').filter({hasText:'delete-uncertain'}).locator('.danger').isDisabled(),true,'Uncertain delete cannot be repeated from refreshed row');
+      assert.deepEqual(pageErrors,[],'No browser runtime errors');
+      await operationsContext.close();
+    }
     process.stdout.write('Locale rendered before delayed scripts in Persian/English/storage-disabled; reseller entry and login passed.\n');
   } finally {await browser.close();}
 })().catch(error => {console.error(error);process.exitCode = 1;});

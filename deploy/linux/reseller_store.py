@@ -1,6 +1,7 @@
 """Additive reseller accounts and ownership; never modifies WG_Panel's database."""
 from contextlib import contextmanager
 import json
+import hashlib
 import os
 from pathlib import Path
 import sqlite3
@@ -43,17 +44,17 @@ class ResellerStore:
     @staticmethod
     def _initialize(connection):
         version = connection.execute('PRAGMA user_version').fetchone()[0]
-        if version > 4:
+        if version > 5:
             raise StoreError('نسخهٔ داده‌های نمایندگی جدیدتر از این برنامه است.')
-        if version == 4:
+        if version == 5:
             return
         # Serialise additive upgrades across workers and re-read the version
         # after obtaining the lock. executescript would commit this lock early.
         connection.execute('BEGIN IMMEDIATE')
         version = connection.execute('PRAGMA user_version').fetchone()[0]
-        if version > 4:
+        if version > 5:
             raise StoreError('نسخهٔ داده‌های نمایندگی جدیدتر از این برنامه است.')
-        if version == 4:
+        if version == 5:
             connection.commit()
             return
         statements = (
@@ -100,6 +101,15 @@ class ResellerStore:
             connection.execute('UPDATE resellers SET approved_at=created_at')
         if 'approved_by' not in columns:
             connection.execute("ALTER TABLE resellers ADD COLUMN approved_by TEXT DEFAULT 'legacy-migration'")
+        if 'deleted_at' not in columns:
+            connection.execute('ALTER TABLE resellers ADD COLUMN deleted_at INTEGER')
+        operation_columns = {row['name'] for row in connection.execute('PRAGMA table_info(reseller_operations)')}
+        if 'payload_hash' not in operation_columns:
+            connection.execute('ALTER TABLE reseller_operations ADD COLUMN payload_hash TEXT')
+        connection.execute('''CREATE TABLE IF NOT EXISTS reseller_batches (
+            reseller_id INTEGER NOT NULL REFERENCES resellers(id), request_id TEXT NOT NULL,
+            payload_hash TEXT NOT NULL, result TEXT NOT NULL, finished INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL, UNIQUE(reseller_id,request_id))''')
         connection.execute('''CREATE TABLE IF NOT EXISTS reseller_interface_jobs (
             id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES resellers(id),
             child_id INTEGER NOT NULL REFERENCES resellers(id), port INTEGER NOT NULL
@@ -112,7 +122,7 @@ class ResellerStore:
         connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS reseller_interface_port_live
             ON reseller_interface_jobs(port) WHERE state IN ('pending','complete','uncertain')""")
         connection.execute('CREATE INDEX IF NOT EXISTS reseller_parent_idx ON resellers(parent_id)')
-        connection.execute('PRAGMA user_version=4')
+        connection.execute('PRAGMA user_version=5')
         connection.commit()
 
     @staticmethod
@@ -121,7 +131,8 @@ class ResellerStore:
         result.pop('password_hash', None)
         result['interfaces'] = json.loads(result['interfaces'])
         result['enabled'] = bool(result['enabled'])
-        result['active'] = (result['enabled'] and result['expires_at'] > int(time.time())
+        result['deleted'] = bool(result.get('deleted_at'))
+        result['active'] = (not result['deleted'] and result['enabled'] and result['expires_at'] > int(time.time())
                             and result.get('approval_status') == 'approved')
         result.setdefault('parent_id', None)
         result.setdefault('creation_fee_toman', 0)
@@ -159,7 +170,7 @@ class ResellerStore:
                 result['active'] = False  # Corrupt/dangling ancestry fails closed.
                 break
             seen.add(parent_id)
-            if (not ancestor['enabled'] or ancestor['expires_at'] <= now
+            if (ancestor['deleted_at'] or not ancestor['enabled'] or ancestor['expires_at'] <= now
                     or ancestor['approval_status'] != 'approved'):
                 result['active'] = False
             parent_id = ancestor['parent_id']
@@ -183,7 +194,7 @@ class ResellerStore:
             db.execute('BEGIN')
             rows = {item['id']: item for item in db.execute('SELECT * FROM resellers')}
             row = rows.get(reseller_id)
-            if row is None or (auth_version is not None and row['auth_version'] != auth_version):
+            if row is None or row['deleted_at'] or (auth_version is not None and row['auth_version'] != auth_version):
                 return None
             now = int(time.time())
             expires = int(row['expires_at'])
@@ -198,7 +209,7 @@ class ResellerStore:
                     break
                 seen.add(parent_id)
                 effective_expires = min(effective_expires, int(parent['expires_at']))
-                if (not parent['enabled'] or parent['approval_status'] != 'approved'
+                if (parent['deleted_at'] or not parent['enabled'] or parent['approval_status'] != 'approved'
                         or parent['expires_at'] <= now):
                     active = False
                 parent_id = parent['parent_id']
@@ -229,7 +240,7 @@ class ResellerStore:
             children = {}
             for row in rows.values():
                 children.setdefault(row['parent_id'], []).append(row['id'])
-            return [self._public(db, row, rows=rows, children=children) for row in rows.values()]
+            return [self._public(db, row, rows=rows, children=children) for row in rows.values() if not row['deleted_at']]
 
     def children(self, parent_id):
         with self.db() as db:
@@ -238,7 +249,7 @@ class ResellerStore:
             for row in rows.values():
                 children.setdefault(row['parent_id'], []).append(row['id'])
             return [self._public(db, row, rows=rows, children=children)
-                    for row in rows.values() if row['parent_id'] == parent_id]
+                    for row in rows.values() if row['parent_id'] == parent_id and not row['deleted_at']]
 
     def summary(self):
         with self.db() as db:
@@ -246,7 +257,7 @@ class ResellerStore:
                 coalesce(sum(CASE WHEN parent_id IS NOT NULL THEN 1 ELSE 0 END),0) AS subresellers,
                 coalesce(sum(creation_fee_toman),0) AS total_creation_fee_toman,
                 coalesce(sum(CASE WHEN approval_status!='approved' THEN 1 ELSE 0 END),0)
-                    AS pending_approvals FROM resellers''').fetchone()
+                    AS pending_approvals FROM resellers WHERE deleted_at IS NULL''').fetchone()
             return dict(row)
 
     def create(self, username, password, interfaces, max_peers=100, actor='admin', *,
@@ -299,10 +310,13 @@ class ResellerStore:
             raise StoreError('وضعیت تأیید یا مدت اعتبار نامعتبر است.')
         with self.db(write=True) as db:
             row = db.execute('SELECT * FROM resellers WHERE id=?', (reseller_id,)).fetchone()
-            if not row:
+            if not row or row['deleted_at']:
                 raise StoreError('نماینده پیدا نشد.')
             if approved and len(json.loads(row['interfaces'])) != 1:
                 raise StoreError('قبل از تأیید، یک Interface اختصاصی برای نماینده تعیین کنید.')
+            job = db.execute('SELECT state FROM reseller_interface_jobs WHERE child_id=? ORDER BY id DESC LIMIT 1', (reseller_id,)).fetchone()
+            if approved and job and job['state'] in {'pending', 'uncertain'}:
+                raise StoreError('پیش از تأیید، نتیجهٔ ساخت Interface را بررسی و Interface واقعی را دوباره تعیین کنید.')
             if approved:
                 now = int(time.time())
                 expires = row['expires_at']
@@ -325,15 +339,15 @@ class ResellerStore:
         child = db.execute('SELECT * FROM resellers WHERE id=?', (child_id,)).fetchone()
         if not parent or not cls._public(db, parent)['active']:
             raise StoreError('نمایندهٔ والد فعال نیست یا اعتبار آن پایان یافته است.')
-        if not child or child['parent_id'] != parent_id:
+        if not child or child['deleted_at'] or child['parent_id'] != parent_id:
             raise StoreError('زیرنماینده متعلق به این نماینده نیست.')
         if child['approval_status'] != 'pending' or json.loads(child['interfaces']):
             raise StoreError('Interface فقط برای زیرنمایندهٔ جدید و در انتظار تأیید ساخته می‌شود.')
         return child
 
     def reserve_interface(self, parent_id, child_id, port):
-        if type(port) is not int or not 20000 <= port <= 65535:
-            raise StoreError('پورت باید بین ۲۰۰۰۰ تا ۶۵۵۳۵ باشد.')
+        if type(port) is not int or not 51825 <= port <= 52000:
+            raise StoreError('پورت باید بین ۵۱۸۲۵ تا ۵۲۰۰۰ باشد.')
         try:
             with self.db(write=True) as db:
                 self._provision_child(db, parent_id, child_id)
@@ -402,7 +416,7 @@ class ResellerStore:
             # Equal-cost password verification when the username does not exist.
             hashed = row['password_hash'] if row else _DUMMY_HASH
             accepted = check_password_hash(hashed, password)
-            if not row or not accepted:
+            if not row or row['deleted_at'] or not accepted:
                 db.executemany('INSERT INTO reseller_login_failures VALUES(?,?)', ((ip_bucket, now), (account_bucket, now)))
                 return None, False
             # A successful account must not erase another account's IP failures.
@@ -417,7 +431,7 @@ class ResellerStore:
             raise StoreError('تغییری مشخص نشده است.')
         with self.db(write=True) as db:
             row = db.execute('SELECT * FROM resellers WHERE id=?', (reseller_id,)).fetchone()
-            if not row:
+            if not row or row['deleted_at']:
                 raise StoreError('نماینده پیدا نشد.')
             if days is not None:
                 if request_id:
@@ -443,10 +457,13 @@ class ResellerStore:
             raise StoreError('Interface نامعتبر است.')
         with self.db(write=True) as db:
             row = db.execute('SELECT * FROM resellers WHERE id=?', (reseller_id,)).fetchone()
-            if not row:
+            if not row or row['deleted_at']:
                 raise StoreError('نماینده پیدا نشد.')
             db.execute('UPDATE resellers SET interfaces=?,auth_version=auth_version+1 WHERE id=?',
                        (json.dumps([iface_id]), reseller_id))
+            # Explicit mother-admin assignment is the recovery acknowledgement
+            # for an uncertain native provisioning job; no auto retry occurs.
+            db.execute("UPDATE reseller_interface_jobs SET state='complete',iface_id=?,updated_at=?,detail='Owner assigned verified native Interface' WHERE child_id=? AND state IN ('pending','uncertain')", (iface_id, int(time.time()), reseller_id))
             db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)',
                        (reseller_id, 'interface:' + str(iface_id), actor, int(time.time())))
         return self.get(reseller_id)
@@ -456,7 +473,28 @@ class ResellerStore:
             return {row['peer_id']: row['public_key'] for row in db.execute(
                 'SELECT peer_id,public_key FROM reseller_peers WHERE reseller_id=?', (reseller_id,))}
 
-    def reserve(self, reseller_id, request_id):
+    def peer_owners(self):
+        """Minimal owner audit index, including archived reseller ownership.
+
+        Native IDs may be reused. Consumers must match the public key as well
+        before attaching any reseller identity to a native Peer.
+        """
+        with self.db() as db:
+            return [
+                {'peer_id': row['peer_id'], 'public_key': row['public_key'],
+                 'reseller': {'id': row['id'], 'username': row['username'],
+                              'deleted': row['deleted_at'] is not None,
+                              'parent_id': row['parent_id']}}
+                for row in db.execute('''SELECT p.peer_id,p.public_key,r.id,r.username,r.deleted_at,r.parent_id
+                    FROM reseller_peers AS p JOIN resellers AS r ON r.id=p.reseller_id
+                    ORDER BY p.peer_id''')
+            ]
+
+    @staticmethod
+    def fingerprint(value):
+        return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
+
+    def reserve(self, reseller_id, request_id, payload=None):
         with self.db(write=True) as db:
             row = db.execute('SELECT * FROM resellers WHERE id=?', (reseller_id,)).fetchone()
             if not row or not self._public(db, row)['active']:
@@ -464,13 +502,15 @@ class ResellerStore:
             operation = db.execute('SELECT * FROM reseller_operations WHERE reseller_id=? AND request_id=?',
                                    (reseller_id, request_id)).fetchone()
             if operation:
+                if payload is not None and operation['payload_hash'] and operation['payload_hash'] != self.fingerprint(payload):
+                    raise StoreError('شناسهٔ درخواست برای اطلاعات دیگری استفاده شده است.')
                 return dict(operation)
             count = db.execute('SELECT count(*) FROM reseller_peers WHERE reseller_id=?', (reseller_id,)).fetchone()[0]
             pending = db.execute("SELECT count(*) FROM reseller_operations WHERE reseller_id=? AND state IN ('pending','uncertain')", (reseller_id,)).fetchone()[0]
             if count + pending >= row['max_peers']:
                 raise StoreError('ظرفیت ساخت مشتری جدید تکمیل شده است.')
-            cursor = db.execute('INSERT INTO reseller_operations(reseller_id,request_id,state,created_at) VALUES(?,?,?,?)',
-                                (reseller_id, request_id, 'pending', int(time.time())))
+            cursor = db.execute('INSERT INTO reseller_operations(reseller_id,request_id,state,created_at,payload_hash) VALUES(?,?,?,?,?)',
+                                (reseller_id, request_id, 'pending', int(time.time()), self.fingerprint(payload) if payload is not None else None))
             return {'id': cursor.lastrowid, 'state': 'new'}
 
     def finish(self, operation_id, reseller_id, peer_id, public_key):
@@ -482,6 +522,53 @@ class ResellerStore:
     def failed(self, operation_id, *, uncertain=False):
         with self.db(write=True) as db:
             db.execute('UPDATE reseller_operations SET state=? WHERE id=?', ('uncertain' if uncertain else 'failed', operation_id))
+
+    def archive(self, reseller_id, actor='admin', *, parent_id=None):
+        """Revoke access without deleting configurations, descendants or receipts."""
+        with self.db(write=True) as db:
+            row = db.execute('SELECT * FROM resellers WHERE id=?', (reseller_id,)).fetchone()
+            if row is None or (parent_id is not None and row['parent_id'] != parent_id):
+                raise StoreError('نماینده پیدا نشد یا متعلق به شما نیست.')
+            if not row['deleted_at']:
+                now = int(time.time())
+                db.execute('UPDATE resellers SET deleted_at=?,enabled=0,auth_version=auth_version+1 WHERE id=?', (now, reseller_id))
+                db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)', (reseller_id, 'archived:resources-preserved', actor, now))
+        return self.get(reseller_id)
+
+    def forget_peer(self, reseller_id, peer_id, public_key):
+        """Only after native key-checked deletion/absence has been confirmed."""
+        with self.db(write=True) as db:
+            row = db.execute('SELECT * FROM reseller_peers WHERE peer_id=? AND reseller_id=? AND public_key=?', (peer_id, reseller_id, public_key)).fetchone()
+            if row is None:
+                return
+            # Keep the receipt but make it impossible to replay a deleted create.
+            db.execute("UPDATE reseller_operations SET state='deleted' WHERE reseller_id=? AND peer_id=? AND state='complete'", (reseller_id, peer_id))
+            db.execute('DELETE FROM reseller_peers WHERE peer_id=? AND reseller_id=? AND public_key=?', (peer_id, reseller_id, public_key))
+            db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)', (reseller_id, 'peer:deleted:' + str(peer_id), 'reseller:' + str(reseller_id), int(time.time())))
+
+    def peer_was_deleted(self, reseller_id, peer_id):
+        with self.db() as db:
+            return db.execute("SELECT 1 FROM reseller_operations WHERE reseller_id=? AND peer_id=? AND state='deleted'", (reseller_id, peer_id)).fetchone() is not None
+
+    def begin_batch(self, reseller_id, request_id, payload):
+        """A batch is claimed once; interrupted batches are never blindly resumed."""
+        with self.db(write=True) as db:
+            row = db.execute('SELECT * FROM resellers WHERE id=?', (reseller_id,)).fetchone()
+            if row is None or not self._public(db, row)['active']:
+                raise StoreError('حساب نمایندگی فعال نیست.')
+            previous = db.execute('SELECT * FROM reseller_batches WHERE reseller_id=? AND request_id=?', (reseller_id, request_id)).fetchone()
+            digest = self.fingerprint(payload)
+            if previous:
+                if previous['payload_hash'] != digest:
+                    raise StoreError('شناسهٔ ساخت انبوه برای اطلاعات دیگری استفاده شده است.')
+                return {**json.loads(previous['result']), 'replay': True}
+            result = {'ok': False, 'requested': payload['count'], 'created': [], 'failed': [], 'uncertain': True, 'complete': False}
+            db.execute('INSERT INTO reseller_batches(reseller_id,request_id,payload_hash,result,created_at) VALUES(?,?,?,?,?)', (reseller_id, request_id, digest, json.dumps(result), int(time.time())))
+            return None
+
+    def batch_progress(self, reseller_id, request_id, result):
+        with self.db(write=True) as db:
+            db.execute('UPDATE reseller_batches SET result=?,finished=? WHERE reseller_id=? AND request_id=? AND finished=0', (json.dumps(result), int(bool(result['complete'])), reseller_id, request_id))
 
     def audit(self):
         with self.db() as db:

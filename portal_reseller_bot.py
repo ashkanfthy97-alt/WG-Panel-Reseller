@@ -84,12 +84,14 @@ def telegram_payload(payload):
 class TelegramTransport:
     def call(self, token, method, payload=None, *, document=None, photo=None):
         protect_transport_logs()
+        payload = dict(payload or {})
+        filename = payload.pop('filename', 'wireguard.conf')
         if method not in TELEGRAM_METHODS:
             raise BotError('unsupported_telegram_operation')
         try:
             with requests.Session() as client:
                 client.trust_env = False
-                files = ({'document': ('wireguard.conf', io.BytesIO(document), 'text/plain')}
+                files = ({'document': (filename, io.BytesIO(document), 'text/plain')}
                          if document is not None else {'photo': ('wireguard.png', io.BytesIO(photo), 'image/png')}
                          if photo is not None else None)
                 result = client.post('https://api.telegram.org/bot' + token + '/' + method,
@@ -205,6 +207,10 @@ class BotManager:
         self.start_lock = threading.Lock()
         self.prompts = {}
         self.prompt_lock = threading.Lock()
+        self.wizards = {}
+        self.completed_updates = {}
+        self.command_lock = threading.RLock()
+        self.command_locks = {}
 
     def transport(self):
         return self.app.config.get('RESELLER_BOT_TRANSPORT') or TelegramTransport()
@@ -276,7 +282,183 @@ class BotManager:
         return code == 200 and isinstance(value, dict) and any(
             peer.get('id') == peer_id for peer in value.get('peers', []))
 
+    @staticmethod
+    def menu(settings=False):
+        rows = ([['💳 اعتبار / Credit', '📋 کانفیگ‌ها / Configs'],
+                 ['👥 زیرنماینده‌ها / Children', '📡 وضعیت / Status'], ['⬅️ بازگشت / Back']]
+                if settings else [['➕ ساخت PEER', '👥 ساخت نماینده'], ['📦 ساخت انبوه', '⚙️ تنظیمات']])
+        return {'keyboard': [[{'text': text} for text in items] for items in rows],
+                'resize_keyboard': True}
+
+    def bundle(self, row, peer_id):
+        """Read every artifact through ownership-checked native reseller routes."""
+        base = '/reseller/api/peers/' + str(peer_id)
+        code, _, config = self.dispatch(row, 'GET', base + '/config')
+        if code != 200:
+            return ('text', 'کانفیگ در دسترس نیست / Configuration unavailable')
+        qr_code, _, qr = self.dispatch(row, 'GET', base + '/qr')
+        link_code, link, _ = self.dispatch(row, 'GET', base + '/user-link')
+        url = link.get('url') if link_code == 200 and isinstance(link, dict) else None
+        caption = '◇ Peer ' + str(peer_id) + ' · Configuration / کانفیگ'
+        if isinstance(url, str) and len(url) <= 800 and urlsplit(url).scheme in {'http', 'https'}:
+            caption += '\n🔗 ' + url
+        items = [{'method': 'sendDocument', 'document': config,
+                  'filename': 'peer-' + str(peer_id) + '.conf', 'caption': caption}]
+        # Telegram messages may contain at most 4096 characters. Never shorten
+        # the actual download, and use plain text rather than HTML interpolation.
+        preview = config.decode('utf-8', errors='replace') if isinstance(config, bytes) else str(config)
+        if len(preview) <= 3800:
+            items.append({'method': 'sendMessage', 'text': '◇ Configuration / کانفیگ\n' + preview})
+        if qr_code == 200:
+            items.append({'method': 'sendPhoto', 'photo': qr,
+                          'caption': caption.replace('◇', '▦', 1) + '\nScan with WireGuard / اسکن با وایرگارد',
+                          'reply_markup': self.peer_keyboard(peer_id)})
+        else:
+            items.append({'method': 'sendMessage', 'text': 'Peer ' + str(peer_id),
+                          'reply_markup': self.peer_keyboard(peer_id)})
+        return ('delivery', items)
+
     def command(self, row, update):
+        # Serialize state transitions; TTL and credential revision isolate wizards.
+        with self.command_lock:
+            lock = self.command_locks.setdefault(row['reseller_id'], threading.RLock())
+        with lock:
+            return self._guided_command(row, update)
+
+    def remember(self, update_key, receipt):
+        with self.command_lock:
+            if len(self.completed_updates) >= 512:
+                self.completed_updates.pop(next(iter(self.completed_updates)))
+            self.completed_updates[update_key] = (time.monotonic() + 600, receipt)
+
+    def clear_wizard(self, key):
+        with self.command_lock:
+            self.wizards.pop(key, None)
+
+    def bulk_answer(self, row, receipt):
+        items = [{'method': 'sendMessage', 'text': receipt['summary'], 'reply_markup': self.menu()}]
+        for peer_id in receipt['ids']:
+            bundle = self.bundle(row, peer_id)
+            if bundle[0] == 'delivery':
+                items.extend(bundle[1])
+        return ('delivery', items)
+
+    def _guided_command(self, row, update):
+        message = self.private_message(row, update)
+        if message is None or not self.current(row) or not self.account(row):
+            return self._legacy_command(row, update)
+        now = time.monotonic()
+        key = (row['reseller_id'], row['revision'])
+        update_key = key + (update.get('update_id'),)
+        with self.command_lock:
+            for cached, entry in list(self.completed_updates.items()):
+                if entry[0] <= now or (cached[0] == key[0] and cached[1] != key[1]):
+                    self.completed_updates.pop(cached, None)
+            for existing, wizard in list(self.wizards.items()):
+                if wizard['expires'] <= now or (existing[0] == key[0] and existing != key):
+                    self.wizards.pop(existing, None)
+            cached = self.completed_updates.get(update_key)
+        if cached:
+            receipt = cached[1]
+            if isinstance(receipt, dict):
+                return self.bulk_answer(row, receipt)
+            return self.bundle(row, receipt) if isinstance(receipt, int) else receipt
+        text = str(message.get('text') or '').strip()
+        if update.get('callback_query'):
+            self.clear_wizard(key)
+            return self._legacy_command(row, update)
+        if text in {'/cancel', '⬅️ بازگشت / Back', '❌ لغو / Cancel', '/start', '/help'}:
+            self.clear_wizard(key)
+            self.prompts.pop(key, None)
+            return ('messages', [{'text': 'گزینه را انتخاب کنید / Choose an option', 'reply_markup': self.menu()}])
+        if text == '⚙️ تنظیمات':
+            self.clear_wizard(key)
+            return ('messages', [{'text': 'تنظیمات / Settings', 'reply_markup': self.menu(True)}])
+        aliases = {'💳 اعتبار / Credit': '/credit', '📋 کانفیگ‌ها / Configs': '/peers'}
+        if text in aliases:
+            self.clear_wizard(key)
+            changed = dict(update, message=dict(message, text=aliases[text]))
+            return self._legacy_command(row, changed)
+        if text in {'👥 زیرنماینده‌ها / Children', '📡 وضعیت / Status'}:
+            self.clear_wizard(key)
+            if text.startswith('📡'):
+                return ('text', '✅ پنل و بات فعال هستند / Panel and bot are active')
+            code, result, _ = self.dispatch(row, 'GET', '/reseller/api/accounts')
+            children = (result or {}).get('accounts', []) if code == 200 else []
+            return ('text', '\n'.join(str(child.get('username', ''))[:80] + ' · ' +
+                       str(child.get('status', ''))[:40] for child in children[:50]) or 'بدون زیرنماینده / No children')
+        starts = {'➕ ساخت PEER': ('peer', ['name', 'days', 'volume_gb']),
+                  '👥 ساخت نماینده': ('child', ['username', 'password']),
+                  '📦 ساخت انبوه': ('bulk', ['name_prefix', 'count', 'days', 'volume_gb'])}
+        labels = {'name': 'نام Peer / Peer name', 'name_prefix': 'پیشوند نام / Name prefix',
+                  'username': 'نام کاربری زیرنماینده / Child username',
+                  'password': 'رمز حداقل ۱۲ نویسه / Password, at least 12 characters',
+                  'count': 'تعداد ۱ تا ۲۰ / Count 1–20', 'days': 'مدت به روز / Duration in days',
+                  'volume_gb': 'حجم به GB / Traffic in GB'}
+        if text in starts:
+            action, fields = starts[text]
+            self.prompts.pop(key, None)
+            with self.command_lock:
+                self.wizards[key] = {'action': action, 'fields': fields, 'values': {}, 'expires': now + 300,
+                                     'operation': 'telegram-update-' + str(row['bot_id']) + '-' + str(update['update_id'])}
+            return ('messages', [{'text': labels[fields[0]], 'reply_markup': {
+                'keyboard': [[{'text': '❌ لغو / Cancel'}]], 'resize_keyboard': True}}])
+        wizard = self.wizards.get(key)
+        if wizard and not text.startswith('/'):
+            field = wizard['fields'][len(wizard['values'])]
+            normalized = text.translate(str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', '01234567890123456789'))
+            if field in {'count', 'days', 'volume_gb'}:
+                limit = 20 if field == 'count' else 366 if field == 'days' else 100000
+                if not re.fullmatch(r'[0-9]{1,6}', normalized) or not 1 <= int(normalized) <= limit:
+                    return ('text', 'مقدار معتبر وارد کنید / Enter a valid value: ' + labels[field])
+                value = int(normalized)
+            else:
+                if not text or len(text) > (256 if field == 'password' else 64) or (field == 'password' and len(text) < 12):
+                    return ('text', labels[field])
+                value = text
+            wizard['values'][field] = value
+            if len(wizard['values']) < len(wizard['fields']):
+                return ('text', labels[wizard['fields'][len(wizard['values'])]])
+            action = wizard['action']
+            path = '/reseller/api/' + {'peer': 'peers', 'child': 'accounts', 'bulk': 'peers/bulk'}[action]
+            try:
+                code, result, _ = self.dispatch(row, 'POST', path, payload=wizard['values'], operation=wizard['operation'])
+            except Exception:
+                # Delivery failures and ambiguous native outcomes are inspected in
+                # the panel; never repeat a paid operation under a new key.
+                code, result = 503, None
+            finally:
+                # Password is never echoed or retained in a completed conversation.
+                self.clear_wizard(key)
+                wizard['values'].pop('password', None)
+            answer = ('messages', [{'text': 'عملیات انجام نشد؛ وضعیت را در پنل بررسی کنید / Check the request in your panel',
+                                    'reply_markup': self.menu()}])
+            if code in {200, 201, 207, 409} and isinstance(result, dict):
+                if action == 'peer' and result.get('id'):
+                    self.remember(update_key, int(result['id']))
+                    return self.bundle(row, int(result['id']))
+                if action == 'child' and code in {200, 201}:
+                    answer = ('messages', [{'text': 'ثبت شد؛ فعال‌سازی پس از تأیید مدیر و پرداخت ۳٬۰۰۰٬۰۰۰ تومان.\n'
+                        'برای دریافت شماره کارت: @AshkanfathiOfficial\nRegistered; payment and administrator approval required.',
+                        'reply_markup': self.menu()}])
+                elif action == 'bulk' and any(name in result for name in ('created', 'failed', 'uncertain')):
+                    created = result.get('created') or []
+                    receipt = {'ids': [peer['id'] for peer in created[:20]
+                                      if isinstance(peer, dict) and type(peer.get('id')) is int],
+                               'summary': 'ساخته شد / Created: ' + str(len(created)) +
+                               '\nناموفق / Failed: ' + str(len(result.get('failed') or []))}
+                    if result.get('uncertain'):
+                        receipt['summary'] += '\n⚠️ نتیجه نامشخص؛ قبل از تلاش دوباره پنل را بررسی کنید / Uncertain outcome; inspect panel before retrying.'
+                    self.remember(update_key, receipt)
+                    return self.bulk_answer(row, receipt)
+            # Bounded cache contains no child password and prevents repeated mutations.
+            self.remember(update_key, answer)
+            return answer
+        if text.startswith('/'):
+            self.clear_wizard(key)
+        return self._legacy_command(row, update)
+
+    def _legacy_command(self, row, update):
         message = self.private_message(row, update)
         if message is None:
             return None
@@ -349,8 +531,7 @@ class BotManager:
             code, result, _ = self.dispatch(row, 'POST', '/reseller/api/peers',
                 payload={'name': parts[0], 'days': int(parts[1]), 'volume_gb': int(parts[2])}, operation=operation)
             if code in {200, 201} and result and result.get('id'):
-                return ('messages', [{'text': 'Peer ID: ' + str(result['id']),
-                    'reply_markup': self.peer_keyboard(result['id'])}])
+                return self.bundle(row, result['id'])
         elif command == '/peers':
             code, result, _ = self.dispatch(row, 'GET', '/reseller/api/peers')
             if code == 200 and isinstance(result, dict):
@@ -398,6 +579,15 @@ class BotManager:
 
     def send_answer(self, row, token, answer):
         kind, value = answer
+        if kind == 'delivery':
+            for item in value:
+                if not self.current(row) or not self.account(row):
+                    return
+                payload = dict(item)
+                method = payload.pop('method')
+                files = {key: payload.pop(key) for key in ('document', 'photo') if key in payload}
+                self.transport().call(token, method, {'chat_id': row['owner_id'], **payload}, **files)
+            return
         if kind == 'document':
             self.transport().call(token, 'sendDocument', {'chat_id': row['owner_id']}, document=value)
         elif kind == 'photo':

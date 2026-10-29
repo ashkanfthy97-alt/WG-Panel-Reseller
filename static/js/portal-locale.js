@@ -4,6 +4,7 @@
   const dictionary = new Map(Object.entries({
     "Dashboard":"داشبورد","Overview":"نمای کلی","Peers":"Peerها","Subscriptions":"اشتراک‌ها","Nodes":"سرورها","Panel Center":"مرکز عملیات","Activity logs":"گزارش فعالیت","Backup":"پشتیبان‌گیری","Settings":"تنظیمات","API Docs":"مستندات API","Main workspace":"فضای اصلی","Manage nodes":"مدیریت سرورها","Network overview":"نمای کلی شبکه","Peer workspace":"مدیریت Peerها","Create peer":"ساخت Peer","Refresh":"تازه‌سازی","Connected peers":"Peerهای متصل","Active subscriptions":"اشتراک‌های فعال","Telegram hub":"ربات تلگرام","Telegram":"تلگرام","Sign in":"ورود","Sign In":"ورود","Log in":"ورود","Login":"ورود","Register":"ثبت حساب","Create account":"ساخت حساب","Username":"نام کاربری","Email":"ایمیل","Password":"رمز عبور","Confirm password":"تکرار رمز عبور","Remember me":"مرا به خاطر بسپار","Sign out":"خروج","Password & security":"رمز و امنیت","Save profile":"ذخیرهٔ پروفایل","Navigation":"دسترسی‌ها","Management":"مدیریت","Secure management":"مدیریت اتصال و سرویس‌ها","Resellers":"نمایندگی‌ها"
   }));
+  dictionary.set("Reseller","نماینده");
   dictionary.set("Welcome back","خوش آمدید");
   dictionary.set("Sign in to your WG Portal","وارد پنل خود شوید");
   dictionary.set("Your username","نام کاربری شما");

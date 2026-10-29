@@ -1,5 +1,7 @@
 """Same-process reseller integration using temporary SQLite and fake native routes."""
 import os
+import base64
+import hashlib
 from pathlib import Path
 import sys
 import tempfile
@@ -24,6 +26,13 @@ class NativeResellerChecks(unittest.TestCase):
         self.app.config.update(TESTING=True, SECRET_KEY='native-secret-' * 4, API_KEY='native-key-' * 4)
         self.rows = []
         self.native_calls = []
+        self.interface_rows = [{'id':1,'name':'wg0','address':'10.66.66.1/24','listen_port':51820}, {'id':2,'name':'wg1','address':'10.67.67.1/24','listen_port':51821}]
+        self.native_interface_calls = []
+        self.native_interface_error = None
+        from portal_provisioning import occupied_ports as actual_occupied
+        scanner = patch('portal_provisioning.occupied_ports', side_effect=lambda rows, path, reservations=(), **kwargs: actual_occupied(rows, path, reservations, scanner=lambda:set(), **kwargs))
+        scanner.start()
+        self.addCleanup(scanner.stop)
 
         @self.app.before_request
         def native_context():
@@ -50,7 +59,21 @@ class NativeResellerChecks(unittest.TestCase):
         def interfaces():
             if request.headers.get('X-API-KEY') != self.app.config['API_KEY']:
                 return jsonify(error='denied'), 401
-            return jsonify(interfaces=[{'id': 1, 'name': 'wg0'}, {'id': 2, 'name': 'wg1'}])
+            return jsonify(interfaces=self.interface_rows)
+
+        @self.app.post('/api/portal/provision-child-interface')
+        def fake_provision():
+            if request.headers.get('X-API-KEY') != self.app.config['API_KEY']:
+                return jsonify(error='denied'), 401
+            value=request.get_json()
+            self.native_interface_calls.append(value)
+            if self.native_interface_error:
+                code,body=self.native_interface_error
+                return jsonify(body),code
+            iface={key:value[key] for key in ('name','address','listen_port')}
+            iface['id']=max(row['id'] for row in self.interface_rows)+1
+            self.interface_rows.append(iface)
+            return jsonify(interface=iface),201
 
         @self.app.route('/api/peers', methods=['GET', 'POST'])
         def peers():
@@ -60,15 +83,15 @@ class NativeResellerChecks(unittest.TestCase):
                 return jsonify(peers=self.rows)
             payload = request.get_json()
             peer = dict(id=len(self.rows) + 1, iface_id=payload['iface_id'],
-                        public_key='A' * 43 + '=', name=payload['name'], private_key='never-deliver')
+                        public_key=base64.b64encode(hashlib.sha256(str(len(self.rows)+1).encode()).digest()).decode(), name=payload['name'], private_key='never-deliver')
             self.rows.append(peer)
             return jsonify(peer)
 
-        @self.app.get('/api/peer/<key>/config')
+        @self.app.get('/api/peer/<path:key>/config')
         def config(key):
             return 'native-config', 200, {'Content-Type': 'text/plain'}
 
-        @self.app.get('/api/peer/<key>/config_qr')
+        @self.app.get('/api/peer/<path:key>/config_qr')
         def config_qr(key):
             return b'\x89PNG\r\n\x1a\nfixture', 200, {'Content-Type':'image/png'}
 
@@ -89,6 +112,8 @@ class NativeResellerChecks(unittest.TestCase):
         self.client = self.app.test_client()
         self.csrf = self.client.get('/reseller/api/session').json['csrf']
         self.store = ResellerStore(self.database)
+        from portal_provision_defaults import ProvisionDefaultsStore, DEFAULTS
+        ProvisionDefaultsStore(self.app.instance_path).save(dict(DEFAULTS,endpoint_host='vpn.example.test',network_pool='10.88.0.0/16',child_max_peers=2))
 
     def post(self, path, payload, *, client=None, csrf=None):
         return (client or self.client).post(path, json=payload, headers={

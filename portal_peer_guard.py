@@ -49,9 +49,13 @@ def install_peer_guard(app, csrf, native):
         if not isinstance(payload, dict):
             abort(400)
         peer_id, key, action = payload.get('id'), payload.get('public_key'), payload.get('action')
-        if type(peer_id) is not int or peer_id < 1 or not isinstance(key, str) or len(key) != 44 or action not in {'enable', 'disable', 'rename', 'renew'}:
+        if type(peer_id) is not int or peer_id < 1 or not isinstance(key, str) or len(key) != 44 or action not in {'enable', 'disable', 'rename', 'renew', 'delete'}:
             abort(400)
         allowed = {'id', 'public_key', 'action'} | ({'name'} if action == 'rename' else {'days', 'volume_gb', 'request_id'} if action == 'renew' else set())
+        if action == 'delete':
+            allowed.add('iface_id')
+            if type(payload.get('iface_id')) is not int or payload['iface_id'] < 1:
+                abort(400)
         if set(payload) - allowed:
             abort(400)
         if action == 'rename':
@@ -74,9 +78,22 @@ def install_peer_guard(app, csrf, native):
         try:
             peer = Peer.query.filter_by(id=peer_id, public_key=key).with_for_update().first()
             if peer is None:
+                if action == 'delete' and Peer.query.filter_by(public_key=key).first() is None:
+                    # A retry after SQL deletion (or a reused native ID) must
+                    # never delete the new occupant of that ID.
+                    return jsonify(success=True, absent=True)
                 abort(404)
             if peer.iface is None or peer.iface.node_id is not None or peer.subscription_links:
                 return jsonify(error='unsupported_peer_scope'), 409
+            if action == 'delete':
+                if peer.iface_id != payload['iface_id']:
+                    return jsonify(error='peer_interface_changed'), 409
+                # Native runtime/config removal verifies the kernel key is
+                # gone before deleting shortlinks/events/the Peer row. Keep
+                # the identity lock until _delete_peer_rows commits.
+                native['_remove_local_peer_runtime_and_config'](peer)
+                native['_delete_peer_rows'](peer)
+                return jsonify(success=True, deleted=True)
             receipt_key = None
             if action == 'renew':
                 receipt_key = hashlib.sha256(payload['request_id'].encode('utf-8')).hexdigest()

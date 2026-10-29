@@ -39,16 +39,18 @@ class GuardChecks(unittest.TestCase):
                     connection.rollback()
                     raise
         self.peer = SimpleNamespace(id=1, public_key='A'*43+'=', private_key='unchanged-key',
-            address='10.0.0.2/32', iface=SimpleNamespace(name='wg0', path='/unused/wg0', node_id=None),
+            address='10.0.0.2/32', iface_id=1, iface=SimpleNamespace(name='wg0', path='/unused/wg0', node_id=None),
             subscription_links=[], name='customer', unlimited=False, start_on_first_use=False,
             data_limit_value=10, data_limit_unit='Gi', time_limit_days=10,
             used_bytes_total=3*1024**3, status='offline', endpoint='vpn.test:51820', mtu=1380)
         self.peer.limit_bytes = lambda: self.peer.data_limit_value * (1024**2 if self.peer.data_limit_unit == 'Mi' else 1024**3)
-        peer = self.peer
+        owner = self
         class Query:
             def filter_by(self, **values): self.values=values;return self
             def with_for_update(self): return self
-            def first(self): return peer if all(getattr(peer,key)==value for key,value in self.values.items()) else None
+            def first(self):
+                peer = owner.peer
+                return peer if peer is not None and all(getattr(peer,key)==value for key,value in self.values.items()) else None
         namespace = dict(abort=abort,jsonify=jsonify,request=request,text=lambda value:value,
             SimpleNamespace=SimpleNamespace,hashlib=hashlib,re=re,
             require_api_key=lambda function:function,
@@ -58,7 +60,7 @@ class GuardChecks(unittest.TestCase):
         exec(compile(ast.Module(body=functions,type_ignores=[]),'guard.py','exec'),namespace)
         self.app = Flask(__name__)
         self.app.config['TESTING']=True
-        self.native = {name:Mock() for name in ('_accumulate_peer_usage','_sync_peer','_wg_enable','_wg_disable','_wg_disable_quiet','_sync_effective_expiry')}
+        self.native = {name:Mock() for name in ('_accumulate_peer_usage','_sync_peer','_wg_enable','_wg_disable','_wg_disable_quiet','_sync_effective_expiry','_remove_local_peer_runtime_and_config','_delete_peer_rows')}
         self.native.update(now_ts=lambda:86400,_effective_expiry_ts=lambda peer:10*86400,
             _timer_anchor_ts=lambda peer:0,from_ts=lambda value:value)
         namespace['install_peer_guard'](self.app,SimpleNamespace(exempt=lambda value:value),self.native)
@@ -68,6 +70,44 @@ class GuardChecks(unittest.TestCase):
         body=dict(id=1,public_key=self.peer.public_key,action='renew',days=5,volume_gb=7,request_id='guard-request-00000001')
         body.update(changes)
         return self.client.post('/api/portal/owned-peer-action',json=body)
+
+    def delete(self, **changes):
+        body=dict(id=1,public_key='A'*43+'=',action='delete',iface_id=1)
+        body.update(changes)
+        return self.client.post('/api/portal/owned-peer-action',json=body)
+
+    def test_delete_matches_key_and_interface_then_native_cleanup(self):
+        result=self.delete()
+        self.assertEqual(result.status_code,200)
+        self.assertTrue(result.json['deleted'])
+        self.native['_remove_local_peer_runtime_and_config'].assert_called_once_with(self.peer)
+        self.native['_delete_peer_rows'].assert_called_once_with(self.peer)
+
+    def test_delete_refuses_changed_interface_and_remote_scope(self):
+        self.assertEqual(self.delete(iface_id=2).status_code,409)
+        self.peer.iface.node_id=9
+        self.assertEqual(self.delete().status_code,409)
+        self.native['_delete_peer_rows'].assert_not_called()
+        self.native['_remove_local_peer_runtime_and_config'].assert_not_called()
+
+    def test_delete_retry_does_not_touch_reused_id(self):
+        self.peer.public_key='B'*43+'='
+        result=self.delete()
+        self.assertEqual(result.status_code,200)
+        self.assertTrue(result.json['absent'])
+        self.native['_remove_local_peer_runtime_and_config'].assert_not_called()
+        self.native['_delete_peer_rows'].assert_not_called()
+
+    def test_delete_runtime_failure_prevents_database_removal(self):
+        self.native['_remove_local_peer_runtime_and_config'].side_effect=RuntimeError('simulated runtime failure')
+        with self.assertRaisesRegex(RuntimeError,'simulated runtime'):
+            self.delete()
+        self.native['_delete_peer_rows'].assert_not_called()
+
+    def test_delete_rejects_technical_payload_and_missing_key(self):
+        self.assertEqual(self.delete(endpoint='evil.test').status_code,400)
+        self.assertEqual(self.delete(public_key='bad').status_code,400)
+        self.native['_delete_peer_rows'].assert_not_called()
 
     def test_receipt_replay_does_not_add_another_package(self):
         self.assertEqual(self.post().status_code,200)

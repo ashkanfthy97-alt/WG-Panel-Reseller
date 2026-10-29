@@ -4,6 +4,7 @@ Reseller sessions never become WG_Panel administrator sessions. Only explicit
 operations below use the server-side native API credential.
 """
 from functools import wraps
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -11,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import sqlite3
 from urllib.parse import quote, urlsplit
 
 import requests
@@ -67,6 +69,10 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     core = core if core is not None else NativeCore(panel_url, api_key)
     ui = Path(__file__).parent / 'reseller_ui'
 
+    def provision_defaults():
+        from portal_provision_defaults import ProvisionDefaultsStore
+        return ProvisionDefaultsStore(current_app.instance_path)
+
     def native():
         return current_app.config.get('RESELLER_CORE', core)
 
@@ -80,7 +86,7 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         if not isinstance(value, dict):
             return None
         account = store.get(value.get('id', 0))
-        if not account or account['auth_version'] != value.get('version'):
+        if not account or account.get('deleted') or account['auth_version'] != value.get('version'):
             return None
         return account
 
@@ -155,6 +161,41 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         return occupied_ports(rows, current_app.config.get('WG_CONF_PATH') or '/etc/wireguard',
                               store.interface_reservations())
 
+    def prepare_child_interface(rows):
+        from portal_provisioning import suggest_port, child_network
+        policy = provision_defaults().required()
+        port = suggest_port(port_snapshot(rows))
+        address = child_network(rows, policy['network_pool'], policy['subnet_prefix'])
+        return policy, port, address
+
+    def provision_account_interface(child, policy, port, address):
+        """Caller holds the shared admission lock from allocation to attachment."""
+        parent_id, child_id = child['parent_id'], child['id']
+        payload = {'child_id': child_id, 'name': 'wg_r' + str(child_id), 'address': address,
+            'listen_port': port, 'dns': policy['dns'], 'mtu': policy['mtu'],
+            'endpoint_host': policy['endpoint_host'], 'auto_up': True,
+            'auto_firewall': policy['auto_firewall'],
+            'peer_defaults': {key: policy[key] for key in ('allowed_ips', 'persistent_keepalive')}}
+        store.reserve_interface(parent_id, child_id, port)
+        try:
+            code, result = native().json('POST', '/api/portal/provision-child-interface', payload)
+            iface = result.get('interface') if isinstance(result, dict) else None
+            if (code != 201 or not isinstance(iface, dict) or type(iface.get('id')) is not int
+                    or iface['id'] < 1 or result.get('up_error')):
+                raise CoreError('Native Interface startup was not confirmed')
+            account = store.attach_child_interface(parent_id, child_id, iface['id'])
+        except Exception:
+            # Native creation is not a transaction with the additive store.
+            # Retain both the account and reservation for mother-admin recovery.
+            store.fail_interface(parent_id, child_id, uncertain=True,
+                                 detail='Native Interface outcome was not confirmed')
+            return jsonify(error='interface_create_uncertain', account=store.get(child_id),
+                message='حساب ثبت شد، اما ساخت یا راه‌اندازی Interface تأیید نشد؛ دوباره نسازید و با مدیر تماس بگیرید.'), 502
+        safe = {'id': iface['id'], 'name': payload['name'], 'address': address, 'listen_port': port}
+        account['assigned_interfaces'] = [safe]
+        return jsonify(account=account, interface=safe, signin_url='/login', creation_fee=child_creation_fee(),
+            message='زیرنماینده و Interface اختصاصی ساخته شدند؛ فعال‌سازی پس از تأیید مدیر اصلی است.'), 201
+
     def owned_peers(account):
         code, value = native().json('GET', '/api/peers')
         if code != 200 or not isinstance(value, dict):
@@ -218,6 +259,29 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     @bp.errorhandler(StoreError)
     def store_failure(error):
         return jsonify(error='invalid_request', message=str(error)), 400
+
+    from portal_provision_defaults import ProvisionDefaultsError, ProvisionDefaultsMissing
+    from portal_provisioning import ProvisionError, PortPoolExhausted, NetworkPoolExhausted
+
+    @bp.errorhandler(ProvisionDefaultsMissing)
+    def defaults_missing(error):
+        return jsonify(error='provision_defaults_required', message=str(error)), 409
+
+    @bp.errorhandler(ProvisionDefaultsError)
+    def defaults_failure(error):
+        return jsonify(error='provision_defaults_invalid', message=str(error)), 400 if request.method == 'PUT' else 503
+
+    @bp.errorhandler(PortPoolExhausted)
+    def ports_full(error):
+        return jsonify(error='port_pool_exhausted', message=str(error)), 409
+
+    @bp.errorhandler(NetworkPoolExhausted)
+    def networks_full(error):
+        return jsonify(error='network_pool_exhausted', message=str(error)), 409
+
+    @bp.errorhandler(ProvisionError)
+    def allocation_failure(error):
+        return jsonify(error='interface_admission_failed', message=str(error)), 503
 
     @bp.get('/reseller')
     @bp.get('/resellers')
@@ -292,6 +356,16 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         return jsonify(accounts=account_details(store.all(), rows), interfaces=rows, audit=store.audit(),
                        operations=store.operations(), summary=store.summary(), csrf=csrf())
 
+    @bp.get('/resellers/api/peer-owners')
+    @require_owner
+    def peer_owners():
+        try:
+            return jsonify(owners=store.peer_owners())
+        except (OSError, sqlite3.Error):
+            # An unavailable index must never look like a successful empty
+            # index: that would mislabel reseller Peers as native-admin Peers.
+            return jsonify(error='owner_mapping_unavailable'), 503
+
     @bp.get('/resellers/api/summary')
     @require_owner
     def summary():
@@ -309,24 +383,31 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         return jsonify(accounts=account_details(store.children(g.reseller['id'])),
                        creation_fee=child_creation_fee(), csrf=csrf())
 
+    @bp.route('/resellers/api/interface-defaults', methods=['GET', 'PUT'])
+    @require_owner
+    def interface_defaults():
+        if request.method == 'GET':
+            return jsonify(**provision_defaults().load())
+        return jsonify(**provision_defaults().save(data()))
+
     @bp.post('/reseller/api/accounts')
     @require_reseller
     def create_child_account():
         value = data()
-        # Ownership, fees and activation are server decisions. Refuse attempts
-        # to assign a parent, waive the fee, or grant immediate paid access.
-        if set(value) - {'username', 'password', 'max_peers'}:
-            raise StoreError('Interface زیرنماینده فقط توسط مدیر اصلی تعیین می‌شود.')
-        assigned_interface(g.reseller)
-        check_username(value.get('username'))
-        capacity = value.get('max_peers', min(100, g.reseller['max_peers']))
-        if type(capacity) is not int or not 1 <= capacity <= g.reseller['max_peers']:
-            raise StoreError('سقف مشتری زیرنماینده باید در محدودهٔ حساب شما باشد.')
-        account = store.create(str(value.get('username', '')), str(value.get('password', '')),
-                               [], capacity, 'reseller:' + str(g.reseller['id']),
-                               parent_id=g.reseller['id'], creation_fee_toman=3000000, allow_unassigned=True)
-        return jsonify(account=account, signin_url='/login',
-                       creation_fee=child_creation_fee()), 201
+        if set(value) != {'username', 'password'} or any(not isinstance(value[key], str) for key in value):
+            raise StoreError('برای زیرنماینده فقط نام کاربری و رمز را وارد کنید؛ Interface و ظرفیت خودکار هستند.')
+        check_username(value['username'])
+        # Admission and defaults must succeed before creating a billed account.
+        from portal_provisioning import provisioning_lock
+        with provisioning_lock(current_app.instance_path):
+            assigned_interface(g.reseller)
+            rows = interfaces()
+            policy, port, address = prepare_child_interface(rows)
+            capacity = min(policy['child_max_peers'], g.reseller['max_peers'])
+            account = store.create(value['username'], value['password'], [], capacity,
+                'reseller:' + str(g.reseller['id']), parent_id=g.reseller['id'],
+                creation_fee_toman=3000000, allow_unassigned=True)
+            return provision_account_interface(account, policy, port, address)
 
     @bp.post('/resellers/api/accounts')
     @require_owner
@@ -352,63 +433,82 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         value = data()
         if set(value) - {'approved', 'days'} or type(value.get('approved')) is not bool:
             raise StoreError('وضعیت تأیید نامعتبر است.')
+        if type(value.get('days', 30)) is not int or not 1 <= value.get('days', 30) <= 366:
+            raise StoreError('مدت تأیید باید بین ۱ تا ۳۶۶ روز باشد.')
+        if value['approved']:
+            from portal_provisioning import provisioning_lock
+            with provisioning_lock(current_app.instance_path):
+                account = store.get(account_id)
+                if not account or account.get('deleted'):
+                    abort(404)
+                job = account.get('interface_provision')
+                if job and job['state'] in {'pending', 'uncertain'}:
+                    return jsonify(error='interface_review_required', account=account,
+                        message='نتیجهٔ ساخت Interface نامشخص است؛ مدیر باید Interface واقعی را بررسی و با گزینهٔ تعیین Interface ثبت کند.'), 409
+                if not account['interfaces']:
+                    if account.get('parent_id') is None or job is not None:
+                        return jsonify(error='interface_required', account=account,
+                            message='قبل از تأیید، مدیر باید یک Interface واقعی برای این حساب تعیین کند.'), 409
+                    # Older child forms saved a billed account before an
+                    # Interface existed. Recover each such row independently.
+                    policy, port, address = prepare_child_interface(interfaces())
+                    provisioned = provision_account_interface(account, policy, port, address)
+                    if provisioned[1] != 201:
+                        return provisioned
+                    account = store.get(account_id)
+                assigned_interface(account)
+                return jsonify(account=store.approve(account_id, g.reseller_owner,
+                    approved=True, days=value.get('days', 30)))
         return jsonify(account=store.approve(account_id, g.reseller_owner,
             approved=value['approved'], days=value.get('days', 30)))
+
+    def archive_account(account_id, parent_id=None):
+        confirmation = data()
+        if set(confirmation) != {'confirm'} or confirmation.get('confirm') is not True:
+            raise StoreError('حذف نماینده نیازمند تأیید صریح است.')
+        account = store.get(account_id)
+        if account is None or (parent_id is not None and account.get('parent_id') != parent_id):
+            abort(404)
+        actor = g.reseller_owner if parent_id is None else 'reseller:' + str(parent_id)
+        account = store.archive(account_id, actor, parent_id=parent_id)
+        manager = current_app.extensions.get('reseller_bots')
+        if manager is not None:
+            manager.store.disable(account_id)
+        return jsonify(ok=True, account=account, resources_preserved=True,
+                       message='دسترسی نماینده حذف شد؛ Peerها و زیرنماینده‌ها حفظ شدند و زیرمجموعه تا بررسی مدیر دسترسی عملیاتی ندارد.')
+
+    @bp.delete('/resellers/api/accounts/<int:account_id>')
+    @require_owner
+    def delete_account(account_id):
+        return archive_account(account_id)
+
+    @bp.delete('/reseller/api/accounts/<int:account_id>')
+    @require_reseller
+    def delete_child_account(account_id):
+        return archive_account(account_id, g.reseller['id'])
 
     @bp.get('/reseller/api/accounts/<int:account_id>/interface-port')
     @require_reseller
     def interface_port(account_id):
-        from portal_provisioning import ProvisionError, provisioning_lock, suggest_port
+        from portal_provisioning import provisioning_lock
         child_for_provision(account_id)
-        try:
-            with provisioning_lock(current_app.instance_path):
-                return jsonify(port=suggest_port(port_snapshot(interfaces())))
-        except ProvisionError as exc:
-            return jsonify(error='port_scan_failed', message=str(exc)), 503
+        with provisioning_lock(current_app.instance_path):
+            _policy, port, _address = prepare_child_interface(interfaces())
+            return jsonify(port=port)
 
     @bp.post('/reseller/api/accounts/<int:account_id>/interface')
     @require_reseller
     def provision_child(account_id):
-        from portal_provisioning import ProvisionError, child_network, provisioning_lock
-        value = data()
-        if set(value) != {'port'} or type(value.get('port')) is not int or not 20000 <= value['port'] <= 65535:
-            raise StoreError('پورت باید بین ۲۰۰۰۰ و ۶۵۵۳۵ باشد.')
-        parent_id = g.reseller['id']
-        try:
-            with provisioning_lock(current_app.instance_path):
-                child_for_provision(account_id)
-                rows = interfaces()
-                if value['port'] in port_snapshot(rows):
-                    return jsonify(error='listen_port_in_use', message='این پورت در حال استفاده است؛ پورت جدید پیشنهاد بگیرید.'), 409
-                parent_iface = assigned_interface(g.reseller)
-                name = 'wg_r' + str(account_id)
-                if any(row.get('name') == name for row in rows):
-                    raise StoreError('نام Interface موجود است؛ مدیر اصلی باید وضعیت را بررسی کند.')
-                code, defaults = native().json('GET', '/api/iface/' + str(parent_iface['id']) + '/peer-defaults')
-                if code != 200 or not isinstance(defaults, dict) or not isinstance(defaults.get('defaults'), dict):
-                    raise CoreError('Parent interface defaults unavailable')
-                policy = defaults['defaults']
-                endpoint = str(policy.get('endpoint') or '').strip()
-                endpoint_host = endpoint.rsplit(':', 1)[0].strip('[]') if ':' in endpoint else endpoint
-                payload = {'child_id': account_id, 'name': name, 'address': child_network(rows),
-                    'listen_port': value['port'], 'dns': policy.get('dns'), 'mtu': policy.get('mtu'),
-                    'endpoint_host': endpoint_host, 'auto_up': True, 'auto_firewall': True,
-                    'peer_defaults': {key: policy.get(key) for key in ('allowed_ips', 'persistent_keepalive', 'peer_endpoint')}}
-                store.reserve_interface(parent_id, account_id, value['port'])
-                try:
-                    code, result = native().json('POST', '/api/portal/provision-child-interface', payload)
-                    iface = result.get('interface') if isinstance(result, dict) else None
-                    if code != 201 or not isinstance(iface, dict) or not iface.get('id') or result.get('up_error'):
-                        store.fail_interface(parent_id, account_id, uncertain=True, detail='Native Interface startup was not confirmed')
-                        return jsonify(error='interface_create_uncertain', message='ساخت یا راه‌اندازی تأیید نشد؛ مدیر وضعیت را بررسی کند.'), 502
-                    account = store.attach_child_interface(parent_id, account_id, int(iface['id']))
-                    return jsonify(account=account, interface={key: iface.get(key) for key in ('id', 'name', 'address', 'listen_port')},
-                                   message='Interface ساخته شد؛ فعال‌سازی نماینده نیازمند تأیید مدیر اصلی است.'), 201
-                except Exception:
-                    store.fail_interface(parent_id, account_id, uncertain=True, detail='Native Interface outcome is uncertain')
-                    return jsonify(error='interface_create_uncertain'), 502
-        except ProvisionError as exc:
-            return jsonify(error='port_scan_failed', message=str(exc)), 503
+        # Compatibility recovery for an older unassigned child with no prior
+        # attempt. The client can never choose a port or override admin policy.
+        if data():
+            raise StoreError('Interface و پورت خودکار هستند؛ تنظیم دستی توسط نماینده مجاز نیست.')
+        from portal_provisioning import provisioning_lock
+        with provisioning_lock(current_app.instance_path):
+            child = child_for_provision(account_id)
+            assigned_interface(g.reseller)
+            policy, port, address = prepare_child_interface(interfaces())
+            return provision_account_interface(child, policy, port, address)
 
     @bp.post('/resellers/api/accounts/<int:account_id>/interface')
     @require_owner
@@ -449,7 +549,6 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         value = data()
         if set(value) - {'name', 'days', 'volume_gb'}:
             raise StoreError('فقط نام، زمان و حجم مجاز است؛ تنظیمات فنی با مدیر اصلی است.')
-        iface_id = assigned_interface(g.reseller)['id']
         name = str(value.get('name', '')).strip()
         days, volume = value.get('days', 30), value.get('volume_gb', 50)
         if not 1 <= len(name) <= 64 or any(ord(c) < 32 or ord(c) == 127 for c in name) or type(days) is not int or not 1 <= days <= 366 or type(volume) is not int or not 1 <= volume <= 100000:
@@ -457,26 +556,107 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         request_id = request.headers.get('Idempotency-Key', '')
         if not re.fullmatch(r'[A-Za-z0-9_-]{16,80}', request_id):
             raise StoreError('شناسهٔ یکتای درخواست الزامی است.')
+        result, status = create_owned_peer(name, days, volume, request_id)
+        return jsonify(**result), status
+
+    def peer_technical_defaults(iface_id):
         policy_code, policy = native().json('GET', '/api/iface/' + str(iface_id) + '/peer-defaults')
         if policy_code != 200 or not isinstance(policy, dict) or not isinstance(policy.get('defaults'), dict):
             raise CoreError('Administrator interface defaults are unavailable')
-        technical = {key: policy['defaults'][key] for key in ('endpoint', 'allowed_ips', 'dns', 'persistent_keepalive', 'mtu', 'peer_endpoint') if key in policy['defaults']}
-        operation = store.reserve(g.reseller['id'], request_id)
+        return {key: policy['defaults'][key] for key in ('endpoint', 'allowed_ips', 'dns', 'persistent_keepalive', 'mtu', 'peer_endpoint') if key in policy['defaults']}
+
+    def create_owned_peer(name, days, volume, request_id, *, technical=None, expected_iface=None):
+        """One bounded native create path for single and bulk operations."""
+        iface_id = assigned_interface(g.reseller)['id']
+        if expected_iface is not None and iface_id != expected_iface:
+            raise StoreError('Interface نماینده تغییر کرده است؛ ساخت انبوه متوقف شد.')
+        technical = peer_technical_defaults(iface_id) if technical is None else technical
+        operation = store.reserve(g.reseller['id'], request_id,
+                                  {'iface_id': iface_id, 'name': name, 'days': days, 'volume_gb': volume})
         if operation['state'] != 'new':
             if operation['state'] == 'complete':
-                return jsonify(ok=True, id=operation['peer_id'], replay=True)
-            return jsonify(error='operation_not_repeatable', message='وضعیت این درخواست نیازمند بررسی مدیر است.'), 409
+                return {'ok': True, 'id': operation['peer_id'], 'replay': True}, 200
+            return {'error': 'operation_not_repeatable', 'uncertain': operation['state'] in {'pending', 'uncertain'},
+                    'message': 'وضعیت این درخواست نیازمند بررسی مدیر است.'}, 409
         try:
             code, result = native().json('POST', '/api/peers', {**technical, 'iface_id': iface_id, 'scope': 'local', 'name': name,
                 'time_limit_days': days, 'data_limit_value': volume, 'data_limit_unit': 'Gi', 'unlimited': False})
             if code != 200 or not isinstance(result, dict) or not result.get('id') or not result.get('public_key'):
                 store.failed(operation['id'], uncertain=True)
-                return jsonify(error='native_create_failed', message='ساخت تأیید نشد؛ پیش از تلاش جدید مدیر بررسی کند.'), 502
+                return {'error': 'native_create_failed', 'uncertain': True, 'message': 'ساخت تأیید نشد؛ پیش از تلاش جدید مدیر بررسی کند.'}, 502
             store.finish(operation['id'], g.reseller['id'], int(result['id']), str(result['public_key']))
-            return jsonify(ok=True, id=result['id']), 201
+            return {'ok': True, 'id': result['id']}, 201
         except Exception:
             store.failed(operation['id'], uncertain=True)
-            return jsonify(error='create_uncertain', message='نتیجهٔ ساخت نامشخص است؛ این درخواست را تکرار نکنید و به مدیر اطلاع دهید.'), 502
+            return {'error': 'create_uncertain', 'uncertain': True, 'message': 'نتیجهٔ ساخت نامشخص است؛ این درخواست را تکرار نکنید و به مدیر اطلاع دهید.'}, 502
+
+    @bp.post('/reseller/api/peers/bulk')
+    @require_reseller
+    def create_peer_bulk():
+        value = data()
+        if set(value) != {'name_prefix', 'count', 'days', 'volume_gb'}:
+            raise StoreError('فقط پیشوند نام، تعداد، روز و حجم برای ساخت انبوه مجاز است.')
+        prefix, count, days, volume = (value.get(key) for key in ('name_prefix', 'count', 'days', 'volume_gb'))
+        if (not isinstance(prefix, str) or not prefix.strip() or type(count) is not int or not 1 <= count <= 20
+                or type(days) is not int or not 1 <= days <= 366
+                or type(volume) is not int or not 1 <= volume <= 100000):
+            raise StoreError('اطلاعات ساخت انبوه نامعتبر است؛ تعداد باید بین ۱ تا ۲۰ باشد.')
+        prefix = prefix.strip()
+        if len(prefix + '-' + str(count)) > 64 or any(ord(c) < 32 or ord(c) == 127 for c in prefix):
+            raise StoreError('پیشوند نام بیش از حد بلند یا نامعتبر است.')
+        request_id = request.headers.get('Idempotency-Key', '')
+        if not re.fullmatch(r'[A-Za-z0-9_-]{16,80}', request_id):
+            raise StoreError('شناسهٔ یکتای ساخت انبوه الزامی است.')
+        iface_id = assigned_interface(g.reseller)['id']
+        technical = peer_technical_defaults(iface_id)
+        snapshot = {'name_prefix': prefix, 'count': count, 'days': days, 'volume_gb': volume,
+                    'iface_id': iface_id}
+        previous = store.begin_batch(g.reseller['id'], request_id, snapshot)
+        if previous is not None:
+            return jsonify(**previous), 200 if previous['complete'] else 409
+        result = {'ok': False, 'requested': count, 'created': [], 'failed': [], 'uncertain': True, 'complete': False}
+        for index in range(1, count + 1):
+            name = prefix + '-' + str(index)
+            item_key = 'b' + hashlib.sha256((request_id + ':' + str(index)).encode()).hexdigest()
+            try:
+                outcome, status = create_owned_peer(name, days, volume, item_key,
+                    technical=technical, expected_iface=iface_id)
+            except (StoreError, CoreError) as exc:
+                # No native create has begun: admission/defaults failed.
+                outcome, status = {'error': str(exc)}, 409
+            if status in {200, 201} and outcome.get('ok'):
+                result['created'].append({'id': outcome['id'], 'name': name, 'replay': bool(outcome.get('replay'))})
+            else:
+                result['failed'].append({'index': index, 'error': outcome.get('error', 'create_failed')})
+            # Persist after each item. A process crash retains an uncertain
+            # batch and cannot replay already issued WireGuard operations.
+            store.batch_progress(g.reseller['id'], request_id, result)
+            if outcome.get('uncertain'):
+                return jsonify(**result), 409
+        result.update(ok=len(result['created']) == count, uncertain=False, complete=True)
+        store.batch_progress(g.reseller['id'], request_id, result)
+        return jsonify(**result), 201 if result['ok'] else 207
+
+    @bp.delete('/reseller/api/peers/<int:peer_id>')
+    @require_reseller
+    def delete_peer(peer_id):
+        confirmation = data()
+        if set(confirmation) != {'confirm'} or confirmation.get('confirm') is not True:
+            raise StoreError('حذف Peer نیازمند تأیید صریح است.')
+        public_key = store.ownership(g.reseller['id']).get(peer_id)
+        if public_key is None:
+            if store.peer_was_deleted(g.reseller['id'], peer_id):
+                return jsonify(ok=True, replay=True)
+            abort(404)
+        # Native guard performs the final key comparison under its write lock;
+        # no ordinary id-only native deletion route is exposed to resellers.
+        code, result = native().json('POST', '/api/portal/owned-peer-action',
+                                    {'id': peer_id, 'public_key': public_key, 'action': 'delete',
+                                     'iface_id': assigned_interface(g.reseller)['id']})
+        if code != 200 or not isinstance(result, dict) or not result.get('success'):
+            return jsonify(error='native_delete_failed', message='حذف تأیید نشد؛ ظرفیت و مالکیت حفظ شدند.'), 409
+        store.forget_peer(g.reseller['id'], peer_id, public_key)
+        return jsonify(ok=True, replay=bool(result.get('absent')))
 
     @bp.post('/reseller/api/peers/<int:peer_id>/<action>')
     @require_reseller

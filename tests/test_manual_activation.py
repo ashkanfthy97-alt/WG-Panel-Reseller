@@ -37,7 +37,7 @@ class ActivationChecks(unittest.TestCase):
         child = self.child()
         with self.assertRaises(StoreError):
             self.store.approve(child['id'])
-        self.store.reserve_interface(self.parent['id'], child['id'], 24444)
+        self.store.reserve_interface(self.parent['id'], child['id'], 51825)
         self.store.attach_child_interface(self.parent['id'], child['id'], 22)
         first = self.store.approve(child['id'], actor='mother')
         self.assertTrue(first['active'])
@@ -51,18 +51,18 @@ class ActivationChecks(unittest.TestCase):
         other = self.store.create('other', 'long-test-password', [2])
         self.store.approve(other['id'])
         with self.assertRaises(StoreError):
-            self.store.reserve_interface(other['id'], child['id'], 24444)
-        self.store.reserve_interface(self.parent['id'], child['id'], 24444)
+            self.store.reserve_interface(other['id'], child['id'], 51825)
+        self.store.reserve_interface(self.parent['id'], child['id'], 51825)
         self.store.fail_interface(self.parent['id'], child['id'], uncertain=True)
         with self.assertRaises(StoreError):
-            self.store.reserve_interface(self.parent['id'], child['id'], 24445)
+            self.store.reserve_interface(self.parent['id'], child['id'], 51826)
         self.assertEqual(self.store.get(child['id'])['interface_provision']['state'], 'uncertain')
 
     def test_same_port_concurrent_reservations_have_one_winner(self):
         children = [self.child('child-one'), self.child('child-two')]
         def reserve(child):
             try:
-                self.store.reserve_interface(self.parent['id'], child['id'], 24444)
+                self.store.reserve_interface(self.parent['id'], child['id'], 51825)
                 return True
             except StoreError:
                 return False
@@ -73,7 +73,7 @@ class ActivationChecks(unittest.TestCase):
         child = self.child()
         self.assertEqual(self.store.summary()['pending_approvals'], 1)
         self.assertEqual(self.store.summary()['total_creation_fee_toman'], 3000000)
-        self.store.reserve_interface(self.parent['id'], child['id'], 24444)
+        self.store.reserve_interface(self.parent['id'], child['id'], 51825)
         self.store.attach_child_interface(self.parent['id'], child['id'], 22)
         self.store.approve(child['id'])
         self.store.approve(self.parent['id'], approved=False)
