@@ -25,6 +25,16 @@ class GuidedBotChecks(unittest.TestCase):
             answers.append(self.manager.command(row, self.update(text, update_id=start + index)))
         return answers
 
+    def test_unknown_text_and_addressed_commands_use_current_inline_menu(self):
+        row,_=self.configure()
+        expected=self.manager.menu()
+        for index,text in enumerate(('لس','unrecognized text','/start@fixture_bot','/help@fixture_bot')):
+            answer=self.manager.command(row,self.update(text,update_id=6000+index))
+            self.assertEqual(answer[0],'messages')
+            self.assertEqual(answer[1][0]['reply_markup'],expected)
+            self.assertNotIn('/new name',answer[1][0]['text'])
+            self.assertEqual(len(self.rows),0)
+
     def test_main_menu_has_exact_four_emoji_actions(self):
         row,_ = self.configure()
         answer = self.manager.command(row,self.update('/start'))

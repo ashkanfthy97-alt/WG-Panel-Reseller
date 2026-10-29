@@ -541,10 +541,8 @@ class BotManager:
         command = head.split('@', 1)[0].lower()
         operation = 'telegram-update-' + str(row['bot_id']) + '-' + str(update['update_id'])
         if command in {'/start', '/help'}:
-            return ('messages', [{'text': 'ساخت کانفیگ / Create:\n/new name | days | GB\n'
-                    '/peers\n/config ID\n/qr ID\n/link ID\n/rename ID | name\n/renew ID | days | GB',
-                'reply_markup': {'inline_keyboard': [[{'text': 'کانفیگ‌های من / My configs', 'callback_data': 'page:0'},
-                                                     {'text': 'اعتبار / Credit', 'callback_data': 'credit'}]]}}])
+            return ('messages', [{'text': 'گزینه را انتخاب کنید / Choose an option',
+                                  'reply_markup': self.menu()}])
         if command == '/credit':
             code, result, _ = self.dispatch(row, 'GET', '/reseller/api/credit')
             if code == 200 and isinstance(result, dict):
