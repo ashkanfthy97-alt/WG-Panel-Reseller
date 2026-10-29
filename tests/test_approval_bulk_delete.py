@@ -58,7 +58,7 @@ class ApprovalArchiveChecks(unittest.TestCase):
         self.assertEqual(migrated.reserve(7, 'old-uncertain-operation')['state'], 'uncertain')
         self.assertEqual(migrated.credit(7)['reserved_peers'], 1)
         with migrated.db() as upgraded:
-            self.assertEqual(upgraded.execute('PRAGMA user_version').fetchone()[0], 5)
+            self.assertEqual(upgraded.execute('PRAGMA user_version').fetchone()[0], 6)
             self.assertEqual(upgraded.execute('SELECT password_hash FROM resellers WHERE id=7').fetchone()[0], password_hash)
             self.assertEqual(upgraded.execute('SELECT count(*) FROM reseller_operations').fetchone()[0], 2)
 

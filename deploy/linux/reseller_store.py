@@ -44,17 +44,17 @@ class ResellerStore:
     @staticmethod
     def _initialize(connection):
         version = connection.execute('PRAGMA user_version').fetchone()[0]
-        if version > 5:
+        if version > 6:
             raise StoreError('نسخهٔ داده‌های نمایندگی جدیدتر از این برنامه است.')
-        if version == 5:
+        if version == 6:
             return
         # Serialise additive upgrades across workers and re-read the version
         # after obtaining the lock. executescript would commit this lock early.
         connection.execute('BEGIN IMMEDIATE')
         version = connection.execute('PRAGMA user_version').fetchone()[0]
-        if version > 5:
+        if version > 6:
             raise StoreError('نسخهٔ داده‌های نمایندگی جدیدتر از این برنامه است.')
-        if version == 5:
+        if version == 6:
             connection.commit()
             return
         statements = (
@@ -121,8 +121,20 @@ class ResellerStore:
             ON reseller_interface_jobs(child_id) WHERE state IN ('pending','complete','uncertain')""")
         connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS reseller_interface_port_live
             ON reseller_interface_jobs(port) WHERE state IN ('pending','complete','uncertain')""")
+        # Mother-created root accounts have no reseller parent. Keep their jobs
+        # additive instead of inventing a self-parent or rewriting child jobs.
+        connection.execute('''CREATE TABLE IF NOT EXISTS reseller_owner_interface_jobs (
+            id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES resellers(id),
+            port INTEGER NOT NULL CHECK(port BETWEEN 51825 AND 52000),
+            state TEXT NOT NULL CHECK(state IN ('pending','complete','uncertain','failed')),
+            iface_id INTEGER, actor TEXT NOT NULL, created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL, detail TEXT NOT NULL DEFAULT '')''')
+        connection.execute('''CREATE UNIQUE INDEX IF NOT EXISTS reseller_owner_interface_account
+            ON reseller_owner_interface_jobs(account_id)''')
+        connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS reseller_owner_interface_port_live
+            ON reseller_owner_interface_jobs(port) WHERE state IN ('pending','complete','uncertain')""")
         connection.execute('CREATE INDEX IF NOT EXISTS reseller_parent_idx ON resellers(parent_id)')
-        connection.execute('PRAGMA user_version=5')
+        connection.execute('PRAGMA user_version=6')
         connection.commit()
 
     @staticmethod
@@ -150,8 +162,7 @@ class ResellerStore:
         result = cls.public(row)
         parent = rows.get(row['parent_id'])
         result['parent_username'] = parent['username'] if parent else None
-        job = connection.execute('''SELECT id,parent_id,child_id,port,state,iface_id,created_at,updated_at
-            FROM reseller_interface_jobs WHERE child_id=? ORDER BY id DESC LIMIT 1''', (row['id'],)).fetchone()
+        job = cls._interface_job(connection, row)
         result['interface_provision'] = dict(job) if job else None
         result['direct_child_count'] = len(children.get(row['id'], ()))
         pending, descendants = list(children.get(row['id'], ())), set()
@@ -175,6 +186,15 @@ class ResellerStore:
                 result['active'] = False
             parent_id = ancestor['parent_id']
         return result
+
+    @staticmethod
+    def _interface_job(connection, account):
+        if account['parent_id'] is None:
+            return connection.execute('''SELECT id,NULL AS parent_id,account_id AS child_id,
+                port,state,iface_id,created_at,updated_at,'owner' AS kind
+                FROM reseller_owner_interface_jobs WHERE account_id=? ORDER BY id DESC LIMIT 1''', (account['id'],)).fetchone()
+        return connection.execute('''SELECT id,parent_id,child_id,port,state,iface_id,created_at,updated_at,'child' AS kind
+            FROM reseller_interface_jobs WHERE child_id=? ORDER BY id DESC LIMIT 1''', (account['id'],)).fetchone()
 
     def get(self, reseller_id):
         with self.db() as db:
@@ -272,7 +292,7 @@ class ResellerStore:
         except (TypeError, ValueError) as exc:
             raise StoreError('Interface و سقف مشتری را بررسی کنید.') from exc
         if (type(allow_unassigned) is not bool or
-                (not interfaces and not (allow_unassigned and parent_id is not None)) or
+                (not interfaces and not allow_unassigned) or
                 any(i < 1 for i in interfaces) or type(max_peers) is not int or not 1 <= max_peers <= 10000):
             raise StoreError('Interface و سقف مشتری را بررسی کنید.')
         if parent_id is not None and (type(parent_id) is not int or parent_id < 1):
@@ -314,7 +334,7 @@ class ResellerStore:
                 raise StoreError('نماینده پیدا نشد.')
             if approved and len(json.loads(row['interfaces'])) != 1:
                 raise StoreError('قبل از تأیید، یک Interface اختصاصی برای نماینده تعیین کنید.')
-            job = db.execute('SELECT state FROM reseller_interface_jobs WHERE child_id=? ORDER BY id DESC LIMIT 1', (reseller_id,)).fetchone()
+            job = self._interface_job(db, row)
             if approved and job and job['state'] in {'pending', 'uncertain'}:
                 raise StoreError('پیش از تأیید، نتیجهٔ ساخت Interface را بررسی و Interface واقعی را دوباره تعیین کنید.')
             if approved:
@@ -351,6 +371,8 @@ class ResellerStore:
         try:
             with self.db(write=True) as db:
                 self._provision_child(db, parent_id, child_id)
+                if db.execute("SELECT 1 FROM reseller_owner_interface_jobs WHERE port=? AND state IN ('pending','complete','uncertain')", (port,)).fetchone():
+                    raise StoreError('این پورت برای نمایندهٔ دیگری رزرو شده است.')
                 now = int(time.time())
                 cursor = db.execute('''INSERT INTO reseller_interface_jobs
                     (parent_id,child_id,port,state,created_at,updated_at) VALUES(?,?,?,'pending',?,?)''',
@@ -400,8 +422,71 @@ class ResellerStore:
 
     def interface_reservations(self):
         with self.db() as db:
-            return [dict(row) for row in db.execute("""SELECT * FROM reseller_interface_jobs
+            children = [dict(row) for row in db.execute("""SELECT *,'child' AS kind FROM reseller_interface_jobs
                 WHERE state IN ('pending','complete','uncertain') ORDER BY id""")]
+            roots = [dict(row) for row in db.execute("""SELECT id,NULL AS parent_id,account_id AS child_id,
+                port,state,iface_id,created_at,updated_at,detail,'owner' AS kind
+                FROM reseller_owner_interface_jobs WHERE state IN ('pending','complete','uncertain') ORDER BY id""")]
+            return children + roots
+
+    @staticmethod
+    def _owner_provision_account(db, account_id, actor):
+        if not isinstance(actor, str) or not actor.strip() or len(actor) > 128:
+            raise StoreError('هویت مدیر برای ساخت Interface مشخص نشده است.')
+        if type(account_id) is not int or account_id < 1:
+            raise StoreError('نماینده نامعتبر است.')
+        row = db.execute('SELECT * FROM resellers WHERE id=?', (account_id,)).fetchone()
+        if (row is None or row['deleted_at'] or row['parent_id'] is not None
+                or row['approval_status'] != 'pending' or json.loads(row['interfaces'])):
+            raise StoreError('Interface خودکار فقط برای نمایندهٔ اصلی جدید و در انتظار تأیید ساخته می‌شود.')
+        return row
+
+    def reserve_owner_interface(self, account_id, port, actor):
+        """Caller must establish native owner authority before using this path."""
+        if type(port) is not int or not 51825 <= port <= 52000:
+            raise StoreError('پورت باید بین ۵۱۸۲۵ تا ۵۲۰۰۰ باشد.')
+        try:
+            with self.db(write=True) as db:
+                self._owner_provision_account(db, account_id, actor)
+                if db.execute("SELECT 1 FROM reseller_interface_jobs WHERE port=? AND state IN ('pending','complete','uncertain')", (port,)).fetchone():
+                    raise StoreError('این پورت برای زیرنماینده رزرو شده است.')
+                now = int(time.time())
+                cursor = db.execute('''INSERT INTO reseller_owner_interface_jobs
+                    (account_id,port,state,actor,created_at,updated_at) VALUES(?,?,'pending',?,?,?)''',
+                    (account_id, port, actor, now, now))
+                db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)',
+                           (account_id, 'owner-interface:reserved', actor, now))
+                return dict(db.execute('SELECT * FROM reseller_owner_interface_jobs WHERE id=?', (cursor.lastrowid,)).fetchone())
+        except sqlite3.IntegrityError as exc:
+            raise StoreError('ساخت Interface این نماینده قبلاً آغاز شده یا پورت رزرو شده است؛ نتیجه را مدیر بررسی کند.') from exc
+
+    def attach_owner_interface(self, account_id, iface_id, actor):
+        if type(iface_id) is not int or iface_id < 1:
+            raise StoreError('Interface نامعتبر است.')
+        with self.db(write=True) as db:
+            self._owner_provision_account(db, account_id, actor)
+            job = db.execute("SELECT * FROM reseller_owner_interface_jobs WHERE account_id=? AND state='pending' AND actor=?", (account_id, actor)).fetchone()
+            if not job:
+                raise StoreError('رزرو معتبر مدیر برای اتصال Interface پیدا نشد.')
+            for row in db.execute('SELECT interfaces FROM resellers WHERE id!=?', (account_id,)):
+                if iface_id in json.loads(row['interfaces']):
+                    raise StoreError('Interface به نمایندهٔ دیگری اختصاص داده شده است.')
+            now = int(time.time())
+            db.execute('UPDATE resellers SET interfaces=?,auth_version=auth_version+1 WHERE id=?', (json.dumps([iface_id]), account_id))
+            db.execute("UPDATE reseller_owner_interface_jobs SET state='complete',iface_id=?,updated_at=? WHERE id=?", (iface_id, now, job['id']))
+            db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)', (account_id, 'owner-interface:' + str(iface_id), actor, now))
+        return self.get(account_id)
+
+    def fail_owner_interface(self, account_id, actor, *, uncertain=True, detail=''):
+        if type(uncertain) is not bool or not isinstance(actor, str) or not actor.strip():
+            raise StoreError('وضعیت ساخت یا هویت مدیر نامعتبر است.')
+        with self.db(write=True) as db:
+            job = db.execute("SELECT * FROM reseller_owner_interface_jobs WHERE account_id=? AND actor=? AND state='pending'", (account_id, actor)).fetchone()
+            if not job:
+                raise StoreError('رزرو در حال ساخت مدیر پیدا نشد.')
+            db.execute('UPDATE reseller_owner_interface_jobs SET state=?,detail=?,updated_at=? WHERE id=?',
+                       ('uncertain' if uncertain else 'failed', str(detail)[:500], int(time.time()), job['id']))
+            return dict(db.execute('SELECT * FROM reseller_owner_interface_jobs WHERE id=?', (job['id'],)).fetchone())
 
     def authenticate(self, username, password, identity):
         now = int(time.time())
@@ -464,6 +549,7 @@ class ResellerStore:
             # Explicit mother-admin assignment is the recovery acknowledgement
             # for an uncertain native provisioning job; no auto retry occurs.
             db.execute("UPDATE reseller_interface_jobs SET state='complete',iface_id=?,updated_at=?,detail='Owner assigned verified native Interface' WHERE child_id=? AND state IN ('pending','uncertain')", (iface_id, int(time.time()), reseller_id))
+            db.execute("UPDATE reseller_owner_interface_jobs SET state='complete',iface_id=?,updated_at=?,detail='Owner assigned verified native Interface' WHERE account_id=? AND state IN ('pending','uncertain')", (iface_id, int(time.time()), reseller_id))
             db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)',
                        (reseller_id, 'interface:' + str(iface_id), actor, int(time.time())))
         return self.get(reseller_id)

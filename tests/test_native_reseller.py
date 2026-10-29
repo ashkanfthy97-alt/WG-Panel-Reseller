@@ -136,9 +136,11 @@ class NativeResellerChecks(unittest.TestCase):
     def test_owner_management_is_native_and_works_on_http(self):
         self.assertEqual(self.client.get('/resellers/api/accounts').status_code, 401)
         self.client.get('/fixture-owner')
-        response = self.post('/resellers/api/accounts', dict(username='new-dealer', password='a-safe-test-password', interfaces=[1], max_peers=3))
+        response = self.post('/resellers/api/accounts', dict(username='new-dealer', password='a-safe-test-password', max_peers=3))
         self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
         account_id = response.json['account']['id']
+        self.assertEqual(response.json['interface']['listen_port'],51825)
+        self.assertEqual(response.json['account']['interfaces'],[response.json['interface']['id']])
         self.assertFalse(self.store.get(account_id)['active'])
         response = self.post(f'/resellers/api/accounts/{account_id}/approval', {'approved': True, 'days': 30})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))

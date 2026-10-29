@@ -171,30 +171,41 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     def provision_account_interface(child, policy, port, address):
         """Caller holds the shared admission lock from allocation to attachment."""
         parent_id, child_id = child['parent_id'], child['id']
+        owner_actor = getattr(g, 'reseller_owner', None) if parent_id is None else None
+        if parent_id is None and not owner_actor:
+            abort(403)
         payload = {'child_id': child_id, 'name': 'wg_r' + str(child_id), 'address': address,
             'listen_port': port, 'dns': policy['dns'], 'mtu': policy['mtu'],
             'endpoint_host': policy['endpoint_host'], 'auto_up': True,
             'auto_firewall': policy['auto_firewall'],
             'peer_defaults': {key: policy[key] for key in ('allowed_ips', 'persistent_keepalive')}}
-        store.reserve_interface(parent_id, child_id, port)
+        if parent_id is None:
+            store.reserve_owner_interface(child_id, port, owner_actor)
+        else:
+            store.reserve_interface(parent_id, child_id, port)
         try:
             code, result = native().json('POST', '/api/portal/provision-child-interface', payload)
             iface = result.get('interface') if isinstance(result, dict) else None
             if (code != 201 or not isinstance(iface, dict) or type(iface.get('id')) is not int
                     or iface['id'] < 1 or result.get('up_error')):
                 raise CoreError('Native Interface startup was not confirmed')
-            account = store.attach_child_interface(parent_id, child_id, iface['id'])
+            account = (store.attach_owner_interface(child_id, iface['id'], owner_actor) if parent_id is None
+                       else store.attach_child_interface(parent_id, child_id, iface['id']))
         except Exception:
             # Native creation is not a transaction with the additive store.
             # Retain both the account and reservation for mother-admin recovery.
-            store.fail_interface(parent_id, child_id, uncertain=True,
-                                 detail='Native Interface outcome was not confirmed')
+            if parent_id is None:
+                store.fail_owner_interface(child_id, owner_actor, uncertain=True,
+                                           detail='Native Interface outcome was not confirmed')
+            else:
+                store.fail_interface(parent_id, child_id, uncertain=True,
+                                     detail='Native Interface outcome was not confirmed')
             return jsonify(error='interface_create_uncertain', account=store.get(child_id),
                 message='حساب ثبت شد، اما ساخت یا راه‌اندازی Interface تأیید نشد؛ دوباره نسازید و با مدیر تماس بگیرید.'), 502
         safe = {'id': iface['id'], 'name': payload['name'], 'address': address, 'listen_port': port}
         account['assigned_interfaces'] = [safe]
         return jsonify(account=account, interface=safe, signin_url='/login', creation_fee=child_creation_fee(),
-            message='زیرنماینده و Interface اختصاصی ساخته شدند؛ فعال‌سازی پس از تأیید مدیر اصلی است.'), 201
+            message='نماینده و Interface اختصاصی ساخته شدند؛ فعال‌سازی پس از تأیید مدیر اصلی است.'), 201
 
     def owned_peers(account):
         code, value = native().json('GET', '/api/peers')
@@ -413,19 +424,19 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     @require_owner
     def create_account():
         value = data()
-        check_username(value.get('username'))
-        selected = value.get('interfaces', [])
-        if not isinstance(selected, list) or len(selected) != 1 or any(type(i) is not int for i in selected):
-            raise StoreError('دقیقاً یک Interface برای نماینده تعیین کنید.')
-        allowed = {row['id'] for row in interfaces()}
-        if not set(selected) <= allowed:
-            raise StoreError('Interface انتخاب‌شده وجود ندارد.')
+        if (not {'username', 'password'} <= set(value) or set(value) - {'username', 'password', 'max_peers'}
+                or not isinstance(value['username'], str) or not isinstance(value['password'], str)):
+            raise StoreError('فقط نام کاربری، رمز و ظرفیت مجاز است؛ Interface و پورت خودکار هستند.')
+        check_username(value['username'])
         capacity = value.get('max_peers', 100)
-        if type(capacity) is not int:
+        if type(capacity) is not int or not 1 <= capacity <= 10000:
             raise StoreError('ظرفیت نامعتبر است.')
-        account = store.create(str(value.get('username', '')), str(value.get('password', '')),
-                               selected, capacity, g.reseller_owner, creation_fee_toman=3000000)
-        return jsonify(account=account, signin_url='/login'), 201
+        from portal_provisioning import provisioning_lock
+        with provisioning_lock(current_app.instance_path):
+            policy, port, address = prepare_child_interface(interfaces())
+            account = store.create(value['username'], value['password'], [], capacity,
+                g.reseller_owner, creation_fee_toman=3000000, allow_unassigned=True)
+            return provision_account_interface(account, policy, port, address)
 
     @bp.post('/resellers/api/accounts/<int:account_id>/approval')
     @require_owner
@@ -446,11 +457,11 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
                     return jsonify(error='interface_review_required', account=account,
                         message='نتیجهٔ ساخت Interface نامشخص است؛ مدیر باید Interface واقعی را بررسی و با گزینهٔ تعیین Interface ثبت کند.'), 409
                 if not account['interfaces']:
-                    if account.get('parent_id') is None or job is not None:
+                    if job is not None:
                         return jsonify(error='interface_required', account=account,
                             message='قبل از تأیید، مدیر باید یک Interface واقعی برای این حساب تعیین کند.'), 409
-                    # Older child forms saved a billed account before an
-                    # Interface existed. Recover each such row independently.
+                    # Older forms saved billed root/child accounts before an
+                    # Interface existed. Recover only rows with no prior job.
                     policy, port, address = prepare_child_interface(interfaces())
                     provisioned = provision_account_interface(account, policy, port, address)
                     if provisioned[1] != 201:

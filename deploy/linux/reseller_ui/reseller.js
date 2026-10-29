@@ -139,8 +139,8 @@
           login_required: text("نشست پایان یافته؛ دوباره وارد شوید.", "Your session ended. Sign in again."),
           interface_required: text("پیش از تأیید پرداخت، یک Interface واقعی برای همین نماینده تعیین کنید.", "Assign a real interface to this reseller before approving payment."),
           interface_review_required: text("نتیجهٔ ساخت Interface این نماینده نامشخص است. Interface واقعی را بررسی و با گزینهٔ تعیین Interface ثبت کنید؛ ساخت را تکرار نکنید.", "This reseller’s interface creation outcome is uncertain. Inspect the native interface and assign it explicitly; do not repeat creation."),
-          provision_defaults_required: text("مدیر اصلی باید ابتدا پیش‌فرض ساخت Interface زیرنماینده را ذخیره کند.", "The owner must save the subreseller interface defaults first."),
-          interface_defaults_required: text("مدیر اصلی باید ابتدا پیش‌فرض ساخت Interface زیرنماینده را ذخیره کند.", "The owner must save the subreseller interface defaults first."),
+          provision_defaults_required: text("مدیر اصلی باید ابتدا پیش‌فرض ساخت Interface نمایندگان را ذخیره کند.", "The owner must save the reseller interface defaults first."),
+          interface_defaults_required: text("مدیر اصلی باید ابتدا پیش‌فرض ساخت Interface نمایندگان را ذخیره کند.", "The owner must save the reseller interface defaults first."),
           no_available_ports: text("همهٔ پورت‌های ۵۱۸۲۵ تا ۵۲۰۰۰ استفاده یا رزرو شده‌اند؛ با مدیر تماس بگیرید.", "All ports from 51825 to 52000 are occupied or reserved; contact the owner."),
           port_scan_failed: text("بررسی پورت‌های آزاد کامل نشد؛ حساب تازه نسازید و وضعیت را با مدیر بررسی کنید.", "The free-port check did not complete. Check the status with the owner before creating another account."),
           interface_create_uncertain: text("نتیجهٔ ساخت Interface قطعی نیست؛ حساب را دوباره نسازید و از مدیر بخواهید وضعیت را بررسی کند.", "The interface creation outcome is uncertain. Do not recreate the account; ask the owner to inspect it."),
@@ -192,6 +192,7 @@
       busy = false; button.disabled = false; button.removeAttribute("aria-busy");
       if (button.dataset.uncertain) button.disabled = true;
       if (button.closest("#peer-form") && $("#peer-form").dataset.locked) button.disabled = true;
+      if (button.closest("#account-form") && $("#account-form").dataset.locked) button.disabled = true;
       if (button.closest("#child-form") && $("#child-form").dataset.locked) button.disabled = true;
     }
   }
@@ -227,7 +228,6 @@
     if (!authorized) {
       adminData = null;
       $("#account-rows").replaceChildren();
-      $("#interface-options").replaceChildren();
       $("#audit-list").replaceChildren();
       $("#operations-list").replaceChildren();
       $("#account-password").value = "";
@@ -253,13 +253,6 @@
   function renderAdmin(data) {
     adminData = data;
     ownerVisibility(true);
-    const selected = new Set(Array.from(document.querySelectorAll("#interface-options input:checked"), (node) => Number(node.value)));
-    $("#interface-options").replaceChildren(...(data.interfaces || []).map((iface) => {
-      const label = document.createElement("label"), input = document.createElement("input"), caption = document.createElement("span");
-      input.type = "radio"; input.name = "assigned-interface"; input.value = iface.id; input.checked = selected.has(iface.id); caption.textContent = iface.name;
-      label.append(input, caption); return label;
-    }));
-    if (!(data.interfaces || []).length) $("#interface-options").textContent = text("ابتدا یک Interface از پنل اصلی بسازید.", "Create an interface in the native panel first.");
     const rows = $("#account-rows"); rows.replaceChildren();
     const accounts = data.accounts || [];
     const number = new Intl.NumberFormat(language === "fa" ? "fa-IR" : "en-GB");
@@ -482,7 +475,7 @@
     if (!provisionDefaultsData) return;
     const configured = provisionDefaultsData.configured === true;
     $("#provision-defaults-state").dataset.configured = String(configured);
-    $("#provision-defaults-state").textContent = configured ? text("الگوی ساخت ذخیره شده است؛ زیرنمایندهٔ جدید Interface خودکار می‌گیرد.", "Creation defaults are saved. New subresellers receive an interface automatically.") : text("هنوز الگو ذخیره نشده است؛ پیش از ثبت زیرنماینده، پیش‌فرض‌ها را تنظیم و ذخیره کنید.", "No template has been saved. Configure and save defaults before registering a subreseller.");
+    $("#provision-defaults-state").textContent = configured ? text("الگوی ساخت ذخیره شده است؛ هر نمایندهٔ جدید Interface خودکار می‌گیرد.", "Creation defaults are saved. Every new reseller receives an interface automatically.") : text("هنوز الگو ذخیره نشده است؛ پیش از ثبت نماینده، پیش‌فرض‌ها را تنظیم و ذخیره کنید.", "No template has been saved. Configure and save defaults before registering a reseller.");
   }
   function fillProvisionDefaults(data) {
     if (!data || !data.defaults || typeof data.defaults !== "object") throw new Error(text("الگوی ساخت معتبر دریافت نشد.", "The creation template response is invalid."));
@@ -626,12 +619,12 @@
     if (["mtu", "persistent_keepalive", "subnet_prefix", "child_max_peers"].some(key => !Number.isSafeInteger(payload[key]))) return formResult("#provision-defaults-result", text("مقدارهای عددی را بررسی کنید.", "Check the numeric values."), true);
     action(event.submitter || $("#provision-defaults-save"), "#provision-defaults-result", async () => {
       fillProvisionDefaults(await api("/resellers/api/interface-defaults", {method:"PUT",payload}));
-      formResult("#provision-defaults-result", text("پیش‌فرض‌ها ذخیره شدند؛ فقط Interface زیرنمایندگان جدید از این الگو ساخته می‌شود.", "Defaults saved. Only new subreseller interfaces use this template."));
+      formResult("#provision-defaults-result", text("پیش‌فرض‌ها ذخیره شدند؛ Interface همهٔ نمایندگان جدید، از جمله حساب‌های ساخته‌شده توسط مدیر، از این الگو ساخته می‌شود.", "Defaults saved. All new reseller interfaces, including owner-created accounts, use this template."));
     });
   });
   $("#add-reseller").addEventListener("click", () => {
     if (!adminData || busy) return;
-    $("#account-result").textContent = "";
+    if (!$("#account-form").dataset.locked) $("#account-result").textContent = "";
     $("#account-dialog").showModal();
     $("#account-username").focus();
   });
@@ -656,17 +649,28 @@
     stopBotStatus(); creditRequest += 1; creditData = null; if ($("#credit-dialog").open) $("#credit-dialog").close(); csrf = ""; nativeCSRF = ""; account = null; peerData = null; childrenData = null; closeQR(); $("#peer-rows").replaceChildren(); $("#child-rows").replaceChildren(); await load();
   }));
   $("#account-form").addEventListener("submit", (event) => {
-    event.preventDefault(); const payload = Object.fromEntries(new FormData(event.currentTarget));
-    payload.interfaces = Array.from(document.querySelectorAll("#interface-options input:checked"), (node) => Number(node.value));
-    payload.max_peers = Number(payload.max_peers);
-    if (!payload.interfaces.length) return formResult("#account-result", text("حداقل یک Interface انتخاب کنید.", "Select at least one interface."), true);
+    event.preventDefault();
+    if (event.currentTarget.dataset.locked) return formResult("#account-result", text("ساخت قبلی نیازمند بررسی است؛ فهرست نمایندگان را بررسی کنید و حساب را دوباره نسازید.", "The previous creation needs review. Check the reseller list and do not recreate the account."), true);
+    const payload = {username:$("#account-username").value.trim(), password:$("#account-password").value, max_peers:Number($("#account-limit").value)};
+    if (!Number.isSafeInteger(payload.max_peers) || payload.max_peers < 1 || payload.max_peers > 10000) return formResult("#account-result", text("سقف Peer باید عدد صحیح بین ۱ تا ۱۰۰۰۰ باشد.", "The Peer limit must be an integer from 1 to 10000."), true);
     action(event.submitter || event.currentTarget.querySelector('[type="submit"]'), "#account-result", async () => {
-      const created = await api("/resellers/api/accounts", { method: "POST", payload });
+      formResult("#account-result", text("در حال ساخت خودکار حساب و Interface اختصاصی…", "Creating the account and dedicated interface automatically…"));
+      let created;
+      try { created = await api("/resellers/api/accounts", {method:"POST", payload}); }
+      catch (error) {
+        if (!error.status || error.data?.account || ["interface_create_uncertain", "create_uncertain", "timeout"].includes(error.code)) {
+          $("#account-form").dataset.locked = "true";
+          $("#account-password").value = "";
+          error.message = text("نتیجهٔ ساخت نیازمند بررسی است؛ فهرست نمایندگان و Interface حساب را بررسی کنید. حساب را دوباره نسازید؛ از عملیات همان ردیف برای بررسی یا بازیابی استفاده کنید.", "Creation needs review. Inspect the reseller list and its interface. Do not recreate the account; use that account’s row to inspect or recover it.");
+        }
+        try { await loadAdmin(); } catch { /* Preserve the original creation outcome. */ }
+        throw error;
+      }
       $("#account-password").value = "";
       $("#account-dialog").close();
       $("#account-form").reset();
       showSignin(created.signin_url || "/reseller");
-      notice(text("حساب ساخته شد. فعال‌سازی به پرداخت ۳٬۰۰۰٬۰۰۰ تومان و تأیید شما نیاز دارد.", "Account created. Activation requires payment of 3,000,000 toman and your approval."), "success");
+      notice(text("حساب و Interface اختصاصی خودکار ساخته شدند. فعال‌سازی به پرداخت ۳٬۰۰۰٬۰۰۰ تومان و تأیید شما نیاز دارد.", "The account and dedicated interface were created automatically. Activation requires payment of 3,000,000 toman and your approval."), "success");
       try { await loadAdmin(); } catch { notice(text("حساب ساخته شد، اما فهرست تازه دریافت نشد. وضعیت را تازه کنید.", "The account was created, but the list could not be refreshed. Refresh status.")); }
     });
   });

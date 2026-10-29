@@ -363,7 +363,7 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
     for (const language of ['fa','en']) for (const width of [1440,390]) {
       const operationsContext=await browser.newContext({viewport:{width,height:1000}});
       await operationsContext.addInitScript(value=>localStorage.setItem('wgportal-language',value),language);
-      let token='operations-csrf-0', serial=0, bulkStatus=201, bulkCalls=[], deleteCalls=[], approvalCalls=[];
+      let token='operations-csrf-0', serial=0, bulkStatus=201, bulkCalls=[], deleteCalls=[], approvalCalls=[], ownerCreates=[], ownerCreateUncertain=false;
       const operationPeers=[{id:51,name:'delete-success'},{id:52,name:'delete-uncertain'}];
       const operationAccounts=[{...account,id:11,username:'approval-one',approval_status:'pending'}, {...account,id:12,username:'approval-two',approval_status:'pending'}, {...account,id:13,username:'archive-child',parent_id:1,approval_status:'approved'}];
       await operationsContext.route('**/*',route=>{
@@ -375,7 +375,18 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
         if(method!=='GET')assert.equal(request.headers()['x-reseller-csrf'],token,'Every mutation uses the latest response CSRF');
         if(url.pathname==='/reseller/api/session')return json({account});
         if(url.pathname==='/resellers/api/interface-defaults')return json(interfaceDefaults);
-        if(url.pathname==='/resellers/api/accounts')return json({accounts:operationAccounts,interfaces:[{id:1,name:'wg0'}],audit:[],operations:[]});
+        if(url.pathname==='/resellers/api/accounts'){
+          if(method==='POST'){
+            const payload=request.postDataJSON();ownerCreates.push(payload);
+            assert.deepEqual(Object.keys(payload).sort(),['max_peers','password','username']);
+            const created={...account,...payload,id:ownerCreateUncertain?15:14,interfaces:[5],assigned_interfaces:[{id:5,name:'wg_r14',listen_port:51825}],approval_status:'pending',active:false,interface_provision:{state:'complete',port:51825}};
+            if(ownerCreateUncertain){created.interfaces=[];created.assigned_interfaces=[];created.interface_provision={state:'uncertain',port:51826};}
+            operationAccounts.push(created);token='operations-csrf-'+(++serial);
+            if(ownerCreateUncertain)return json({error:'interface_create_uncertain',account:created},502);
+            return json({account:created,interface:created.assigned_interfaces[0],signin_url:'/login'},201);
+          }
+          return json({accounts:operationAccounts,interfaces:[{id:1,name:'wg0'}],audit:[],operations:[]});
+        }
         if(url.pathname==='/reseller/api/accounts'&&method==='GET')return json({accounts:operationAccounts.filter(value=>value.parent_id===1),creation_fee:{amount:3000000}});
         if(/\/accounts\/\d+\/approval$/.test(url.pathname)) {
           const id=Number(url.pathname.split('/').at(-2));approvalCalls.push(id);
@@ -407,6 +418,18 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
       const operationsPage=await operationsContext.newPage();
       const pageErrors=[];operationsPage.on('pageerror',error=>pageErrors.push(error.message));
       await operationsPage.goto('http://panel.test/resellers');
+      await operationsPage.locator('#add-reseller').click();
+      assert.equal(await operationsPage.locator('#account-form input[type=radio],#account-form input[type=checkbox],#account-form select,#interface-options').count(),0,'Owner creation has no manual Interface selector');
+      await operationsPage.locator('#account-username').fill('automatic-owner-dealer');
+      await operationsPage.locator('#account-password').fill('safe-owner-password');
+      await operationsPage.locator('#account-limit').fill('50');
+      const ownerBounds=await operationsPage.locator('#account-dialog').boundingBox();
+      assert(ownerBounds.x>=0&&ownerBounds.x+ownerBounds.width<=width+1);
+      await operationsPage.locator('#account-form button[type=submit]').click();
+      await operationsPage.waitForFunction(()=>!document.querySelector('#account-dialog').open&&document.querySelector('#account-rows tr[data-account-id="14"]'));
+      assert.equal(ownerCreates.length,1);
+      assert.deepEqual(ownerCreates[0],{username:'automatic-owner-dealer',password:'safe-owner-password',max_peers:50});
+      assert((await operationsPage.locator('#account-rows tr[data-account-id="14"]').textContent()).includes('wg_r14'));
       for(const id of [11,12]) {
         const row=operationsPage.locator(`#account-rows tr[data-account-id="${id}"]`);
         await row.locator('.account-approval').click();
@@ -424,6 +447,20 @@ const account = {id:1, username:'dealer', active:true, enabled:true, expires_at:
       await operationsPage.waitForFunction(()=>document.querySelector('#account-rows tr[data-account-id="13"]')&&!document.querySelector('#account-rows tr[data-account-id="13"] button'));
       assert.equal(await operationsPage.locator('#account-rows tr[data-account-id="13"] button').count(),0,'Archived row is readonly');
       assert.equal(deleteCalls[0],'/resellers/api/accounts/13');
+      ownerCreateUncertain=true;
+      await operationsPage.locator('#add-reseller').click();
+      await operationsPage.locator('#account-username').fill('uncertain-owner');
+      await operationsPage.locator('#account-password').fill('safe-owner-password');
+      await operationsPage.locator('#account-form button[type=submit]').click();
+      await operationsPage.waitForFunction(()=>document.querySelector('#account-form').dataset.locked&&document.querySelector('#account-form button[type=submit]').disabled);
+      assert.equal(await operationsPage.locator('#account-password').inputValue(),'');
+      await operationsPage.locator('#account-rows tr[data-account-id="15"]').waitFor({state:'attached'});
+      assert.equal(await operationsPage.locator('#account-rows tr[data-account-id="15"]').count(),1);
+      await operationsPage.locator('#close-account-dialog').click();
+      await operationsPage.locator('#add-reseller').click();
+      assert.equal(await operationsPage.locator('#account-form button[type=submit]').isDisabled(),true,'Uncertain creation remains locked after reopening');
+      assert.equal(ownerCreates.length,2,'No repeat provisioning request');
+      await operationsPage.locator('#close-account-dialog').click();
       for(const status of [201,207,409]) {
         bulkStatus=status;bulkCalls=[];
         await operationsPage.goto('http://panel.test/reseller#services');

@@ -92,7 +92,7 @@ class HierarchyStoreChecks(unittest.TestCase):
         self.assertEqual(account['auth_version'], 3)
         with closing(sqlite3.connect(path)) as db:
             self.assertEqual(db.execute('SELECT password_hash FROM resellers WHERE id=7').fetchone()[0], 'hash-preserved')
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 5)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 6)
 
     def test_concurrent_v2_migration(self):
         path = self.legacy()
