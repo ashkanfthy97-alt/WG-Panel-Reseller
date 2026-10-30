@@ -97,6 +97,12 @@ html[dir=rtl] :is(.peerx-modal-head,.peerx-section-head){text-align:right}html[d
 .portal-summary-values{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:1000px){.portal-summary-values{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.portal-summary-values{grid-template-columns:1fr}}
 
 /* Persian layout uses logical flow; protocol data stays copyable and LTR. */
+/* The RTL drawer is anchored right, so its closed translation must move right. */
+@media(max-width:760px){
+  html[dir=rtl] body:not(.wg-mobile-menu-open) .sidebar.sb2{transform:translate3d(calc(100% + 18px),0,0)!important}
+  html[dir=rtl] body.wg-mobile-menu-open .sidebar.sb2{transform:translate3d(0,0,0)!important}
+  html[dir=rtl] body.subx-modal-open .sidebar.sb2{transform:translate3d(calc(100% + 18px),0,0)!important}
+}
 html[dir=rtl] body{direction:rtl;text-align:right}
 html[dir=rtl] :is(h1,h2,h3,h4,label,legend,th,.modal-title,.help-text,.form-group,.page-header,.card-header){text-align:start}
 html[dir=rtl] :is(input[type=email],input[type=url],input[type=number],input[autocomplete=one-time-code],input[id*=endpoint],input[id*=address],input[id*=dns],input[id*=port],input[id*=key],input[id*=token],input[id*=secret],textarea[id*=config],textarea[id*=key],pre,code,kbd,samp,[data-no-translate],[translate=no]){direction:ltr;text-align:left;unicode-bidi:plaintext}
