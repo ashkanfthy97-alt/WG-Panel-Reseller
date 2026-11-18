@@ -4,6 +4,7 @@
   const ownerView = location.pathname.replace(/\/$/, "") === "/resellers";
   const text = (fa, en) => language === "fa" ? fa : en;
   let language = "fa", csrf = "", nativeCSRF = "", account = null, adminData = null, peerData = null, childrenData = null, botData = null, busy = false;
+  let ownerPeerAudit = null, ownerPeerRequest = 0;
   const pending = new Map();
   let provisionDefaultsLoaded = false, provisionDefaultsDirty = false, provisionDefaultsData = null;
   let securityData = null, securityPending = false, securityLoading = false, activationData = null;
@@ -218,6 +219,7 @@
     document.title = $("#page-title").textContent + " · WG Portal";
     try { localStorage.setItem("wgportal-language", language); } catch { /* The current page still changes language. */ }
     if (adminData) renderAdmin(adminData);
+    if (ownerPeerAudit) renderOwnerPeerAudit(ownerPeerAudit);
     if (account) renderAccount();
     if (peerData && account?.active) renderPeers(peerData);
     if (childrenData && account?.active) renderChildren(childrenData);
@@ -234,7 +236,7 @@
     $("#reseller-navigation").hidden = ownerView;
     $("#add-reseller").hidden = !authorized;
     if (!authorized) {
-      adminData = null;
+      adminData = null;ownerPeerAudit=null;ownerPeerRequest++;$("#owner-peer-rows").replaceChildren();$("#owner-peer-state").textContent="";
       $("#account-rows").replaceChildren();
       $("#audit-list").replaceChildren();
       $("#operations-list").replaceChildren();
@@ -274,6 +276,9 @@
     $("#summary-subresellers").textContent = Number.isSafeInteger(data.summary?.subresellers) ? number.format(data.summary.subresellers) : "—";
     $("#summary-creation-fees").textContent = Number.isSafeInteger(data.summary?.total_creation_fee_toman) ? number.format(data.summary.total_creation_fee_toman) : "—";
     $("#summary-pending").textContent = number.format(accounts.filter(item => item.approval_status !== "approved").length);
+    const filter=$("#owner-peer-filter"),selected=filter.value;filter.replaceChildren(new Option(text("همهٔ نماینده‌ها","All resellers"),""));
+    for(const item of accounts)filter.append(new Option(String(item.username)+(item.deleted?text(" (بسته‌شده)"," (archived)"):""),String(item.id)));
+    if([...filter.options].some(option=>option.value===selected))filter.value=selected;
     for (const item of accounts) {
       const row = rows.insertRow(); row.dataset.accountId = String(item.id);
       const identity = document.createElement("div"); identity.className = "account-identity";
@@ -285,7 +290,11 @@
       const state = document.createElement("span"); state.className = "pill " + (item.active ? "active" : item.enabled ? "expired" : "suspended");
       state.textContent = item.deleted || item.deleted_at ? text("دسترسی حذف‌شده", "Archived access") : item.approval_status !== "approved" ? text("در انتظار تأیید پرداخت", "Awaiting payment approval") : item.active ? text("فعال", "Active") : item.enabled ? text("اعتبار پایان‌یافته", "Expired") : text("متوقف توسط مدیر", "Suspended by owner");
       row.insertCell().append(state);
-      cell(row, date(item.expires_at)); cell(row, item.max_peers);
+      cell(row, date(item.expires_at));
+      const peerCell=row.insertCell();const count=document.createElement("strong");count.className="owner-peer-count";count.textContent=Number.isSafeInteger(item.peer_count)?number.format(item.peer_count):"—";
+      const inspect=document.createElement("button");inspect.type="button";inspect.className="secondary owner-peer-inspect";inspect.textContent=text("مشاهده Peerها","View peers");inspect.setAttribute("aria-label",inspect.textContent+" · "+item.username);
+      inspect.addEventListener("click",()=>{ $("#owner-peer-filter").value=String(item.id);loadOwnerPeerAudit();$("#owner-peer-audit").scrollIntoView({block:"start"});$("#owner-peer-audit-title").focus({preventScroll:true});});peerCell.append(count,inspect);
+      cell(row, item.max_peers);
       cell(row, item.parent_username || text("مدیر اصلی", "Owner"));
       cell(row, number.format(item.direct_child_count || 0) + " / " + number.format(item.descendant_count || 0));
       cell(row, number.format(item.creation_fee_toman || 0));
@@ -514,8 +523,22 @@
       formResult("#provision-defaults-result", error.message || text("دریافت الگو ناموفق بود؛ دوباره دریافت کنید.", "The template could not be loaded. Reload it and try again."), true);
     }
   }
+  function renderOwnerPeerAudit(value) {
+    const rows=$("#owner-peer-rows");rows.replaceChildren();const number=new Intl.NumberFormat(language==="fa"?"fa-IR":"en-GB");
+    const accounts=new Map((adminData?.accounts || []).map(item=>[item.id,item]));
+    for(const peer of value.peers){const row=rows.insertRow();cell(row,peer.id);cell(row,peer.name || "—");cell(row,peer.reseller.username+(peer.reseller.deleted?text(" (بسته‌شده)"," (archived)"):""));cell(row,accounts.get(peer.reseller.parent_id)?.username || (peer.reseller.parent_id?"#"+peer.reseller.parent_id:text("مدیر اصلی","Owner")));cell(row,peer.iface || peer.iface_name || "—");const address=cell(row,peer.address || "—");if(address)address.dir="ltr";cell(row,peer.conn_status || peer.panel_status || peer.status || "—");cell(row,(Number.isFinite(peer.used_bytes)?number.format(Math.round(peer.used_bytes/1048576))+" MiB":"—")+" / "+(peer.data_limit==null?"—":String(peer.data_limit)+" "+String(peer.limit_unit || "")));cell(row,peer.ttl_seconds==null?"—":number.format(Math.max(0,Math.ceil(Number(peer.ttl_seconds)/86400)))+text(" روز"," days"));}
+    $("#owner-peer-state").textContent=value.peers.length?text("تعداد Peerهای این فهرست: ","Peers in this list: ")+number.format(value.total):text("برای این انتخاب Peer ثبت‌شده‌ای وجود ندارد.","No registered peers match this selection.");
+    for(const item of value.counts || []){const count=document.querySelector('#account-rows tr[data-account-id="'+Number(item.reseller_id)+'"] .owner-peer-count');if(count)count.textContent=number.format(item.peer_count);}
+  }
+  async function loadOwnerPeerAudit() {
+    if(!ownerView || !adminData)return;const serial=++ownerPeerRequest;ownerPeerAudit=null;$("#owner-peer-rows").replaceChildren();$("#owner-peer-state").textContent=text("در حال دریافت Peerهای نمایندگی…","Loading reseller peers…");
+    try {const id=$("#owner-peer-filter").value;const value=await api("/resellers/api/peers"+(id?"?reseller_id="+encodeURIComponent(id):""));if(serial!==ownerPeerRequest)return;if(!Array.isArray(value.peers)||!Number.isSafeInteger(value.total)||value.peers.some(peer=>!peer.reseller||!Number.isSafeInteger(peer.id)))throw new Error(text("فهرست Peerها معتبر نیست.","Invalid peer list."));ownerPeerAudit=value;renderOwnerPeerAudit(value);}
+    catch(error){if(serial!==ownerPeerRequest)return;$("#owner-peer-state").textContent=error.message || text("دریافت Peerها ناموفق بود؛ دوباره تلاش کنید.","Peer list failed to load. Retry.");}
+  }
+  $("#owner-peer-filter").addEventListener("change",loadOwnerPeerAudit);
+  $("#owner-peer-refresh").addEventListener("click",loadOwnerPeerAudit);
   async function loadAdmin() {
-    try { renderAdmin(await api("/resellers/api/accounts")); await loadProvisionDefaults(); }
+    try { renderAdmin(await api("/resellers/api/accounts")); await Promise.all([loadProvisionDefaults(),loadOwnerPeerAudit()]); }
     catch (error) { ownerVisibility(false); throw error; }
   }
   async function loadPeers() { if (account?.active) renderPeers(await api("/reseller/api/peers")); }
@@ -905,3 +928,4 @@
   $("#qr-image").addEventListener("error", () => { closeQR(); notice(text("تصویر QR دریافت نشد؛ وضعیت حساب و سرویس را تازه کنید.", "The QR image could not be loaded. Refresh your account and service status."), "error"); });
   translate(language); load();
 })();
+

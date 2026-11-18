@@ -28,6 +28,10 @@ class CoreError(Exception):
     pass
 
 
+class OwnerPeerAuditError(CoreError):
+    pass
+
+
 class NativeCore:
     def __init__(self, url, api_key):
         self.url, self.key = url.rstrip('/'), api_key
@@ -142,6 +146,62 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
                 for row in rows}
         return [{**account, 'assigned_interfaces': [safe[i] for i in account['interfaces'] if i in safe]}
                 for account in accounts]
+
+    def owner_accounts():
+        # Include closed accounts because their customer resources are preserved.
+        try:
+            with store.db() as connection:
+                rows = {row['id']: row for row in connection.execute('SELECT * FROM resellers ORDER BY id DESC')}
+                children = {}
+                for row in rows.values():
+                    children.setdefault(row['parent_id'], []).append(row['id'])
+                return [store._public(connection, row, rows=rows, children=children) for row in rows.values()]
+        except (OSError, sqlite3.Error) as exc:
+            raise OwnerPeerAuditError('Reseller accounts are unavailable') from exc
+
+    def owner_peer_snapshot(accounts):
+        """Join current native identities to durable reseller ownership, never IDs alone."""
+        try:
+            ownership = store.peer_owners()
+        except (OSError, sqlite3.Error) as exc:
+            raise OwnerPeerAuditError('Reseller peer ownership is unavailable') from exc
+        try:
+            code, value = native().json('GET', '/api/peers')
+        except CoreError as exc:
+            raise OwnerPeerAuditError('Native peer inventory is unavailable') from exc
+        if (code != 200 or not isinstance(value, dict) or value.get('error')
+                or value.get('ok') is False or not isinstance(value.get('peers'), list)):
+            raise OwnerPeerAuditError('Native peer inventory is unavailable')
+        native_rows = value['peers']
+        if 'total' in value and (type(value['total']) is not int or value['total'] != len(native_rows)):
+            raise OwnerPeerAuditError('Native peer inventory is incomplete')
+        owners = {}
+        for row in ownership:
+            if (not isinstance(row, dict) or type(row.get('peer_id')) is not int
+                    or not isinstance(row.get('public_key'), str) or not isinstance(row.get('reseller'), dict)):
+                raise OwnerPeerAuditError('Reseller peer ownership is invalid')
+            owners[(row['peer_id'], row['public_key'])] = row['reseller']
+        counts = {account['id']: 0 for account in accounts}
+        fields = {'id','name','iface','iface_id','address','status','panel_status','conn_status',
+                  'connection_status','status_reason_label','used_bytes','used_bytes_total','data_limit',
+                  'limit_unit','ttl_seconds','time_limit_days','unlimited','expires_at','expires_at_ts',
+                  'latest_handshake_age','remaining_bytes','remaining_seconds'}
+        peers, seen = [], set()
+        for peer in native_rows:
+            if (not isinstance(peer, dict) or type(peer.get('id')) is not int
+                    or not isinstance(peer.get('public_key'), str) or peer['id'] in seen):
+                raise OwnerPeerAuditError('Native peer inventory is invalid')
+            seen.add(peer['id'])
+            identity = owners.get((peer['id'], peer['public_key']))
+            if identity is None:
+                continue
+            rid = identity.get('id')
+            if type(rid) is not int or rid not in counts:
+                raise OwnerPeerAuditError('Reseller ownership account is unavailable')
+            counts[rid] += 1
+            safe_owner = {key: identity.get(key) for key in ('id','username','parent_id','deleted')}
+            peers.append({**{key: item for key, item in peer.items() if key in fields}, 'reseller': safe_owner})
+        return peers, counts
 
     def check_username(value):
         lookup = current_app.extensions.get('portal_native_admin_lookup')
@@ -262,6 +322,10 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
             result.headers['Content-Security-Policy'] = ("default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
                 "object-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:")
         return result
+
+    @bp.errorhandler(OwnerPeerAuditError)
+    def owner_audit_failure(_error):
+        return jsonify(error='owner_peer_inventory_unavailable', message='دریافت کامل مشتری‌های نمایندگی ممکن نشد؛ دوباره تلاش کنید.'), 503
 
     @bp.errorhandler(CoreError)
     def core_failure(_error):
@@ -400,8 +464,28 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     @require_owner
     def accounts():
         rows = interfaces()
-        return jsonify(accounts=account_details(store.all(), rows), interfaces=rows, audit=store.audit(),
+        all_accounts = owner_accounts()
+        _, counts = owner_peer_snapshot(all_accounts)
+        details = [{**account, 'peer_count': counts[account['id']]}
+                   for account in account_details(all_accounts, rows)]
+        return jsonify(accounts=details, interfaces=rows, audit=store.audit(),
                        operations=store.operations(), summary=store.summary(), csrf=csrf())
+
+    @bp.get('/resellers/api/peers')
+    @require_owner
+    def owner_peers():
+        account_id = request.args.get('reseller_id')
+        if account_id is not None and not re.fullmatch(r'[1-9][0-9]{0,18}', account_id):
+            abort(400)
+        all_accounts = owner_accounts()
+        selected = int(account_id) if account_id is not None else None
+        if selected is not None and not any(account['id'] == selected for account in all_accounts):
+            abort(404)
+        peers, counts = owner_peer_snapshot(all_accounts)
+        if selected is not None:
+            peers = [peer for peer in peers if peer['reseller']['id'] == selected]
+        return jsonify(peers=peers, counts=[{'reseller_id': rid, 'peer_count': count}
+                       for rid, count in counts.items()], total=len(peers), csrf=csrf())
 
     @bp.get('/resellers/api/peer-owners')
     @require_owner
@@ -783,3 +867,4 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         }, account_details)
 
     return bp
+

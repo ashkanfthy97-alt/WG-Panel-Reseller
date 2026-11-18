@@ -105,3 +105,7 @@ button.danger:hover{background:#633240}
 
 /* Keep authenticator material isolated and readable inside the Persian panel. */
 #security-form{display:grid;gap:.75rem;max-width:42rem}#security-qr{display:block;max-width:100%;height:auto;margin:1rem auto;background:#fff;padding:.5rem;border-radius:12px}#security-secret,#security-otp,#security-recovery-codes{direction:ltr;text-align:left;font-family:ui-monospace,monospace}#security-recovery-codes{width:100%;box-sizing:border-box;min-height:15rem}#security-enrollment p,#security-recovery p{line-height:1.9;overflow-wrap:anywhere}
+
+
+/* Owner-only peer audit preserves contained scrolling on small screens. */
+.owner-peer-audit{min-width:0;scroll-margin-block-start:20px}.owner-peer-audit select{max-width:100%;width:min(100%,28rem);margin-block:8px}.owner-peer-audit .table-scroll{max-width:100%;overflow-x:auto}.owner-peer-audit table{min-width:850px}.owner-peer-inspect{display:block;margin-block-start:8px;white-space:normal;min-height:40px}.owner-peer-count{font-variant-numeric:tabular-nums}#owner-peer-state{overflow-wrap:anywhere;line-height:1.8}
