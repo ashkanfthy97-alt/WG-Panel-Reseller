@@ -32,7 +32,7 @@
       selectedSection = "overview";
     }
     if (account && location.hash !== "#" + selectedSection) history.replaceState(null, "", "#" + selectedSection);
-    $("#reseller-navigation").hidden = !account;
+    if ($("#reseller-navigation")) $("#reseller-navigation").hidden = !account;
     document.querySelectorAll("[data-reseller-section]").forEach(link => {
       const key = link.dataset.resellerSection;
       link.hidden = !enabled && !["overview", "security"].includes(key);
@@ -47,7 +47,7 @@
     });
     const values = sections[selectedSection];
     $("#page-title").textContent = text(values[0], values[1]);
-    $("#breadcrumb-title").textContent = text(values[0], values[1]);
+    if ($("#breadcrumb-title")) $("#breadcrumb-title").textContent = text(values[0], values[1]);
     $("#page-copy").textContent = text(values[2], values[3]);
     document.title = text(values[0], values[1]) + " · WG Portal";
     if (focus) $("#page-title").focus({preventScroll: true});
@@ -206,16 +206,17 @@
   }
   function translate(next) {
     language = next === "en" ? "en" : "fa";
+    if(window.WGPortalLocale?.getLanguage()!==language)window.WGPortalLocale?.setLanguage(language);
     document.documentElement.lang = language;
     document.documentElement.dir = language === "fa" ? "rtl" : "ltr";
     document.querySelectorAll("[data-fa][data-en]").forEach((node) => { node.textContent = node.dataset[language]; });
     document.querySelectorAll("[data-fa-label][data-en-label]").forEach((node) => { node.setAttribute("aria-label", node.dataset[language + "Label"]); });
-    $("#language-toggle").textContent = language === "fa" ? "EN" : "فارسی";
-    $("#language-toggle").setAttribute("aria-label", text("Switch to English", "تغییر زبان به فارسی"));
+    if ($("#language-toggle")) $("#language-toggle").textContent = language === "fa" ? "EN" : "فارسی";
+    $("#language-toggle")?.setAttribute("aria-label", text("Switch to English", "تغییر زبان به فارسی"));
     $("#page-title").textContent = ownerView ? text("مدیریت نمایندگی‌ها", "Manage resellers") : text("مدیریت سرویس‌های شما", "Manage your services");
     $("#page-copy").textContent = ownerView ? text("حساب، اعتبار ماهانه و دسترسی نمایندگان را از همین‌جا کنترل کنید.", "Manage reseller accounts, prepaid validity and access here.") : text("فقط سرویس‌ها و اینترفیسهای اختصاص‌یافته به حساب شما در این بخش نمایش داده می‌شوند.", "This workspace only shows services and interfaces assigned to your account.");
-    $("#workspace-label").textContent = ownerView ? text("مدیریت مادر", "Owner workspace") : text("پنل نمایندگی", "Reseller panel");
-    $("#breadcrumb-title").textContent = ownerView ? text("نماینده‌ها", "Resellers") : text("سرویس‌های من", "My services");
+    if ($("#workspace-label")) $("#workspace-label").textContent = ownerView ? text("مدیریت مادر", "Owner workspace") : text("پنل نمایندگی", "Reseller panel");
+    if ($("#breadcrumb-title")) $("#breadcrumb-title").textContent = ownerView ? text("نماینده‌ها", "Resellers") : text("سرویس‌های من", "My services");
     document.title = $("#page-title").textContent + " · WG Portal";
     try { localStorage.setItem("wgportal-language", language); } catch { /* The current page still changes language. */ }
     if (adminData) renderAdmin(adminData);
@@ -232,8 +233,8 @@
   function ownerVisibility(authorized) {
     $("#admin-view").hidden = !authorized;
     $("#admin-login").hidden = authorized || !ownerView;
-    $("#owner-navigation").hidden = !authorized;
-    $("#reseller-navigation").hidden = ownerView;
+    if ($("#owner-navigation")) $("#owner-navigation").hidden = !authorized;
+    if ($("#reseller-navigation")) $("#reseller-navigation").hidden = ownerView;
     $("#add-reseller").hidden = !authorized;
     if (!authorized) {
       adminData = null;ownerPeerAudit=null;ownerPeerRequest++;$("#owner-peer-rows").replaceChildren();$("#owner-peer-state").textContent="";
@@ -721,7 +722,9 @@
     $("#account-password").value = "";
     if (adminData) $("#add-reseller").focus();
   });
-  $("#language-toggle").addEventListener("click", () => translate(language === "fa" ? "en" : "fa"));
+  $("#language-toggle")?.addEventListener("click", () => window.WGPortalLocale?.setLanguage(language === "fa" ? "en" : "fa"));
+  document.addEventListener("wgportal:languagechange", event => {if(event.detail?.language && event.detail.language!==language)translate(event.detail.language);});
+  $("#sidebar-reseller-logout")?.addEventListener("click",()=>$("#logout").click());
   $("#admin-refresh").addEventListener("click", () => action($("#admin-refresh"), null, load));
   $("#reseller-refresh").addEventListener("click", () => {
     if (!account || busy) return;
@@ -748,7 +751,7 @@
       for (const id of ["#peer-rows", "#child-rows", "#account-rows"]) $(id).replaceChildren();
       for (const input of document.querySelectorAll('input[type="password"]')) input.value = "";
       for (const dialog of document.querySelectorAll("dialog[open]")) dialog.close();
-      $("#active-view").hidden = true; $("#reseller-navigation").hidden = true;
+      $("#active-view").hidden = true; if ($("#reseller-navigation")) $("#reseller-navigation").hidden = true;
       location.replace("/login");
     } catch (error) {
       loggingOut = false;
@@ -928,4 +931,5 @@
   $("#qr-image").addEventListener("error", () => { closeQR(); notice(text("تصویر QR دریافت نشد؛ وضعیت حساب و سرویس را تازه کنید.", "The QR image could not be loaded. Refresh your account and service status."), "error"); });
   translate(language); load();
 })();
+
 

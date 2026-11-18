@@ -1,34 +1,23 @@
-<!doctype html>
-<html lang="fa" dir="rtl">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="color-scheme" content="dark"><title>نمایندگی · WG Portal</title><link rel="icon" type="image/png" href="/static/img/wg-portal-logo.png"><link rel="stylesheet" href="/reseller/assets/reseller.css"><script src="/reseller/assets/reseller.js" defer></script></head>
-<body>
-<a class="skip-link" href="#main-content" data-fa="رفتن به محتوای اصلی" data-en="Skip to main content">رفتن به محتوای اصلی</a>
-<div class="portal-layout">
-  <aside class="portal-sidebar">
-    <a class="brand" href="/reseller"><img class="portal-brand-logo" src="/static/img/wg-portal-logo.png" alt="WG Portal" width="64" height="64"><div>WG Portal<small data-fa="مدیریت وایرگارد" data-en="WireGuard workspace">مدیریت وایرگارد</small></div></a>
-    <div class="workspace-badge"><span class="workspace-icon" aria-hidden="true">W</span><div><small data-fa="فضای کاری" data-en="Workspace">فضای کاری</small><b id="workspace-label" data-fa="پنل نمایندگی" data-en="Reseller panel">پنل نمایندگی</b></div><span class="workspace-lock" aria-hidden="true">⌾</span></div>
-    <nav class="side-nav" aria-label="Workspace" data-fa-label="دسترسی‌های فضای کاری" data-en-label="Workspace navigation">
-      <p class="nav-label" data-fa="دسترسی‌ها" data-en="Navigation">دسترسی‌ها</p>
-      <div id="owner-navigation" hidden>
-        <a href="/" class="side-link"><span aria-hidden="true">⌂</span><b data-fa="نمای کلی" data-en="Overview">نمای کلی</b></a>
-        <a href="/users" class="side-link"><span aria-hidden="true">♙</span><b data-fa="مشتری‌ها و Peerها" data-en="Customers and peers">مشتری‌ها و Peerها</b></a>
-        <a href="/subscriptions" class="side-link"><span aria-hidden="true">↗</span><b data-fa="اشتراک‌ها" data-en="Subscriptions">اشتراک‌ها</b></a>
-        <a href="/resellers" class="side-link active" aria-current="page"><span aria-hidden="true">♧</span><b data-fa="نماینده‌ها" data-en="Resellers">نماینده‌ها</b></a>
-        <p class="nav-label" data-fa="زیرساخت" data-en="Infrastructure">زیرساخت</p>
-        <a href="/manage" class="side-link"><span aria-hidden="true">▦</span><b data-fa="اتصال و سرویس‌ها" data-en="Connection and services">اتصال و سرویس‌ها</b></a>
-      </div>
-      <div id="reseller-navigation" hidden>
-        <a id="reseller-nav-overview" href="#overview" class="side-link" data-reseller-section="overview"><span aria-hidden="true">⌂</span><b data-fa="نمای کلی" data-en="Overview">نمای کلی</b></a>
-        <a id="reseller-nav-services" href="#services" class="side-link" data-reseller-section="services" hidden><span aria-hidden="true">♙</span><b data-fa="سرویس‌ها و کانفیگ‌ها" data-en="Services and configs">سرویس‌ها و کانفیگ‌ها</b></a>
-        <a id="reseller-add-tab" href="#children" class="side-link" data-reseller-section="children" hidden><span aria-hidden="true">♧</span><b data-fa="نماینده‌های من" data-en="My subresellers">نماینده‌های من</b></a>
-        <a id="reseller-nav-bot" href="#bot" class="side-link" data-reseller-section="bot" hidden><span aria-hidden="true">✈</span><b data-fa="بات تلگرام" data-en="Telegram bot">بات تلگرام</b></a>
-        <a id="reseller-nav-security" href="#security" class="side-link" data-reseller-section="security" hidden><span aria-hidden="true">🔐</span><b data-fa="امنیت و ورود دومرحله‌ای" data-en="Security and two-factor login">امنیت و ورود دومرحله‌ای</b></a>
-      </div>
-    </nav>
-    <p class="sidebar-note"><span class="secure-dot" aria-hidden="true"></span><span data-fa="اتصال امن و داده‌های محافظت‌شده" data-en="Secure connection and protected data">اتصال امن و داده‌های محافظت‌شده</span></p>
-  </aside>
-<main class="shell" id="main-content" tabindex="-1">
-  <header class="topbar"><div class="breadcrumb"><span data-fa="فضای کاری" data-en="Workspace">فضای کاری</span><span aria-hidden="true">/</span><b id="breadcrumb-title" data-fa="نمایندگی" data-en="Reseller">نمایندگی</b></div><div class="topbar-actions"><span class="workspace-status"><span class="secure-dot" aria-hidden="true"></span><span data-fa="مدیریت وایرگارد" data-en="WireGuard management">مدیریت وایرگارد</span></span><button class="secondary" id="language-toggle" type="button">EN</button></div></header>
+{% extends 'base.html' %}
+{% block title %}WG Portal · نمایندگی{% endblock %}
+{% block final_styles %}{{ super() }}<link rel="stylesheet" href="/reseller/assets/reseller.css?v=20261118">{% endblock %}
+{% block shell_sidebar %}{% if portal_shell_role == 'reseller' %}
+<aside class="sidebar sb2" id="panel-sidebar" aria-label="Reseller navigation">
+  <div class="logo"><img src="/static/img/wg-portal-logo.png" class="nx-logo" alt=""><span class="brand-title">WG Portal</span><span class="brand-abbr" aria-hidden="true">WG</span></div>
+  <div class="sb2-body"><nav class="nx-nav" id="reseller-navigation" aria-label="Reseller workspace">
+    <details class="nx-workspace-picker"><summary><i class="fas fa-layer-group"></i><span id="workspace-label" data-fa="پنل نمایندگی" data-en="Reseller workspace">پنل نمایندگی</span><i class="fas fa-chevron-down"></i></summary></details>
+    <div class="sb2-section" data-fa="دسترسی‌ها" data-en="Navigation">دسترسی‌ها</div>
+<a id="reseller-nav-overview" class="sb2-link" href="#overview" data-reseller-section="overview"><i class="fas fa-house" aria-hidden="true"></i><span class="sb2-text" data-fa="داشبورد" data-en="Dashboard">داشبورد</span></a>
+<a id="reseller-nav-services" class="sb2-link" href="#services" data-reseller-section="services"><i class="fas fa-users" aria-hidden="true"></i><span class="sb2-text" data-fa="سرویس‌ها و کانفیگ‌ها" data-en="Services and configs">سرویس‌ها و کانفیگ‌ها</span></a>
+<a id="reseller-add-tab" class="sb2-link" href="#children" data-reseller-section="children"><i class="fas fa-users-gear" aria-hidden="true"></i><span class="sb2-text" data-fa="نماینده‌های من" data-en="My subresellers">نماینده‌های من</span></a>
+<a id="reseller-nav-bot" class="sb2-link" href="#bot" data-reseller-section="bot"><i class="fas fa-paper-plane" aria-hidden="true"></i><span class="sb2-text" data-fa="بات تلگرام" data-en="Telegram bot">بات تلگرام</span></a>
+<a id="reseller-nav-security" class="sb2-link" href="#security" data-reseller-section="security"><i class="fas fa-shield-halved" aria-hidden="true"></i><span class="sb2-text" data-fa="امنیت و ورود دومرحله‌ای" data-en="Security and two-factor login">امنیت و ورود دومرحله‌ای</span></a>
+</nav><div class="sb2-bottom"><div class="user-text"><strong>{{ portal_shell_username }}</strong><small data-fa="نماینده" data-en="Reseller">نماینده</small></div><div class="sb2-footer-actions"><button type="button" id="sidebar-reseller-logout" class="sb2-footer-icon" data-fa="خروج" data-en="Sign out">خروج</button><button id="sb2-pin" class="sb2-pin-ctl sb2-pin-compact" type="button" aria-label="Collapse sidebar"><i class="fas fa-angles-left"></i><span data-fa="جمع‌کردن" data-en="Collapse">جمع‌کردن</span></button></div></div></div></aside>
+{% else %}{{ super() }}{% endif %}{% endblock %}
+{% block shell_topbar %}{% if portal_shell_role == 'reseller' %}
+<header class="nx-topbar modern-only"><div class="nx-breadcrumb"><i class="fas fa-house"></i><span data-fa="فضای کاری" data-en="Workspace">فضای کاری</span><span>/</span><b id="breadcrumb-title" data-fa="نمایندگی" data-en="Reseller">نمایندگی</b></div><div class="nx-topbar-actions"><span class="nx-avatar" aria-label="Reseller account">{{ portal_shell_username[:1]|upper }}</span></div></header>{% else %}{{ super() }}{% endif %}{% endblock %}
+{% block shell_mobile_shortcuts %}{% if portal_shell_role != 'reseller' %}{{ super() }}{% endif %}{% endblock %}
+{% block content %}<div class="portal-reseller-workspace">
   <section class="intro"><div><p class="eyebrow" data-fa="مدیریت شبکهٔ نمایندگی" data-en="RESELLER NETWORK MANAGEMENT">مدیریت شبکهٔ نمایندگی</p><h1 id="page-title" tabindex="-1">مدیریت سرویس‌های شما</h1><p id="page-copy">حساب و سرویس‌های اختصاص‌یافته به خودتان را مدیریت کنید.</p></div><button id="add-reseller" type="button" aria-haspopup="dialog" aria-controls="account-dialog" hidden><span aria-hidden="true">＋</span><span data-fa="افزودن نماینده" data-en="Add reseller">افزودن نماینده</span></button></section>
   <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
   <section id="signin-delivery" class="card signin-delivery" hidden aria-labelledby="signin-delivery-title"><h2 id="signin-delivery-title" data-fa="لینک ورود نماینده" data-en="Reseller sign-in link">لینک ورود نماینده</h2><p data-fa="این آدرس را همراه نام کاربری به نماینده بدهید. ورود مدیر و نماینده از همین صفحه انجام می‌شود." data-en="Share this URL and the username with the reseller. The same sign-in page serves both roles.">این آدرس را همراه نام کاربری به نماینده بدهید. ورود مدیر و نماینده از همین صفحه انجام می‌شود.</p><div class="actions"><input id="signin-url" type="url" readonly aria-label="Reseller sign-in URL"><button id="copy-signin-url" class="secondary" type="button" data-fa="کپی لینک" data-en="Copy link">کپی لینک</button><a id="open-signin-url" class="button secondary" href="/login" data-fa="باز کردن صفحهٔ ورود" data-en="Open reseller sign in">باز کردن ورود نماینده</a></div><p id="signin-copy-result" class="form-result" role="status"></p></section>
@@ -129,5 +118,5 @@
   <dialog id="peer-edit-dialog" aria-labelledby="peer-edit-title"><div class="dialog-head"><h2 id="peer-edit-title" data-fa="نام و تمدید سرویس" data-en="Name and service renewal">نام و تمدید سرویس</h2><button type="button" id="peer-edit-close" class="secondary" data-fa="بستن" data-en="Close">بستن</button></div><form id="peer-edit-form"><label for="peer-edit-name" data-fa="نام سرویس" data-en="Service name">نام سرویس</label><input id="peer-edit-name" maxlength="64" required><button type="submit" data-fa="ذخیرهٔ نام" data-en="Save name">ذخیرهٔ نام</button></form><hr><p class="muted" data-fa="تمدید به زمان و حجم باقیمانده اضافه می‌شود؛ مصرف، کلیدها و تنظیمات فنی تغییر نمی‌کنند." data-en="Renewal adds time and volume. Usage, keys and technical settings are preserved.">تمدید به زمان و حجم باقیمانده اضافه می‌شود؛ مصرف، کلیدها و تنظیمات فنی تغییر نمی‌کنند.</p><div class="fields"><div><label for="peer-renew-days" data-fa="روز اضافه" data-en="Additional days">روز اضافه</label><input id="peer-renew-days" type="number" min="1" max="366" value="30" required></div><div><label for="peer-renew-volume" data-fa="حجم اضافه (GiB)" data-en="Additional volume (GiB)">حجم اضافه (GiB)</label><input id="peer-renew-volume" type="number" min="1" max="100000" value="50" required></div></div><button type="button" id="peer-renew" data-fa="تمدید سرویس" data-en="Renew service">تمدید سرویس</button><p id="peer-edit-result" class="form-result" role="status"></p></dialog>
   <dialog id="qr-dialog" aria-labelledby="qr-dialog-title"><form method="dialog"><button class="secondary" data-fa="بستن" data-en="Close">بستن</button></form><h2 id="qr-dialog-title" data-fa="QR سرویس" data-en="Service QR">QR سرویس</h2><p class="muted" data-fa="این تصویر اطلاعات خصوصی اتصال را دارد؛ فقط به مشتری همان سرویس تحویل دهید." data-en="This image contains private connection details. Deliver it only to this service’s customer.">این تصویر اطلاعات خصوصی اتصال را دارد؛ فقط به مشتری همان سرویس تحویل دهید.</p><img id="qr-image" alt="WireGuard QR" width="256" height="256"></dialog>
   <footer><span>WG Portal · WG_Panel</span><span class="footer-security"><span class="secure-dot" aria-hidden="true"></span><span data-fa="اتصال امن و داده‌های محافظت‌شده" data-en="Secure connection and protected data">اتصال امن و داده‌های محافظت‌شده</span></span></footer>
-</main></div></body></html>
-
+</div>{% endblock %}
+{% block body_extras %}{{ super() }}<script src="/reseller/assets/reseller.js?v=20261118" defer></script>{% endblock %}

@@ -1,0 +1,17 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const source=fs.readFileSync(path.join(process.argv[2],'static/js/csrf.js'),'utf8');
+let captured;
+const window={fetch:(input,init)=>{captured=init;return Promise.resolve({ok:true});}};
+const document={cookie:'csrf_token=native-cookie-token',querySelector:()=>null};
+vm.runInNewContext(source,{window,document,Headers,Request});
+window.fetch('/reseller/api/security',{method:'POST',headers:{'X-CSRFToken':'reseller-session-token'}});
+assert.equal(captured.headers.get('X-CSRFToken'),'reseller-session-token');
+assert.equal(captured.headers.get('X-CSRF-Token'),null);
+window.fetch(new Request('https://panel.test/api/action',{headers:{'X-CSRF-Token':'explicit-request-token'}}),{});
+assert.equal(captured.headers.get('X-CSRF-Token'),'explicit-request-token');
+assert.equal(captured.headers.get('X-CSRFToken'),null);
+window.fetch('/api/action',{method:'POST'});
+assert.equal(captured.headers.get('X-CSRFToken'),'native-cookie-token');
+assert.equal(captured.headers.get('X-CSRF-Token'),'native-cookie-token');
+assert.equal(captured.credentials,'same-origin');
+console.log('Explicit session tokens preserved; native cookie fallback retained.');

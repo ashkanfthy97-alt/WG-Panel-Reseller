@@ -31,6 +31,7 @@
   Object.entries(window.WGPortalPersian || {}).forEach(([key,value]) => dictionary.set(key,value));
   Object.entries({"Close":"بستن","Authenticator or recovery code (if enabled)":"کد برنامهٔ احراز هویت یا بازیابی (اگر فعال است)","Enter authenticator or recovery code":"کد برنامه یا کد بازیابی را وارد کنید","If two-factor login is enabled, enter a fresh authenticator code or one recovery code.":"اگر ورود دومرحله‌ای فعال است، کد تازهٔ برنامه یا یکی از کدهای بازیابی را وارد کنید."}).forEach(([key,value])=>dictionary.set(key,value));
   Object.entries({"Usage overview":"نمای کلی مصرف","Install WireGuard":"نصب وایرگارد","Configs":"کانفیگ‌ها","Support":"پشتیبانی"}).forEach(([key,value])=>dictionary.set(key,value));
+  let announcedLanguage = null;
   const originals = new WeakMap();
   const attributeOriginals = new WeakMap();
   let language = document.documentElement.lang === "en" ? "en" : "fa";
@@ -116,6 +117,10 @@
     try {localStorage.setItem("wgportal-language",language);} catch { /* This page still uses the selected language. */ }
     document.cookie = "wgportal-language=" + language + "; Path=/; Max-Age=31536000; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : "");
     renderResellerSummary();
+    if (announcedLanguage !== language) {
+      announcedLanguage = language;
+      document.dispatchEvent(new CustomEvent("wgportal:languagechange", {detail:{language}}));
+    }
   }
   let resellerSummary = null;
   function renderResellerSummary() {
@@ -144,9 +149,10 @@
     } finally { clearTimeout(timer); apply(); }
   }
   function init() {
+    const resellerScope = document.body?.dataset.portalShellRole === "reseller";
     if(document.getElementById("portal-language-toggle")) return;
     document.querySelectorAll("nav .sb2-link[data-settings-nav]").forEach((settings) => {
-      if(document.getElementById("nx-dashboard")?.dataset.admin === "0") return;
+      if(resellerScope || document.getElementById("nx-dashboard")?.dataset.admin === "0") return;
       if(settings.parentElement.querySelector('a[href="/resellers"]')) return;
       const link = document.createElement("a"); link.className = "sb2-link"; link.href = "/resellers";
       const icon = document.createElement("i"); icon.className = "fas fa-user-group"; icon.setAttribute("aria-hidden","true");
@@ -158,7 +164,7 @@
       const tools = document.createElement("div"); tools.className = "portal-shell-tools";
       const button = document.createElement("button"); button.type = "button"; button.id = "portal-language-toggle";
       button.addEventListener("click",()=>{language = language === "fa" ? "en" : "fa";apply();themeCharts();});tools.append(button);
-      if(document.querySelector(".sidebar") && !container.matches(".nx-topbar-actions")){
+      if(!resellerScope && document.querySelector(".sidebar") && !container.matches(".nx-topbar-actions")){
         const link = document.createElement("a");link.id="portal-management-link";link.href="/manage";tools.append(link);
       }
       container.append(tools);
@@ -188,6 +194,10 @@
     window.addEventListener("wg-theme-change",themeCharts);
     window.addEventListener("storage",(event)=>{if(event.key === "wgportal-language"){language=event.newValue === "en" ? "en" : "fa";apply();themeCharts();}});
   }
+  window.WGPortalLocale = Object.freeze({
+    getLanguage: () => language,
+    setLanguage(value) {if(value !== "fa" && value !== "en") return; language=value;apply();themeCharts();}
+  });
   // This small local script is the first script in <head>. Translate each parsed
   // chunk before paint, rather than waiting for later deferred dashboard code.
   apply();
@@ -203,3 +213,4 @@
     document.addEventListener("readystatechange",ready);
   } else init();
 })();
+

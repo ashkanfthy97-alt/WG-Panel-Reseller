@@ -16,7 +16,7 @@ import sqlite3
 from urllib.parse import quote, urlsplit
 
 import requests
-from flask import Blueprint, Response, abort, current_app, g, jsonify, redirect, request, send_from_directory, session
+from flask import Blueprint, Response, abort, current_app, g, jsonify, redirect, render_template_string, request, send_from_directory, session
 
 if __package__:
     from .reseller_store import ResellerStore, StoreError, RESELLER_CREATION_FEE_TOMAN
@@ -319,8 +319,11 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
             result.headers['X-Content-Type-Options'] = 'nosniff'
             result.headers['Referrer-Policy'] = 'no-referrer'
             result.headers['X-Frame-Options'] = 'DENY'
+            nonce = getattr(g, 'portal_shell_nonce', None)
+            nonce_source = " 'nonce-" + nonce + "'" if nonce else ''
             result.headers['Content-Security-Policy'] = ("default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
-                "object-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:")
+                "object-src 'none'; script-src 'self'" + nonce_source + "; style-src 'self'" + nonce_source +
+                "; font-src 'self'; img-src 'self' data:")
         return result
 
     @bp.errorhandler(OwnerPeerAuditError)
@@ -361,9 +364,23 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     @bp.get('/reseller')
     @bp.get('/resellers')
     def page():
-        if request.path == '/reseller' and not active_account():
-            return redirect('/login')
-        return send_from_directory(ui, 'index.html')
+        # This is presentation context only. Native and reseller sessions remain
+        # separate; no login_user(), role mutation or native identity is created.
+        if request.path == '/resellers':
+            username = owner()
+            if not username:
+                return redirect('/login?next=/resellers')
+            role = 'owner'
+        else:
+            account = active_account()
+            if not account:
+                return redirect('/login')
+            username, role = account['username'], 'reseller'
+        g.portal_shell_nonce = secrets.token_urlsafe(24)
+        source = (ui / 'index.html').read_text(encoding='utf-8')
+        return render_template_string(source, portal_shell_role=role,
+                                      portal_shell_username=username,
+                                      portal_shell_nonce=g.portal_shell_nonce)
 
     @bp.get('/reseller/assets/<name>')
     def assets(name):
@@ -867,4 +884,5 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         }, account_details)
 
     return bp
+
 

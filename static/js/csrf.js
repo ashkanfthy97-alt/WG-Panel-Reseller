@@ -21,7 +21,7 @@
     new Headers(init.headers || {}).forEach((v, k) => merged.set(k, v));
 
     const tok = getCookie('csrf_token');
-    if (tok) {
+    if (tok && !merged.has('X-CSRFToken') && !merged.has('X-CSRF-Token')) {
       merged.set('X-CSRFToken', tok);
       merged.set('X-CSRF-Token', tok);
     }
@@ -36,3 +36,4 @@
     return origFetch(input, init);
   };
 })();
+

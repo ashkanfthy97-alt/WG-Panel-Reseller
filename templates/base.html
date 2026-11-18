@@ -4,7 +4,7 @@
   dir="{{ 'ltr' if request.cookies.get('wgportal-language') == 'en' else 'rtl' }}"
   data-render-design="{{ 'legacy' if request.args.get('design', request.cookies.get('wg-design')) == 'legacy' else 'modern' }}"
 >
-  <head><script src="/static/js/portal-translations-fa.js?v=20261029"></script><script src="/static/js/portal-locale.js?v=20261029"></script>
+  <head><script src="/static/js/portal-translations-fa.js?v=20261029"></script><script src="/static/js/portal-locale.js?v=20261118"></script>
     <meta charset="utf-8" />
     
     <title>{% block title %}WG Portal{% endblock %}</title>
@@ -22,7 +22,7 @@
       color="#6ee7b7"
     />
     <meta name="theme-color" content="#0b1020" />
-    <script>
+    <script{% if portal_shell_nonce|default('') %} nonce="{{ portal_shell_nonce }}"{% endif %}>
       (function () {
         var allowed = { light: true, auto: true, dark: true };
         var mode = "auto";
@@ -195,9 +195,12 @@
       defer
       src="{{ url_for('static', filename='js/toast.js') }}"
     ></script>
-    <script defer src="{{ url_for('static', filename='js/csrf.js') }}"></script>
-    <script>
+    <script defer src="{{ url_for('static', filename='js/csrf.js') }}?v=20261118"></script>
+    <script{% if portal_shell_nonce|default('') %} nonce="{{ portal_shell_nonce }}"{% endif %}>
       window.WG_PANEL_TIMEZONE = {{ PANEL_TIMEZONE|default('UTC', true)|tojson }};
+      {% if portal_shell_role|default('') == 'reseller' %}
+      window.WG_PANEL_TIMEZONE_READY = Promise.resolve(window.WG_PANEL_TIMEZONE);
+      {% else %}
       window.WG_PANEL_TIMEZONE_READY = fetch(
         {{ url_for('api_timezone')|tojson }} + '?_=' + Date.now(),
         { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } }
@@ -213,6 +216,7 @@
       }).catch(function () {
         return window.WG_PANEL_TIMEZONE || 'UTC';
       });
+      {% endif %}
     </script>
     <script defer src="{{ url_for('static', filename='js/base.js') }}"></script>
     <link
@@ -240,6 +244,7 @@
   <body
     data-page="{{ request.endpoint }}"
     data-preview="{{ '1' if preview|default(false) else '0' }}"
+    data-portal-shell-role="{{ portal_shell_role|default('') }}"
   >
     <header
       class="wg-mobile-topbar"
@@ -278,6 +283,7 @@
       tabindex="-1"
       aria-hidden="true"
     ></button>
+    {% block shell_sidebar %}
     <aside class="sidebar sb2" id="panel-sidebar" aria-label="Sidebar">
       <div class="logo" data-tip="WG Portal">
         <img
@@ -370,6 +376,7 @@
             ><span class="sb2-text" data-portal-ui>Backup</span>
           </a>
 
+          <a href="/resellers" class="sb2-link{{ ' active' if request.path == '/resellers' else '' }}" data-tip="Resellers" {% if request.path == '/resellers' %}aria-current="page"{% endif %}><i class="fas fa-user-group" aria-hidden="true"></i><span class="sb2-text" data-portal-ui>Resellers</span></a>
           {% if HAS_SETTINGS %}
           <a
             href="{{ url_for('settings_page') }}?tab=panel"
@@ -453,6 +460,7 @@
              data-portal-ui><i class="fas fa-box-archive"></i
             ><span class="sb2-text" data-portal-ui>Backup</span></a
           >
+          <a href="/resellers" class="sb2-link{{ ' active' if request.path == '/resellers' else '' }}" data-tip="Resellers" {% if request.path == '/resellers' %}aria-current="page"{% endif %}><i class="fas fa-user-group" aria-hidden="true"></i><span class="sb2-text" data-portal-ui>Resellers</span></a>
           {% if HAS_SETTINGS %}<a
             class="sb2-link{{ ' active' if ep == 'settings_page' else '' }}"
             href="{{ url_for('settings_page') }}?tab=panel"
@@ -517,7 +525,13 @@
           </button>
 
           <div class="sb2-utility-row">
-            {% if current_user.is_authenticated %} {% set is_admin =
+            {% if portal_shell_role|default('') == 'owner' %}
+            <div class="sb2-account-mini" data-role="admin">
+              <a class="sb2-account-avatar" href="{{ url_for('settings_page') }}?tab=admin" aria-label="Open profile">{{ portal_shell_username[:1]|upper }}</a>
+              <span class="sb2-account-copy"><strong>{{ portal_shell_username }}</strong><small data-portal-ui>Admin</small></span>
+              <a class="sb2-account-logout" href="{{ url_for('logout') }}" aria-label="Logout" title="Logout"><i class="fas fa-right-from-bracket" aria-hidden="true"></i></a>
+            </div>
+            {% elif current_user.is_authenticated %} {% set is_admin =
             current_user.is_authenticated and
             (current_user.is_admin|default(false) or
             current_user.is_superuser|default(false)) %}
@@ -621,8 +635,10 @@
         </div>
       </div>
     </aside>
+    {% endblock %}
 
     <main class="main" id="main-content">
+      {% block shell_topbar %}
       <header class="nx-topbar modern-only">
         <div class="nx-breadcrumb">
           <i class="fas fa-house"></i><span data-portal-ui>Workspace</span><span>/</span
@@ -630,7 +646,7 @@
             >{{
             {'index':'Overview','settings_page':'Settings','subscriptions_page':'Subscriptions','logs_page':'Activity','users':'Peers','nodes':'Nodes','operations.page':'Panel
             Center','api_docs_page':'API Docs','api_docs':'API
-            Docs','backup_page':'Backup'}.get(request.endpoint, 'Control panel')
+            Docs','backup_page':'Backup','reseller.page':'Resellers'}.get(request.endpoint, 'Control panel')
             }}</b
           >
         </div>
@@ -655,10 +671,11 @@
             data-account-open
             data-account-avatar
             aria-label="Open profile"
-            >{{ (current_user.username|default('A',true))[:1]|upper }}</a
+            >{{ (portal_shell_username|default(current_user.username|default('A',true),true))[:1]|upper }}</a
           >
         </div>
       </header>
+      {% endblock %}
       <div id="ui-toast-container" role="status" aria-live="polite"></div>
 
       {% with msgs = get_flashed_messages(with_categories=true) %} {% if msgs %}
@@ -673,6 +690,7 @@
       {% endif %} {% endwith %} {% block content %}{% endblock %}
     </main>
 
+    {% if portal_shell_role|default('') != 'reseller' %}
     <script
       defer
       src="{{ url_for('static', filename='js/panel-version.js') }}"
@@ -681,11 +699,13 @@
       defer
       src="{{ url_for('static', filename='js/panel-update.js') }}"
     ></script>
+    {% endif %}
     <script
       defer
       src="{{ url_for('static', filename='js/theme.js') }}"
     ></script>
 
+    {% if portal_shell_role|default('') != 'reseller' %}
     <div
       class="pu-modal"
       id="panel-update-modal"
@@ -822,6 +842,8 @@
       </section>
     </div>
 
+    {% endif %}
+    {% block shell_mobile_shortcuts %}
     <nav class="nx-mobile-nav modern-only" aria-label="Mobile shortcuts">
       <a
         href="{{ url_for('index') }}"
@@ -844,6 +866,8 @@
          data-portal-ui><i class="fas fa-gear"></i><span data-portal-ui>Settings</span></a
       >
     </nav>
+    {% endblock %}
+    {% if portal_shell_role|default('') != 'reseller' %}
     <dialog
       class="nx-command"
       id="nx-command"
@@ -867,6 +891,8 @@
       <p id="nx-command-empty" hidden data-portal-ui>No matching pages.</p>
       <small data-portal-ui>Navigate with Tab · Close with Esc</small>
     </dialog>
+    {% endif %}
+    {% if not portal_shell_role|default('') %}
     <dialog
       id="account-dialog"
       class="account-dialog"
@@ -967,8 +993,10 @@
       defer
       src="{{ url_for('static', filename='js/account-profile.js') }}"
     ></script>
+    {% endif %}
     {% block body_extras %}{% endblock %}
 
     <script defer src="{{ url_for('static', filename='js/visual-preferences.js') }}?v=8"></script>
   </body>
 </html>
+
