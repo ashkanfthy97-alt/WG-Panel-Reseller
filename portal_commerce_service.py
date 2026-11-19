@@ -482,6 +482,14 @@ class CommerceService:
             if payload['close']:db.execute("UPDATE support_tickets SET status='closed',updated_at=? WHERE id=?",(self.now(),tid))
         return {'ticket':dict(db.execute('SELECT * FROM support_tickets WHERE id=?',(tid,)).fetchone()),'messages':[dict(row) for row in db.execute('SELECT * FROM support_messages WHERE ticket_id=? ORDER BY id',(tid,))]}
 
+    def save_settings_atomically(self,actor,payload,runtime_writer=None):
+        """Commit domain settings and validated bot configuration together."""
+        actor=text(str(actor),200)
+        with self.store.db(write=True) as db:
+            result=self._save_settings(db,actor,payload) if payload else {'settings':self._settings(db)}
+            if runtime_writer is not None:runtime_writer(db)
+            return result
+
     def admin_action(self, actor, action, payload=None, request_id=None):
         actor=text(str(actor),200);payload=payload or {}
         if not isinstance(payload,dict):fail()

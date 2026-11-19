@@ -75,7 +75,7 @@ def telegram_result(status, value):
     raise BotError('telegram_unavailable')
 
 
-TELEGRAM_METHODS = {'getMe', 'getWebhookInfo', 'getUpdates', 'sendMessage',
+TELEGRAM_METHODS = {'getMe', 'getWebhookInfo', 'getChat', 'getUpdates', 'sendMessage',
                     'sendDocument', 'sendPhoto', 'answerCallbackQuery'}
 
 
@@ -85,7 +85,7 @@ def telegram_payload(payload):
 
 
 class TelegramTransport:
-    def call(self, token, method, payload=None, *, document=None, photo=None):
+    def call(self, token, method, payload=None, *, document=None, photo=None, timeout=None):
         protect_transport_logs()
         payload = dict(payload or {})
         filename = payload.pop('filename', 'wireguard.conf')
@@ -99,7 +99,7 @@ class TelegramTransport:
                          if photo is not None else None)
                 result = client.post('https://api.telegram.org/bot' + token + '/' + method,
                     data=telegram_payload(payload), files=files,
-                    timeout=(5, 40 if method == 'getUpdates' else 15), allow_redirects=False)
+                    timeout=timeout or (5, 40 if method == 'getUpdates' else 15), allow_redirects=False)
                 if len(result.content) > 4 * 1024 * 1024:
                     raise BotError('telegram_response_invalid')
                 return telegram_result(result.status_code, result.json())
@@ -820,4 +820,3 @@ def install_reseller_bot(app, csrf, database):
         return response
 
     app.register_blueprint(bp)
-

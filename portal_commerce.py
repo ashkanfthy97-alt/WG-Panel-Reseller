@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import sqlite3
 import threading
 import time
 from urllib.parse import urlsplit
@@ -15,6 +16,7 @@ from urllib.parse import urlsplit
 from flask import Blueprint, Response, current_app, g, jsonify, render_template, request, send_file
 from werkzeug.test import Client
 from werkzeug.wrappers import Response as NativeResponse
+from werkzeug.exceptions import HTTPException
 
 COOKIE = 'wgportal_customer'
 _SAFE_REQUEST = re.compile(r'[A-Za-z0-9_.:-]{16,80}')
@@ -123,9 +125,27 @@ def install_commerce(app, csrf):
 
     @bp.errorhandler(ValueError)
     def invalid(error):
-        return jsonify(error=getattr(error, 'code', 'invalid_request'),
+        value=dict(error=getattr(error, 'code', 'invalid_request'),
                        message=getattr(error, 'message', 'اطلاعات درخواست معتبر نیست.'),
-                       retryable=False), getattr(error, 'status', 400)
+                       retryable=False)
+        if getattr(error,'retry_after',0):value['retry_after']=error.retry_after
+        return jsonify(value), getattr(error, 'status', 400)
+
+    @bp.errorhandler(HTTPException)
+    def http_failure(error):
+        if not request.path.startswith(('/telegram-commerce/api/','/telegram-app/api/')):
+            return error.get_response()
+        return jsonify(error='request_rejected',message='درخواست کامل نشد؛ نشست و اطلاعات فرم را بررسی کنید.',retryable=False),error.code
+
+    @bp.errorhandler(Exception)
+    def internal_failure(error):
+        # Exception strings can contain tokens, SQL input or private paths.
+        # Log only the type and a request reference; never a traceback here.
+        reference=secrets.token_hex(6)
+        app.logger.error('Commerce request failed: %s reference=%s',type(error).__name__,reference)
+        status=503 if isinstance(error,sqlite3.Error) else 500
+        return jsonify(error='service_unavailable',message='عملیات سرور کامل نشد؛ کمی بعد دوباره تلاش کنید.',
+                       reference=reference,retryable=False),status
 
     @bp.after_request
     def headers(response):
@@ -398,7 +418,7 @@ def install_commerce(app, csrf):
             value['csrf']=owner_csrf()
             return jsonify(value)
         payload=data()
-        runtime_payload={k:payload.pop(k) for k in list(payload) if k in {'bot_token','bot_enabled','public_base_url'}}
+        runtime_payload={k:payload.pop(k) for k in list(payload) if k in {'bot_token','bot_enabled','public_base_url','manager_chat_id'}}
         selections={key:payload[key] for key in ('bot_target','trial_target') if key in payload}
         if selections:
             from portal_commerce_service import target_spec
@@ -415,10 +435,9 @@ def install_commerce(app, csrf):
                         if item.get('scope')=='node' else {'scope':'local','iface_id':item['iface_id']})
                 if any(selected not in available for selected in changed):
                     raise CommerceHTTPError('interface_unavailable','اینترفیس انتخاب‌شده در فهرست سرورهای در دسترس نیست؛ فهرست را تازه کنید.')
-        if payload:
-            service.admin_action(g.commerce_owner,'save_settings',payload,request.headers.get('Idempotency-Key'))
-        if runtime_payload:
-            runtime.save(runtime_payload,g.commerce_owner)
+        prepared=runtime.prepare(runtime_payload) if runtime_payload else None
+        writer=(lambda db:runtime.write(prepared,g.commerce_owner,db)) if prepared is not None else None
+        service.save_settings_atomically(g.commerce_owner,payload,writer)
         return jsonify(settings={**service.admin_action(g.commerce_owner,'settings',{}).get('settings',{}),**runtime.public()},csrf=owner_csrf())
 
     if csrf is not None:
@@ -427,6 +446,13 @@ def install_commerce(app, csrf):
     # Native WG_Panel sets DENY globally. Run this narrowly scoped response
     # policy last so the customer Mini App can be framed by Telegram only.
     def final_customer_policy(response):
+        if request.path.startswith(('/telegram-commerce/api/','/telegram-app/api/')):
+            if response.status_code>=400 and not response.is_json:
+                response.set_data(json.dumps({'error':'request_rejected',
+                    'message':'درخواست سرور کامل نشد؛ صفحه را تازه کنید یا وضعیت سرویس را بررسی کنید.',
+                    'retryable':False},ensure_ascii=False))
+                response.mimetype='application/json'
+            return headers(response)
         return headers(response) if request.path.startswith('/telegram-app') else response
     app.after_request_funcs.setdefault(None,[]).insert(0,final_customer_policy)
     app.extensions['portal_commerce_runtime_config']=runtime
@@ -488,33 +514,72 @@ class RuntimeConfig:
         key=str(self.app.secret_key or '').encode()
         if not key:raise CommerceHTTPError('secret_required','کلید امنیتی پنل تنظیم نشده است.',503)
         return Fernet(base64.urlsafe_b64encode(hmac.new(key,b'wgportal-commerce-token-v1',hashlib.sha256).digest()))
+    @staticmethod
+    def _ensure(db):
+        db.execute('CREATE TABLE IF NOT EXISTS commerce_runtime_config (id INTEGER PRIMARY KEY CHECK(id=1), token_enc TEXT NOT NULL, enabled INTEGER NOT NULL, base_url TEXT NOT NULL, updated_at INTEGER NOT NULL)')
+        columns={item[1] for item in db.execute('PRAGMA table_info(commerce_runtime_config)')}
+        if 'bot_username' not in columns:
+            db.execute("ALTER TABLE commerce_runtime_config ADD COLUMN bot_username TEXT NOT NULL DEFAULT ''")
+        if 'manager_chat_id' not in columns:
+            db.execute('ALTER TABLE commerce_runtime_config ADD COLUMN manager_chat_id INTEGER')
     def row(self):
         with self.store.db(write=True) as db:
-            db.execute('CREATE TABLE IF NOT EXISTS commerce_runtime_config (id INTEGER PRIMARY KEY CHECK(id=1), token_enc TEXT NOT NULL, enabled INTEGER NOT NULL, base_url TEXT NOT NULL, updated_at INTEGER NOT NULL)')
-            if 'bot_username' not in {item[1] for item in db.execute('PRAGMA table_info(commerce_runtime_config)')}:
-                db.execute("ALTER TABLE commerce_runtime_config ADD COLUMN bot_username TEXT NOT NULL DEFAULT ''")
+            self._ensure(db)
             row=db.execute('SELECT * FROM commerce_runtime_config WHERE id=1').fetchone()
-            return dict(row) if row else {'token_enc':'','enabled':0,'base_url':'','bot_username':''}
+            return dict(row) if row else {'token_enc':'','enabled':0,'base_url':'','bot_username':'','manager_chat_id':None}
     def token(self):
         value=self.row()['token_enc']
         return self.cipher().decrypt(value.encode()).decode() if value else ''
+    @staticmethod
+    def _valid_token(token):
+        return (isinstance(token,str) and re.fullmatch(r'[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,120}',token)
+                and int(token.split(':')[0])<2**52)
+    @staticmethod
+    def manager_id(value,required=False):
+        if value in (None,'') and type(value) is not bool:
+            if not required:return None
+            raise CommerceHTTPError('invalid_manager_chat_id','آیدی عددی حساب تلگرام مدیر بات را وارد کنید.')
+        if type(value) is int:number=value
+        elif isinstance(value,str):
+            normalized=value.strip().translate(str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩','01234567890123456789'))
+            if not re.fullmatch(r'[1-9][0-9]{0,15}',normalized):
+                raise CommerceHTTPError('invalid_manager_chat_id','آیدی مدیر باید عدد مثبت معتبرِ حساب تلگرام باشد.')
+            number=int(normalized)
+        else:raise CommerceHTTPError('invalid_manager_chat_id','آیدی مدیر باید عدد مثبت معتبرِ حساب تلگرام باشد.')
+        if not 0<number<2**52:raise CommerceHTTPError('invalid_manager_chat_id','آیدی عددی مدیر معتبر نیست.')
+        return number
     def ensure_isolated(self,token):
+        if not self._valid_token(token):raise CommerceHTTPError('invalid_bot_token','توکن بات معتبر نیست.')
         import sys
-        module=sys.modules.get(self.app.import_name)
-        loader=getattr(module,'_load_tg_settings',None)
-        native=(loader() or {}) if callable(loader) else {}
-        candidates=[native.get('bot_token',''),os.environ.get('TG_BOT_TOKEN',''),os.environ.get('TELEGRAM_BOT_TOKEN','')]
-        if any(item and str(item).split(':')[0]==token.split(':')[0] for item in candidates):
-            raise CommerceHTTPError('bot_conflict','برای بات عمومی از توکن مستقل از بات مدیریت استفاده کنید.',409)
-        manager=self.app.extensions.get('reseller_bots')
-        if manager is not None:
-            with manager.store.db() as db:
-                row=db.execute('SELECT 1 FROM bots WHERE bot_id=?',(int(token.split(':')[0]),)).fetchone()
-                if row:raise CommerceHTTPError('bot_conflict','این بات به یک نماینده اختصاص دارد.',409)
+        try:
+            module=sys.modules.get(self.app.import_name)
+            loader=getattr(module,'_load_tg_settings',None)
+            native=(loader() or {}) if callable(loader) else {}
+            if not isinstance(native,dict):raise ValueError()
+            candidates=[native.get('bot_token',''),os.environ.get('TG_BOT_TOKEN',''),os.environ.get('TELEGRAM_BOT_TOKEN','')]
+            if any(item and str(item).split(':')[0]==token.split(':')[0] for item in candidates):
+                raise CommerceHTTPError('bot_conflict','برای بات عمومی از توکن مستقل از بات مدیریت استفاده کنید.',409)
+            manager=self.app.extensions.get('reseller_bots')
+            if manager is not None:
+                with manager.store.db() as db:
+                    row=db.execute('SELECT 1 FROM bots WHERE bot_id=?',(int(token.split(':')[0]),)).fetchone()
+                    if row:raise CommerceHTTPError('bot_conflict','این بات به یک نماینده اختصاص دارد.',409)
+        except CommerceHTTPError:raise
+        except Exception:
+            raise CommerceHTTPError('bot_configuration_unavailable','بررسی تنظیمات بات‌ها کامل نشد؛ کمی بعد دوباره تلاش کنید.',503) from None
     def public(self):
         row=self.row()
         return {'bot_configured':bool(row['token_enc']),'bot_enabled':bool(row['enabled']),
-                'public_base_url':row['base_url'],'bot_username':row.get('bot_username','')}
+                'public_base_url':row['base_url'],'bot_username':row.get('bot_username',''),
+                'manager_chat_id':row.get('manager_chat_id')}
+    def notification_recipients(self,registered=()):
+        # A notification destination is not an administrator authorization grant.
+        selected=self.manager_id(self.row().get('manager_chat_id'))
+        result={selected} if selected else set()
+        for value in registered:
+            try:result.add(self.manager_id(value,required=True))
+            except CommerceHTTPError:continue
+        return sorted(result)
     def status(self,state=None):
         with self.store.db(write=True) as db:
             db.execute('CREATE TABLE IF NOT EXISTS commerce_runtime_status (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL, heartbeat INTEGER NOT NULL)')
@@ -522,43 +587,89 @@ class RuntimeConfig:
                 db.execute('INSERT OR REPLACE INTO commerce_runtime_status VALUES(1,?,?)',(state,int(time.time())))
             row=db.execute('SELECT state,heartbeat FROM commerce_runtime_status WHERE id=1').fetchone()
             return dict(row) if row else {'state':'not_started','heartbeat':None}
-    def save(self,payload,actor):
+    def prepare(self,payload):
+        if not isinstance(payload,dict) or set(payload)-{'bot_token','bot_enabled','public_base_url','manager_chat_id'}:
+            raise CommerceHTTPError('invalid_bot_settings','تنظیمات بات معتبر نیست.')
         row=self.row()
         token=payload.get('bot_token')
-        if token is not None and (not isinstance(token,str) or not re.fullmatch(r'[0-9]{5,20}:[A-Za-z0-9_-]{20,100}',token)):
+        if token is not None and not self._valid_token(token):
             raise CommerceHTTPError('invalid_bot_token','توکن بات معتبر نیست.')
         enabled=payload.get('bot_enabled',bool(row['enabled']))
         if type(enabled) is not bool:raise CommerceHTTPError('invalid_enabled','وضعیت بات معتبر نیست.')
+        manager=self.manager_id(payload.get('manager_chat_id',row.get('manager_chat_id')),required=enabled)
         base=payload.get('public_base_url',row['base_url'])
         if not isinstance(base,str):raise CommerceHTTPError('invalid_url','نشانی پنل معتبر نیست.')
         url=urlsplit(base)
-        if base and (url.scheme!='https' or not url.hostname or url.username or url.password or url.query or url.fragment):
-            raise CommerceHTTPError('invalid_url','نشانی عمومی باید HTTPS و بدون اطلاعات ورود باشد.')
+        if base and (url.scheme!='https' or not url.hostname or url.username or url.password or url.query or url.fragment or url.path not in {'','/'}):
+            raise CommerceHTTPError('invalid_url','نشانی عمومی باید HTTPS و بدون مسیر اضافی یا اطلاعات ورود باشد.')
         encrypted=self.cipher().encrypt(token.encode()).decode() if token else row['token_enc']
-        username=row.get('bot_username','')
+        username='' if token else row.get('bot_username','')
         if enabled and (not encrypted or not base):raise CommerceHTTPError('incomplete_bot','ابتدا توکن و نشانی HTTPS پنل را ثبت کنید.')
         if token or enabled:
             candidate=token or self.cipher().decrypt(encrypted.encode()).decode()
             self.ensure_isolated(candidate)
+            if manager==int(candidate.split(':')[0]):
+                raise CommerceHTTPError('invalid_manager_chat_id','آیدی عددی حساب خودتان را وارد کنید، نه آیدی خود بات.')
             if not self.app.testing:
-                from portal_reseller_bot import TelegramTransport
-                try:
+                transport=self.app.config.get('COMMERCE_TELEGRAM_TRANSPORT')
+                if transport is None:
+                    from portal_reseller_bot import TelegramTransport
                     transport=TelegramTransport()
-                    info=transport.call(candidate,'getMe')
-                    webhook=transport.call(candidate,'getWebhookInfo')
-                except Exception:
+                method=None
+                try:
+                    method='getMe';info=transport.call(candidate,method,timeout=(3,5))
+                    method='getWebhookInfo';webhook=transport.call(candidate,method,timeout=(3,5))
+                    if not isinstance(info,dict) or info.get('is_bot') is not True or str(info.get('id'))!=candidate.split(':')[0]:
+                        raise CommerceHTTPError('invalid_bot_token','توکن بات معتبر نیست.')
+                    username=str(info.get('username',''))
+                    if not re.fullmatch(r'[A-Za-z0-9_]{5,64}',username):
+                        raise CommerceHTTPError('invalid_bot_identity','هویت بات تأیید نشد.')
+                    if not isinstance(webhook,dict) or webhook.get('url'):
+                        raise CommerceHTTPError('webhook_conflict','این بات Webhook فعال دارد؛ بات مستقل بدون Webhook معرفی کنید.',409)
+                    if manager:
+                        method='getChat';chat=transport.call(candidate,method,{'chat_id':manager},timeout=(3,5))
+                        if not isinstance(chat,dict) or type(chat.get('id')) is not int or chat['id']!=manager or chat.get('type')!='private':
+                            raise CommerceHTTPError('manager_chat_unavailable','بات را با حساب مدیر باز کنید و /start بزنید؛ سپس آیدی عددی همان حساب را ثبت کنید.')
+                except CommerceHTTPError:raise
+                except Exception as error:
+                    code=getattr(error,'code','')
+                    if code=='telegram_rate_limited':
+                        failure=CommerceHTTPError('telegram_rate_limited','تلگرام درخواست‌ها را محدود کرده است؛ کمی بعد دوباره تلاش کنید.',429)
+                        failure.retry_after=max(1,min(3600,int(getattr(error,'retry_after',30) or 30)))
+                        raise failure from None
+                    if code=='telegram_invalid_token':raise CommerceHTTPError('invalid_bot_token','توکن بات معتبر نیست.') from None
+                    if method=='getChat' and code=='telegram_bad_request':
+                        raise CommerceHTTPError('manager_chat_unavailable','ابتدا با حساب مدیر وارد بات شوید و /start بزنید؛ سپس آیدی عددی خودتان را ثبت کنید.') from None
                     raise CommerceHTTPError('bot_verification_failed','ارتباط بات تأیید نشد؛ توکن و دسترسی سرور به تلگرام را بررسی کنید.',503) from None
-                if not isinstance(info,dict) or info.get('is_bot') is not True or str(info.get('id'))!=candidate.split(':')[0]:
-                    raise CommerceHTTPError('invalid_bot_token','توکن بات معتبر نیست.')
-                username=str(info.get('username',''))
-                if not re.fullmatch(r'[A-Za-z0-9_]{5,64}',username):
-                    raise CommerceHTTPError('invalid_bot_identity','هویت بات تأیید نشد.')
-                if not isinstance(webhook,dict) or webhook.get('url'):
-                    raise CommerceHTTPError('webhook_conflict','این بات Webhook فعال دارد؛ بات مستقل بدون Webhook معرفی کنید.',409)
-        with self.store.db(write=True) as db:
-            db.execute('INSERT OR REPLACE INTO commerce_runtime_config(id,token_enc,enabled,base_url,updated_at,bot_username) VALUES(1,?,?,?,?,?)',(encrypted,int(enabled),base.rstrip('/'),int(time.time()),username))
-            db.execute('CREATE TABLE IF NOT EXISTS commerce_runtime_audit (id INTEGER PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, created_at INTEGER NOT NULL)')
-            db.execute('INSERT INTO commerce_runtime_audit(actor,action,created_at) VALUES(?,?,?)',(actor,'public_bot_configuration_changed',int(time.time())))
+        return {'token_enc':encrypted,'enabled':int(enabled),'base_url':base.rstrip('/'),
+                'bot_username':username,'manager_chat_id':manager,'updated_at':int(time.time())}
+    def write(self,prepared,actor,db):
+        self._ensure(db)
+        db.execute('INSERT OR REPLACE INTO commerce_runtime_config(id,token_enc,enabled,base_url,updated_at,bot_username,manager_chat_id) VALUES(1,?,?,?,?,?,?)',
+            (prepared['token_enc'],prepared['enabled'],prepared['base_url'],prepared['updated_at'],prepared['bot_username'],prepared['manager_chat_id']))
+        db.execute('CREATE TABLE IF NOT EXISTS commerce_runtime_audit (id INTEGER PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, created_at INTEGER NOT NULL)')
+        db.execute('INSERT INTO commerce_runtime_audit(actor,action,created_at) VALUES(?,?,?)',(actor,'public_bot_configuration_changed',int(time.time())))
+    def save(self,payload,actor):
+        prepared=self.prepare(payload)
+        with self.store.db(write=True) as db:self.write(prepared,actor,db)
+
+
+def native_admin_notification_recipients(app,config):
+    """The configured commerce recipient survives a native-registry outage."""
+    registered=[]
+    key=str(app.config.get('API_KEY') or '')
+    if key:
+        try:
+            with app.app_context():
+                response=Client(app,NativeResponse,use_cookies=False).get('/api/telegram/admins',
+                    headers={'X-API-KEY':key},base_url='https://localhost')
+                try:value=response.get_json(silent=True) if response.status_code==200 else None
+                finally:response.close()
+            rows=value.get('admins',[]) if isinstance(value,dict) else []
+            if isinstance(rows,list):registered=[row.get('id') for row in rows if isinstance(row,dict)]
+        except Exception:
+            registered=[]
+    return config.notification_recipients(registered)
 
 
 def run_runtime(app,service,config,private):
@@ -586,14 +697,7 @@ def run_runtime(app,service,config,private):
                                     result=service.customer_action(cid,'artifact',{'id':sid,'peer_id':pid,'kind':kind})
                                     return result['body'], 'image/png' if kind=='qr' else 'text/plain'
                                 def admin_provider():
-                                    key=str(app.config.get('API_KEY') or '')
-                                    if not key:return []
-                                    with app.app_context():
-                                        response=Client(app,NativeResponse,use_cookies=False).get('/api/telegram/admins',headers={'X-API-KEY':key},base_url='https://localhost')
-                                        try:
-                                            value=response.get_json(silent=True) if response.status_code==200 else {}
-                                        finally:response.close()
-                                    return [int(row['id']) for row in value.get('admins',[]) if isinstance(row,dict) and re.fullmatch(r'[1-9][0-9]{0,19}',str(row.get('id','')))]
+                                    return native_admin_notification_recipients(app,config)
                                 bot=PublicBot(service,TelegramTransport(),public['public_base_url'],config.token,
                                               artifact_provider=artifact_provider,admin_provider=admin_provider)
                             bot.poll_once()

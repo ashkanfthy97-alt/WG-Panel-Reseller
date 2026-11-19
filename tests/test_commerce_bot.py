@@ -50,6 +50,46 @@ class BotChecks(unittest.TestCase):
         self.bot.flush_outbox()
         self.assertTrue(any('https://t.me/wgportal_test_bot?start=ref_' in str(call) for call in self.transport.calls))
         self.assertTrue(any('https://www.wireguard.com/install/' in str(call) for call in self.transport.calls))
+    def test_public_access_for_multiple_nonmanager_customers_with_isolated_purchase_state(self):
+        self.bot.administrator_ids_provider=lambda:[555]
+        customers=[42,84,126]
+        for uid in customers+[555]:
+            self.assertTrue(self.bot.handle_update(self.update('/start',uid=uid)))
+        self.bot.flush_outbox()
+        menus=[payload for method,payload,_ in self.transport.calls if method=='sendMessage' and 'به WG Portal خوش آمدید' in payload.get('text','')]
+        self.assertEqual({payload['chat_id'] for payload in menus},set(customers+[555]))
+        self.assertTrue(all(len([item for row in payload['reply_markup']['inline_keyboard'] for item in row])==9 for payload in menus))
+        steps=['shop','product:'+str(self.product['id']),'traffic:10','duration:30']
+        for step in steps:
+            for uid in customers:self.assertTrue(self.bot.handle_update(self.update(data=step,uid=uid)))
+        for uid,devices in [(42,1),(84,2),(126,1)]:
+            self.bot.handle_update(self.update(data='devices:'+str(devices),uid=uid))
+        for uid in reversed(customers):self.bot.handle_update(self.update(data='buy:card',uid=uid))
+        with self.store.db() as db:
+            rows=list(db.execute('SELECT c.telegram_id,o.total_toman,o.snapshot FROM orders o JOIN customers c ON c.id=o.customer_id'))
+        self.assertEqual({row['telegram_id']:row['total_toman'] for row in rows},{42:100000,84:105000,126:100000})
+        self.assertEqual({row['telegram_id']:json.loads(row['snapshot'])['devices'] for row in rows},{42:1,84:2,126:1})
+        self.service.admin_action('owner','save_settings',{'trial_enabled':True,'trial_target':{'scope':'local','iface_id':1}})
+        for uid in customers[:2]:self.bot.handle_update(self.update(data='trial',uid=uid))
+        self.bot.handle_update(self.update(data='trial',uid=42))
+        with self.store.db() as db:self.assertEqual(db.execute('SELECT count(*) FROM trial_claims').fetchone()[0],2)
+
+    def test_public_customer_cannot_retrieve_another_customers_configuration(self):
+        for uid in [42,84]:self.bot.handle_update(self.update('/start',uid=uid))
+        first=self.customer()['id']
+        with self.store.db(write=True) as db:
+            sid=db.execute('INSERT INTO subscriptions(customer_id,status,snapshot,native_snapshot,trial,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
+                (first,'active',json.dumps({'product_name':'آزمایش','devices':1,'traffic_gb':10}),json.dumps({'peers':[{'id':7,'public_key':'fixture-public-key'}]}),0,self.now,self.now)).lastrowid
+        delivered=[]
+        def artifact(cid,subscription_id,peer_id,kind):
+            delivered.append((cid,subscription_id,peer_id,kind));return b'private-test-config','text/plain'
+        self.bot.artifact_provider=artifact
+        self.bot.handle_update(self.update(data='config:'+str(sid)+':7',uid=84))
+        self.bot.handle_update(self.update(data='config:'+str(sid)+':7',uid=42))
+        self.bot.flush_outbox()
+        self.assertEqual(delivered,[(first,sid,7,'config')])
+        documents=[payload for method,payload,_ in self.transport.calls if method=='sendDocument']
+        self.assertEqual([payload['chat_id'] for payload in documents],[42])
     def test_purchase_is_durable_idempotent_and_payment_destination_real(self):
         last=self.purchase();self.bot.handle_update(last)
         with self.store.db() as db:
