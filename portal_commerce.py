@@ -399,6 +399,22 @@ def install_commerce(app, csrf):
             return jsonify(value)
         payload=data()
         runtime_payload={k:payload.pop(k) for k in list(payload) if k in {'bot_token','bot_enabled','public_base_url'}}
+        selections={key:payload[key] for key in ('bot_target','trial_target') if key in payload}
+        if selections:
+            from portal_commerce_service import target_spec
+            previous=service.admin_action(g.commerce_owner,'settings',{}).get('settings',{})
+            changed=[]
+            for key,value in selections.items():
+                selected=target_spec(value,allow_empty=True)
+                payload[key]=selected
+                if selected and selected!=previous.get(key,{}):changed.append(selected)
+            if changed:
+                available=[]
+                for item in adapter.targets():
+                    available.append({'scope':'node','node_id':item['node_id'],'iface':item['iface']}
+                        if item.get('scope')=='node' else {'scope':'local','iface_id':item['iface_id']})
+                if any(selected not in available for selected in changed):
+                    raise CommerceHTTPError('interface_unavailable','اینترفیس انتخاب‌شده در فهرست سرورهای در دسترس نیست؛ فهرست را تازه کنید.')
         if payload:
             service.admin_action(g.commerce_owner,'save_settings',payload,request.headers.get('Idempotency-Key'))
         if runtime_payload:

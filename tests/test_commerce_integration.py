@@ -18,7 +18,7 @@ class Native:
     def reconcile(self,operation):return self.created.get(operation)
     def subscription(self,native_id):return next(row for row in self.created.values() if row['id']==native_id)
     def artifact(self,native_id,peer_id,kind):return b'fixture-private-config','text/plain'
-    def targets(self):return [{'scope':'local','iface_id':1,'available':100}]
+    def targets(self):return [{'scope':'local','iface_id':1,'available':100},{'scope':'local','iface_id':2,'available':100}]
 
 class Integrated(unittest.TestCase):
     def setUp(self):
@@ -59,5 +59,28 @@ class Integrated(unittest.TestCase):
         self.assertNotEqual(repeated.status_code,200)
         self.service.admin_action('mother','suspend_customer',{'id':self.cid,'suspended':True})
         response=self.client.get('/telegram-app/api/dashboard',base_url='https://localhost');self.assertIn(response.status_code,{401,403})
+    def test_settings_reject_unknown_interface_before_saving_any_selection(self):
+        value={'bot_target':{'scope':'local','iface_id':999},'trial_target':{'scope':'local','iface_id':2}}
+        result=self.send(self.admin,'PUT','/telegram-commerce/api/settings',value,csrf=self.admin_csrf)
+        self.assertEqual(result.status_code,400,result.json)
+        self.assertEqual(result.json['error'],'interface_unavailable')
+        settings=self.service.admin_action('mother','settings')['settings']
+        self.assertEqual(settings.get('bot_target',{}),{})
+        self.assertEqual(settings['trial_target'],{})
+    def test_two_interface_settings_drive_independent_paid_and_trial_jobs(self):
+        selected={'bot_target':{'scope':'local','iface_id':2},'trial_target':{'scope':'local','iface_id':1},'trial_enabled':True}
+        result=self.send(self.admin,'PUT','/telegram-commerce/api/settings',selected,csrf=self.admin_csrf)
+        self.assertEqual(result.status_code,200,result.json)
+        product=self.send(self.admin,'POST','/telegram-commerce/api/products',{'name':'مقصد پیش‌فرض بات','category':'economy','traffic_gb':10,'days':30,'devices':1,'price_toman':100000,'active':True,'target':{}},csrf=self.admin_csrf).json['product']
+        quote=self.send(self.client,'POST','/telegram-app/api/quotes',{'product_id':product['id']}).json['quote']
+        self.service.admin_action('mother','wallet_adjustment',{'id':self.cid,'amount_toman':100000,'reason':'اعتبار آزمایشی'},'integration-interface-funds')
+        result=self.send(self.client,'POST','/telegram-app/api/orders',{'quote_id':quote['id'],'payment_method':'wallet'},key='integration-interface-order')
+        self.assertEqual(result.status_code,200,result.json)
+        trial=self.send(self.client,'POST','/telegram-app/api/trial',{},key='integration-interface-trial')
+        self.assertEqual(trial.status_code,200,trial.json)
+        with self.app.extensions['portal_commerce_store'].db() as db:
+            jobs=[json.loads(row['spec']) for row in db.execute('SELECT spec FROM provisioning_jobs ORDER BY id')]
+        self.assertEqual(jobs[0]['target'],selected['bot_target'])
+        self.assertEqual(jobs[1]['target'],selected['trial_target'])
 
 if __name__=='__main__':unittest.main()

@@ -55,6 +55,7 @@ def target_spec(value, allow_empty=False):
 
 class CommerceService:
     DEFAULTS = {'currency': 'toman', 'rial_per_toman': 10, 'trial_enabled': False,
+                'bot_target': {},
                 'trial_hours': 24, 'trial_traffic_gb': 1, 'trial_target': {},
                 'trial_capacity': 100, 'referral_percent': 0, 'support_username': 'AshkanfathiOfficial',
                 'extra_device_price_toman': 0, 'expiry_notice_hours': 72, 'traffic_warning_percent': 10,
@@ -160,6 +161,8 @@ class CommerceService:
         row = db.execute('SELECT * FROM products WHERE id=? AND active=1', (pid,)).fetchone()
         if not row: fail('product_unavailable', 'این محصول در حال حاضر قابل خرید نیست.', 404)
         product = self._product(row)
+        configured_target=self._settings(db)['bot_target']
+        selected_target=configured_target or product['target']
         traffic, days, devices = product['traffic_gb'], product['days'], product['devices']
         pricing = product['pricing']
         if 'traffic_gb' in payload:
@@ -195,13 +198,15 @@ class CommerceService:
         snapshot = {'product_id':pid, 'product_name':product['name'], 'category':product['category'],
                     'traffic_gb':traffic, 'days':days, 'devices':devices,
                     'base_toman':base, 'discount_toman':discount_toman, 'total_toman':base-discount_toman,
-                    'target':product['target'], 'discount_id':discount_id, 'action':action,
+                    'target':selected_target, 'discount_id':discount_id, 'action':action,
                     'existing_subscription_id':existing_subscription, 'currency':'toman'}
         if existing_subscription:
             previous=db.execute('SELECT snapshot FROM subscriptions WHERE id=? AND customer_id=?',(existing_subscription,cid)).fetchone()
             original=json.loads(previous['snapshot']) if previous else {}
-            if original.get('devices')!=devices or original.get('target')!=product['target']:
+            if original.get('devices')!=devices:
                 fail('new_subscription_required','تمدید و ارتقا با حفظ مقصد و تعداد کانفیگ انجام می‌شود؛ برای دستگاه یا مقصد جدید اشتراک جدا بخرید.',409)
+            snapshot['target']=original.get('target')
+        snapshot['target']=target_spec(snapshot['target'])
         qid = secrets.token_urlsafe(24)
         expires = self.now()+900
         db.execute('INSERT INTO quotes(id,customer_id,snapshot,total_toman,expires_at) VALUES(?,?,?,?,?)', (qid,cid,dumps(snapshot),snapshot['total_toman'],expires))
@@ -569,8 +574,9 @@ class CommerceService:
         days=integer(p.get('days'),1,3650);devices=integer(p.get('devices',1),1,5);price=integer(p.get('price_toman'),1)
         active=p.get('active',False)
         if type(active) is not bool:fail()
-        target=target_spec(p.get('target',{}),allow_empty=not active)
-        if active and not target:fail('target_required','برای فروش فعال، مقصد WireGuard را تعیین کنید.')
+        target=target_spec(p.get('target',{}),allow_empty=True)
+        if active and not target and not self._settings(db)['bot_target']:
+            fail('target_required','برای فروش فعال، اینترفیس فروش بات یا مقصد این طرح را تعیین کنید.')
         pricing=p.get('pricing',{})
         if not isinstance(pricing,dict) or len(dumps(pricing))>5000:fail()
         if set(pricing)-{'traffic_options','traffic_prices','duration_options','duration_percent','device_options','additional_device_toman'}:fail()
@@ -695,6 +701,9 @@ class CommerceService:
         for key,minimum,maximum in [('trial_hours',1,168),('trial_traffic_gb',1,100),('trial_capacity',1,100000),('referral_percent',0,100),('topup_min_toman',1,10**10),('topup_max_toman',1,10**10),('extra_device_price_toman',0,10**10),('expiry_notice_hours',1,720),('traffic_warning_percent',1,100)]:integer(merged[key],minimum,maximum)
         if merged['topup_max_toman']<merged['topup_min_toman']:fail()
         target_spec(merged['trial_target'],allow_empty=True)
+        target_spec(merged['bot_target'],allow_empty=True)
+        if merged['trial_enabled'] and not merged['trial_target']:
+            fail('trial_unconfigured','پیش از فعال‌کردن تست رایگان، اینترفیس تست را انتخاب کنید.',409)
         if not isinstance(merged['topup_amounts'],list) or not 1<=len(merged['topup_amounts'])<=20:fail()
         for value in merged['topup_amounts']:integer(value,merged['topup_min_toman'],merged['topup_max_toman'])
         if not re.fullmatch(r'[A-Za-z0-9_]{5,32}',merged['support_username']):fail()

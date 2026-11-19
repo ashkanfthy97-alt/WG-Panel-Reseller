@@ -1,4 +1,5 @@
 import concurrent.futures
+import json
 from datetime import datetime, timezone
 import sys
 import tempfile
@@ -211,5 +212,61 @@ class CommerceDomain(unittest.TestCase):
         sid=self.action(self.a,'subscriptions')['subscriptions'][0]['id']
         product=self.s.admin_action('owner','save_product',{'name':'دو دستگاه','category':'economy','traffic_gb':20,'days':30,'devices':2,'price_toman':200000,'active':True,'target':{'scope':'local','iface_id':1}})['product']
         with self.assertRaises(DomainError):self.action(self.a,'upgrade_quote',{'id':sid,'product_id':product['id']})
+
+    def test_bot_and_trial_interfaces_are_independent_and_strict(self):
+        self.assertEqual(self.s.admin_action('owner','settings')['settings']['bot_target'],{})
+        sales={'scope':'local','iface_id':2};trial={'scope':'node','node_id':8,'iface':'wg_trial'}
+        self.s.admin_action('owner','save_settings',{'bot_target':sales,'trial_target':trial,'trial_enabled':True})
+        quote=self.quote();claim=self.action(self.a,'trial',{},'trial-interface-key-1234')['subscription']
+        with self.store.db() as db:
+            paid=json.loads(db.execute('SELECT snapshot FROM quotes WHERE id=?',(quote['id'],)).fetchone()[0])
+            free=json.loads(db.execute('SELECT snapshot FROM subscriptions WHERE id=?',(claim['id'],)).fetchone()[0])
+        self.assertEqual(paid['target'],sales);self.assertEqual(free['target'],trial)
+        for invalid in ([],{'scope':'local','iface_id':'2'},{'scope':'local','iface_id':True},{'scope':'local','iface_id':2,'api_key':'not-allowed'}):
+            with self.assertRaises(DomainError):self.s.admin_action('owner','save_settings',{'bot_target':invalid})
+
+    def test_bot_interface_change_preserves_existing_quote_and_order(self):
+        self.funded(self.a)
+        self.s.admin_action('owner','save_settings',{'bot_target':{'scope':'local','iface_id':2}})
+        quote=self.quote()
+        self.s.admin_action('owner','save_settings',{'bot_target':{'scope':'local','iface_id':3}})
+        created=self.action(self.a,'create_order',{'quote_id':quote['id'],'payment_method':'wallet'},'sticky-interface-order-key')['order']
+        with self.store.db() as db:
+            stored=json.loads(db.execute('SELECT snapshot FROM orders WHERE id=?',(created['id'],)).fetchone()[0])
+            job=json.loads(db.execute('SELECT spec FROM provisioning_jobs WHERE order_id=?',(created['id'],)).fetchone()[0])
+        self.assertEqual(stored['target'],{'scope':'local','iface_id':2});self.assertEqual(job['target'],stored['target'])
+        fresh=self.quote()
+        with self.store.db() as db:new=json.loads(db.execute('SELECT snapshot FROM quotes WHERE id=?',(fresh['id'],)).fetchone()[0])
+        self.assertEqual(new['target'],{'scope':'local','iface_id':3})
+
+    def test_trial_activation_requires_its_own_interface_and_rolls_back(self):
+        with self.assertRaises(DomainError) as caught:
+            self.s.admin_action('owner','save_settings',{'bot_target':{'scope':'local','iface_id':2},'trial_enabled':True})
+        self.assertEqual(caught.exception.code,'trial_unconfigured')
+        settings=self.s.admin_action('owner','settings')['settings']
+        self.assertEqual(settings['bot_target'],{});self.assertFalse(settings['trial_enabled'])
+
+    def test_product_can_use_bot_interface_without_own_target(self):
+        self.s.admin_action('owner','save_settings',{'bot_target':{'scope':'local','iface_id':2}})
+        product=self.s.admin_action('owner','save_product',{'name':'طرح بات','category':'economy','traffic_gb':20,'days':30,'devices':1,'price_toman':200000,'active':True})['product']
+        self.assertEqual(product['target'],{})
+        quote=self.action(self.a,'quote',{'product_id':product['id']})['quote']
+        with self.store.db() as db:snapshot=json.loads(db.execute('SELECT snapshot FROM quotes WHERE id=?',(quote['id'],)).fetchone()[0])
+        self.assertEqual(snapshot['target'],{'scope':'local','iface_id':2})
+        self.s.admin_action('owner','save_settings',{'bot_target':{}})
+        with self.assertRaises(DomainError):self.action(self.a,'quote',{'product_id':product['id']})
+        fallback=self.quote()
+        with self.store.db() as db:snapshot=json.loads(db.execute('SELECT snapshot FROM quotes WHERE id=?',(fallback['id'],)).fetchone()[0])
+        self.assertEqual(snapshot['target'],{'scope':'local','iface_id':1})
+
+    def test_renewal_keeps_subscription_interface_after_bot_setting_changes(self):
+        self.funded(self.a);self.order();self.s.process_jobs()
+        subscription=self.action(self.a,'subscriptions')['subscriptions'][0]
+        self.s.admin_action('owner','save_settings',{'bot_target':{'scope':'node','node_id':4,'iface':'wg_sales'}})
+        for action in ('renew_quote','upgrade_quote'):
+            quote=self.action(self.a,action,{'id':subscription['id'],'product_id':self.product['id']})['quote']
+            with self.store.db() as db:snapshot=json.loads(db.execute('SELECT snapshot FROM quotes WHERE id=?',(quote['id'],)).fetchone()[0])
+            self.assertEqual(snapshot['target'],{'scope':'local','iface_id':1})
+        with self.assertRaises(DomainError):self.quote(target={'scope':'local','iface_id':9})
 
 if __name__ == '__main__':unittest.main()
