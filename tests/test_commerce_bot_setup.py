@@ -1,4 +1,5 @@
 """Exercise non-TESTING configuration paths with fake Telegram, no network."""
+import ast
 import contextlib
 from pathlib import Path
 import sqlite3
@@ -10,7 +11,7 @@ from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from flask import Flask,jsonify,session,request,Response
+from flask import Flask,jsonify,session,request,Response,abort
 from portal_commerce import install_commerce,CommerceHTTPError
 from portal_commerce_auth import Auth
 from portal_commerce_service import CommerceService
@@ -50,7 +51,14 @@ class BotSetup(unittest.TestCase):
         def external_policy():
             if request.headers.get('X-Test-Upstream-Failure'):
                 return Response('<!doctype html><p>private upstream information</p>',status=502,mimetype='text/html')
-        install_commerce(app,None)
+        # Execute the actual native hook without importing the full Linux app.
+        # Manual Flask-WTF protect() rejects requests without its native token.
+        csrf=SimpleNamespace(protect=lambda:abort(400),exempt=lambda blueprint:None)
+        source=ast.parse((ROOT/'app.py').read_text(encoding='utf-8'))
+        hook=next(node for node in source.body if isinstance(node,ast.FunctionDef) and node.name=='_csrf_protect_ui')
+        exec(compile(ast.Module(body=[hook],type_ignores=[]),'app.py','exec'),{'app':app,'request':request,'csrf':csrf})
+        app.add_url_rule('/native-form',view_func=lambda:'ok',methods=['POST'])
+        install_commerce(app,csrf)
         self.runtime=app.extensions['portal_commerce_runtime_config']
         self.service=app.extensions['portal_commerce_service']
         # Setup is now complete. Exercise the real production validation path.
@@ -74,6 +82,14 @@ class BotSetup(unittest.TestCase):
         public=self.app.test_client()
         public.set_cookie('wgportal_customer','12345',path='/telegram-app')
         self.assertEqual(public.get('/telegram-commerce/api/settings',base_url='https://localhost').status_code,401)
+    def test_commerce_and_native_forms_keep_their_own_csrf_checks(self):
+        for origin, token, error in [('https://other.invalid',self.csrf,'invalid_origin'),('https://localhost','incorrect','invalid_csrf')]:
+            result=self.client.put('/telegram-commerce/api/settings',json=self.payload(),base_url='https://localhost',headers={
+                'Origin':origin,'X-Commerce-CSRF':token,'Idempotency-Key':'temporary-setup-operation-123'})
+            self.assertEqual(result.status_code,403)
+            self.assertEqual(result.json['error'],error)
+        self.assertEqual(self.client.post('/native-form',base_url='https://localhost').status_code,400)
+        self.assertEqual(self.transport.calls,[])
     def test_missing_invalid_or_oversized_id_rejected(self):
         for identity in ['',True,1.2,-12,'-12345','0',123456,str(2**52),'999999999999999999999999999999']:
             with self.subTest(identity=identity):

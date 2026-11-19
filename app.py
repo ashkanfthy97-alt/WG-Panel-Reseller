@@ -446,9 +446,8 @@ csrf = CSRFProtect(app)
 @app.before_request
 def _csrf_protect_ui():
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-        if request.blueprint == "reseller":
-            # The extension enforces its isolated session CSRF and same-origin
-            # checks; its JSON requests do not use native UI form tokens.
+        if request.blueprint in {"reseller", "telegram_commerce"}:
+            # These blueprints enforce their own session CSRF and origin checks.
             return
         if request.path.startswith("/api/"):
             return
