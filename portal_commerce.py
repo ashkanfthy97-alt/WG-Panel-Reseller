@@ -527,8 +527,8 @@ class RuntimeConfig:
             self._ensure(db)
             row=db.execute('SELECT * FROM commerce_runtime_config WHERE id=1').fetchone()
             return dict(row) if row else {'token_enc':'','enabled':0,'base_url':'','bot_username':'','manager_chat_id':None}
-    def token(self):
-        value=self.row()['token_enc']
+    def token(self, row=None):
+        value=(self.row() if row is None else row)['token_enc']
         return self.cipher().decrypt(value.encode()).decode() if value else ''
     @staticmethod
     def _valid_token(token):
@@ -672,43 +672,121 @@ def native_admin_notification_recipients(app,config):
     return config.notification_recipients(registered)
 
 
+def _run_runtime_leader(app, service, config, make_bot, stop):
+    active_bot = None
+    bot_lock = threading.Lock()
+
+    def identity(row):
+        return row['token_enc'], row['base_url'], row.get('bot_username')
+
+    def provision():
+        refresh_at = 0
+        while not stop.is_set():
+            try:
+                with app.app_context():
+                    service.process_jobs()
+                    if time.monotonic() >= refresh_at:
+                        service.refresh_subscriptions()
+                        service.expire_payments()
+                        refresh_at = time.monotonic() + 60
+            except Exception:
+                app.logger.warning('Telegram commerce provisioning will retry')
+                stop.wait(5)
+            else:
+                stop.wait(1)
+
+    def notify():
+        while not stop.is_set():
+            with bot_lock:
+                generation = active_bot
+            if generation is not None:
+                try:
+                    with app.app_context():
+                        bot, generation_signature = generation
+                        row = config.row()
+                        if row['enabled'] and identity(row) == generation_signature:
+                            bot.notify_pending(limit=4)
+                except Exception:
+                    app.logger.warning('Telegram commerce notifications will retry')
+                    stop.wait(5)
+                    continue
+            stop.wait(1)
+
+    workers = []
+    bot = None
+    signature = None
+    token = None
+    try:
+        for task, name in [(provision, 'commerce-provisioning'), (notify, 'commerce-notifications')]:
+            worker = threading.Thread(target=task, name=name, daemon=True)
+            worker.start()
+            workers.append(worker)
+        while not stop.is_set():
+            try:
+                with app.app_context():
+                    row = config.row()
+                    if row['enabled']:
+                        next_signature = identity(row)
+                        if bot is None or signature != next_signature:
+                            token = config.token(row)
+                            config.ensure_isolated(token)
+                            bot = make_bot(row, token)
+                            signature = next_signature
+                        else:
+                            config.ensure_isolated(token)
+                        with bot_lock:
+                            active_bot = (bot, signature)
+                        bot.poll_once(deliver_notifications=False)
+                        config.status('running')
+                    else:
+                        with bot_lock:
+                            active_bot = None
+                        bot = signature = token = None
+                        config.status('bot_disabled')
+                if not row['enabled']:
+                    stop.wait(2)
+            except Exception as error:
+                with bot_lock:
+                    active_bot = None
+                # Exception contents may include a bot token.
+                app.logger.warning('Telegram commerce polling will retry')
+                with app.app_context():
+                    try:
+                        config.status('retrying')
+                    except Exception:
+                        pass
+                stop.wait(max(2, min(3600, getattr(error, 'retry_after', 0) or 0)))
+    finally:
+        stop.set()
+        # Do not release leadership while a previous worker can still take jobs.
+        for worker in workers:
+            worker.join()
+
+
 def run_runtime(app,service,config,private):
     import fcntl
     from portal_public_bot import PublicBot
     from portal_reseller_bot import TelegramTransport
+
+    def artifact_provider(cid, sid, pid, kind):
+        result = service.customer_action(cid, 'artifact', {'id': sid, 'peer_id': pid, 'kind': kind})
+        return result['body'], 'image/png' if kind == 'qr' else 'text/plain'
+
+    def make_bot(row, token):
+        return PublicBot(
+            service, TelegramTransport(), row['base_url'], lambda: token,
+            bot_username=row.get('bot_username'),
+            artifact_provider=artifact_provider,
+            admin_provider=lambda: native_admin_notification_recipients(app, config),
+        )
+
     while True:
         try:
             with open(private/'runtime.lock','a') as lock:
                 try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
                 except BlockingIOError:
                     time.sleep(5);continue
-                bot=None;credential=None
-                refreshed_at=0
-                while True:
-                    with app.app_context():
-                        public=config.public()
-                        if public['bot_enabled']:
-                            fresh=config.token()
-                            config.ensure_isolated(fresh)
-                            signature=(fresh,public['public_base_url'])
-                            if bot is None or credential!=signature:
-                                credential=signature
-                                def artifact_provider(cid,sid,pid,kind):
-                                    result=service.customer_action(cid,'artifact',{'id':sid,'peer_id':pid,'kind':kind})
-                                    return result['body'], 'image/png' if kind=='qr' else 'text/plain'
-                                def admin_provider():
-                                    return native_admin_notification_recipients(app,config)
-                                bot=PublicBot(service,TelegramTransport(),public['public_base_url'],config.token,
-                                              artifact_provider=artifact_provider,admin_provider=admin_provider)
-                            bot.poll_once()
-                        processor=getattr(service,'process_jobs',None)
-                        if callable(processor):processor()
-                        if time.monotonic()-refreshed_at>=60:
-                            service.refresh_subscriptions()
-                            service.expire_payments()
-                            refreshed_at=time.monotonic()
-                        config.status('running' if public['bot_enabled'] else 'bot_disabled')
-                    time.sleep(2)
+                _run_runtime_leader(app, service, config, make_bot, threading.Event())
         except Exception:
             # Never include HTTP URLs, credentials or receipt content in logs.
             app.logger.warning('Telegram commerce worker paused; inspect owner health/jobs panel')

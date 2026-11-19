@@ -14,6 +14,9 @@ from urllib.parse import urlsplit
 MENU=[('🛒 خرید اشتراک','shop'),('🧪 دریافت تست رایگان','trial'),('📦 اشتراک‌های من','subscriptions'),
       ('💰 کیف پول','wallet'),('🎁 دعوت دوستان','referrals'),('📚 آموزش اتصال','guides'),
       ('📥 دانلود برنامه‌ها','downloads'),('🎧 پشتیبانی','support'),('🚀 ورود به پنل کاربری','miniapp')]
+CATEGORIES={'economy':'🔥 طرح‌های اقتصادی','custom':'📊 اشتراک حجمی','unlimited':'♾ اشتراک نامحدود'}
+PRICE_MENU='📋 طرح‌ها و قیمت‌ها'
+MENU_ACTIONS={**dict(MENU),PRICE_MENU:'prices'}
 GUIDES='📚 راهنمای اتصال WireGuard\n۱. برنامهٔ رسمی WireGuard را نصب کنید.\n۲. فایل کانفیگ را وارد کنید یا کد QR اشتراک را اسکن کنید.\n۳. اتصال را روشن کنید.\nدر ویندوز و مک از Import tunnel from file و در اندروید و iOS از افزودن تونل استفاده کنید.'
 DOWNLOADS='📥 برنامه‌های رسمی WireGuard برای اندروید، iOS، ویندوز و macOS:\nhttps://www.wireguard.com/install/'
 
@@ -31,13 +34,14 @@ def _ensure(db):
 
 
 class PublicBot:
-    def __init__(self,service,transport,base_url,token_provider,*,artifact_provider=None,administrator_ids_provider=None,admin_provider=None,clock=None):
+    def __init__(self,service,transport,base_url,token_provider,*,artifact_provider=None,administrator_ids_provider=None,admin_provider=None,clock=None,bot_username=None):
         parsed=urlsplit(base_url)
         if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError('public_miniapp_https_required')
         self.service=service;self.store=service.store;self.transport=transport;self.base_url=base_url.rstrip('/')
         self.token_provider=token_provider;self.artifact_provider=artifact_provider;self.clock=clock or time.time
         self.administrator_ids_provider=administrator_ids_provider or admin_provider or (lambda:[])
+        self.bot_username=bot_username if isinstance(bot_username,str) and re.fullmatch(r'[A-Za-z0-9_]{5,64}',bot_username) else None
         self.lock=threading.RLock()
 
     def _token(self):
@@ -48,9 +52,11 @@ class PublicBot:
     def _bot(self):return self._token().split(':')[0]
 
     def main(self):
-        rows=[[MENU[i],MENU[i+1]] for i in range(0,8,2)]
-        markup=keyboard(rows)
-        markup['inline_keyboard'].append([{'text':MENU[-1][0],'web_app':{'url':self.base_url+'/telegram-app'}}])
+        rows=[[MENU[0][0]],[MENU[1][0]],[MENU[2][0],MENU[3][0]],
+              [PRICE_MENU,MENU[5][0]],[MENU[4][0],MENU[7][0]],[MENU[6][0]]]
+        buttons=[[{'text':label} for label in row] for row in rows]
+        buttons.append([{'text':MENU[-1][0],'web_app':{'url':self.base_url+'/telegram-app'}}])
+        markup={'keyboard':buttons,'resize_keyboard':True,'is_persistent':True}
         return {'text':'به WG Portal خوش آمدید. گزینهٔ موردنظر را انتخاب کنید.','reply_markup':markup}
 
     def _action(self,cid,action,payload=None,key=None):
@@ -115,13 +121,35 @@ class PublicBot:
             return True
 
     def _route(self,cid,text,data,state,key):
+        if data is None and text in MENU_ACTIONS:
+            data=MENU_ACTIONS[text]
         if data is not None and (not isinstance(data,str) or len(data)>64):return [self._message('گزینه معتبر نیست.')],None
         if text.startswith('/start') or text in {'/cancel','/menu'} or data=='home':return [self.main()],None
+        if state and state.get('product'):
+            selection=state['selection']
+            if data=='back:traffic':
+                data='product:'+str(selection['product_id'])
+            elif data=='back:duration':
+                state['step']='traffic'
+                data='traffic:'+str(selection['traffic_gb'])
+            elif data=='back:devices':
+                state['step']='duration'
+                data='duration:'+str(selection['days'])
         if data=='miniapp':return [self.main()],None
         if data=='shop':
             products=self._action(cid,'products').get('products',[])
+            available={p.get('category') for p in products}
+            rows=[[(label,'categoryshop:'+kind)] for kind,label in CATEGORIES.items() if kind in available]
+            if not rows and products:rows=[[('📋 همهٔ طرح‌ها','prices')]]
+            rows.append([('🧪 دریافت تست رایگان','trial')])
+            return [self._message('نوع اشتراک WireGuard را انتخاب کنید.' if products else 'در حال حاضر طرح فعالی وجود ندارد.',rows)],None
+        category=re.fullmatch(r'categoryshop:(economy|custom|unlimited)',data or '')
+        if data=='prices' or category:
+            products=self._action(cid,'products').get('products',[])
+            if category:products=[p for p in products if p.get('category')==category[1]]
             rows=[[(str(p.get('name','اشتراک'))[:50]+' · '+format(p.get('price_toman',0),',')+' تومان','product:'+str(p['id']))] for p in products[:80]]
-            return [self._message('🛒 طرح موردنظر را انتخاب کنید.' if rows else 'در حال حاضر طرح فعالی وجود ندارد.',rows)],None
+            rows.append([('⬅️ دسته‌بندی طرح‌ها','shop')])
+            return [self._message('🛒 طرح موردنظر را انتخاب کنید.' if products else 'در حال حاضر طرح فعالی وجود ندارد.',rows)],None
         match=re.fullmatch(r'product:([1-9][0-9]*)',data or '')
         if match:
             product=next((p for p in self._action(cid,'products').get('products',[]) if p['id']==int(match[1])),None)
@@ -131,6 +159,8 @@ class PublicBot:
             state={'step':'traffic','selection':selection,'product':product}
             options=list(dict.fromkeys([product.get('traffic_gb')]+pricing.get('traffic_options',[])))
             rows=[[(('نامحدود' if amount is None else str(amount)+' گیگابایت'),'traffic:'+str(amount))] for amount in options]
+            category=product.get('category')
+            rows.append([('⬅️ طرح‌ها','categoryshop:'+category if category in CATEGORIES else 'prices')])
             return [self._message('حجم اشتراک را انتخاب کنید.',rows)],state
         match=re.fullmatch(r'traffic:(None|[1-9][0-9]*)',data or '')
         if match and state and state.get('step')=='traffic':
@@ -138,20 +168,28 @@ class PublicBot:
             if traffic not in [product.get('traffic_gb')]+pricing.get('traffic_options',[]):raise ValueError('invalid_traffic')
             state['selection']['traffic_gb']=traffic;state['step']='duration'
             options=list(dict.fromkeys([product['days']]+pricing.get('duration_options',[])))
-            return [self._message('مدت اشتراک را انتخاب کنید.',[[(str(days)+' روز','duration:'+str(days))] for days in options])],state
+            rows=[[(str(days)+' روز','duration:'+str(days))] for days in options]
+            rows.append([('⬅️ انتخاب حجم','back:traffic')])
+            return [self._message('مدت اشتراک را انتخاب کنید.',rows)],state
         match=re.fullmatch(r'duration:([1-9][0-9]*)',data or '')
         if match and state and state.get('step')=='duration':
             days=int(match[1]);product=state['product'];pricing=product.get('pricing') or {}
             if days not in [product['days']]+pricing.get('duration_options',[]):raise ValueError('invalid_duration')
             state['selection']['days']=days;state['step']='devices'
             options=list(dict.fromkeys([product['devices']]+pricing.get('device_options',[])))
-            return [self._message('تعداد دستگاه را انتخاب کنید.',[[(str(count)+' دستگاه','devices:'+str(count))] for count in options])],state
+            rows=[[(str(count)+' دستگاه','devices:'+str(count))] for count in options]
+            rows.append([('⬅️ انتخاب مدت','back:duration')])
+            return [self._message('تعداد دستگاه را انتخاب کنید.',rows)],state
         match=re.fullmatch(r'devices:([1-5])',data or '')
         if match and state and state.get('step')=='devices':
             selection=dict(state['selection'],devices=int(match[1]))
             quote=self._action(cid,'quote',selection,key).get('quote',{})
             qid=str(quote['id'])
-            return [self._message('🧾 پیش‌فاکتور\nطرح: '+str(quote.get('product_name',''))+'\nحجم: '+str(quote.get('traffic_gb',''))+' گیگابایت\nمدت: '+str(quote.get('days',''))+' روز\nدستگاه: '+str(quote.get('devices',''))+'\nقیمت پایه: '+format(quote.get('base_toman',0),',')+' تومان\nتخفیف: '+format(quote.get('discount_toman',0),',')+' تومان\nمبلغ نهایی: '+format(quote['total_toman'],',')+' تومان\nپرداخت را انتخاب کنید.',[[('💳 کارت‌به‌کارت','buy:card'),('💰 کیف پول','buy:wallet')],[('🎟 کد تخفیف','discount')]])],{'step':'invoice','quote_id':qid,'selection':selection}
+            rows=[[('💳 کارت‌به‌کارت','buy:card'),('💰 کیف پول','buy:wallet')],
+                  [('🎟 کد تخفیف','discount')],[('⬅️ تعداد دستگاه','back:devices')]]
+            traffic=quote.get('traffic_gb')
+            volume='نامحدود' if traffic is None else f'{traffic} گیگابایت'
+            return [self._message('🧾 پیش‌فاکتور\nطرح: '+str(quote.get('product_name',''))+'\nحجم: '+volume+'\nمدت: '+str(quote.get('days',''))+' روز\nدستگاه: '+str(quote.get('devices',''))+'\nقیمت پایه: '+format(quote.get('base_toman',0),',')+' تومان\nتخفیف: '+format(quote.get('discount_toman',0),',')+' تومان\nمبلغ نهایی: '+format(quote['total_toman'],',')+' تومان\nپرداخت را انتخاب کنید.',rows)],dict(state,step='invoice',quote_id=qid,selection=selection)
         if data=='discount' and state and state.get('step')=='invoice':return [self._message('کد تخفیف را ارسال کنید.')],dict(state,step='discount')
         if state and state.get('step')=='discount' and not data:
             quote=self._action(cid,'quote',dict(state['selection'],discount_code=text[:64]),key)['quote']
@@ -209,9 +247,12 @@ class PublicBot:
             return [self._message('پیش‌فاکتور تمدید/ارتقا: '+format(quote['total_toman'],',')+' تومان',[[('💳 کارت‌به‌کارت','buy:card'),('💰 کیف پول','buy:wallet')]])],{'step':'invoice','quote_id':str(quote['id'])}
         if data=='referrals':
             result=self._action(cid,'referrals')
-            identity=self.transport.call(self._token(),'getMe')
-            if not isinstance(identity,dict) or str(identity.get('id'))!=self._bot() or not re.fullmatch(r'[A-Za-z0-9_]{5,64}',str(identity.get('username',''))):raise ValueError('bot_identity_unavailable')
-            link='https://t.me/'+identity['username']+'?start=ref_'+result['referral_code']
+            username=self.bot_username
+            if not username:
+                identity=self.transport.call(self._token(),'getMe',timeout=(2,3))
+                if not isinstance(identity,dict) or str(identity.get('id'))!=self._bot() or not re.fullmatch(r'[A-Za-z0-9_]{5,64}',str(identity.get('username',''))):raise ValueError('bot_identity_unavailable')
+                username=identity['username']
+            link='https://t.me/'+username+'?start=ref_'+result['referral_code']
             return [self._message('🎁 دعوت دوستان\n'+link+'\nدعوت‌ها: '+str(result.get('referral_count',0))+'\nپاداش تأییدشده: '+format(result.get('earnings_toman',0),',')+' تومان')],None
         if data in {'guides','downloads'}:return [self._message(GUIDES if data=='guides' else DOWNLOADS)],None
         if data=='support':
@@ -348,8 +389,9 @@ class PublicBot:
             self.service.finish_notification(job['id'],True);delivered+=1
         return delivered
 
-    def poll_once(self):
+    def poll_once(self, *, deliver_notifications=True):
         token=self._token();bot=token.split(':')[0]
+        sent=self.flush_outbox()
         with self.store.db(write=True) as db:
             _ensure(db)
             db.execute('INSERT OR IGNORE INTO commerce_public_offsets(bot_id) VALUES(?)',(bot,))
@@ -360,11 +402,12 @@ class PublicBot:
             if not isinstance(update,dict) or type(update.get('update_id')) is not int or update['update_id']<offset:continue
             callback=update.get('callback_query') or {}
             if callback.get('id'):
-                try:self.transport.call(token,'answerCallbackQuery',{'callback_query_id':str(callback['id'])[:256]})
+                try:self.transport.call(token,'answerCallbackQuery',{'callback_query_id':str(callback['id'])[:256]},timeout=(2,3))
                 except Exception:pass
             self.handle_update(update)
             with self.store.db(write=True) as db:db.execute('UPDATE commerce_public_offsets SET offset=MAX(offset,?) WHERE bot_id=?',(update['update_id']+1,bot))
-        return self.flush_outbox()+self.notify_pending()
+            sent+=self.flush_outbox()
+        return sent+(self.notify_pending() if deliver_notifications else 0)
 
     def run(self,stop=None):
         stop=stop or threading.Event()

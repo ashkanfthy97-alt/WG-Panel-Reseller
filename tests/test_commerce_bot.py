@@ -40,16 +40,41 @@ class BotChecks(unittest.TestCase):
         self.send('/start');self.send(data='shop');self.send(data='product:'+str(self.product['id']))
         self.send(data='traffic:10');self.send(data='duration:30');self.send(data='devices:1')
         return self.send(data='buy:card')
-    def test_nine_real_menu_buttons_and_https_launcher(self):
+    def test_persistent_menu_buttons_and_https_launcher(self):
         self.send('/start');self.bot.flush_outbox()
-        markup=self.transport.calls[-1][1]['reply_markup'];buttons=[b for row in markup['inline_keyboard'] for b in row]
-        self.assertEqual(len(buttons),9)
+        markup=self.transport.calls[-1][1]['reply_markup'];buttons=[b for row in markup['keyboard'] for b in row]
+        self.assertEqual(len(buttons),10)
         self.assertEqual(buttons[-1]['web_app']['url'],'https://portal.example.test/telegram-app')
         for action in ['shop','wallet','subscriptions','referrals','guides','downloads','support']:
             self.send(data=action)
         self.bot.flush_outbox()
         self.assertTrue(any('https://t.me/wgportal_test_bot?start=ref_' in str(call) for call in self.transport.calls))
         self.assertTrue(any('https://www.wireguard.com/install/' in str(call) for call in self.transport.calls))
+    def test_keyboard_purchase_categories_and_back_navigation(self):
+        self.send('/start')
+        self.send('🛒 خرید اشتراک')
+        self.send(data='categoryshop:economy')
+        self.send(data='product:'+str(self.product['id']))
+        self.send(data='traffic:10')
+        self.send(data='duration:30')
+        self.send(data='devices:1')
+        self.send(data='back:devices')
+        self.send(data='back:duration')
+        self.bot.flush_outbox()
+        replies=[payload for method,payload,_ in self.transport.calls if method=='sendMessage']
+        options=lambda reply:{button.get('callback_data') for row in reply['reply_markup']['inline_keyboard'] for button in row}
+        self.assertIn('categoryshop:economy',options(replies[1]))
+        self.assertIn('product:'+str(self.product['id']),options(replies[2]))
+        self.assertIn('buy:card',options(replies[-3]))
+        self.assertIn('devices:2',options(replies[-2]))
+        self.assertIn('duration:30',options(replies[-1]))
+    def test_poll_sends_ready_replies_before_waiting_and_answers_each_customer(self):
+        self.send('/start')
+        self.transport.updates=[self.update(data='shop',uid=84),self.update(data='shop',uid=126)]
+        self.bot.poll_once(deliver_notifications=False)
+        calls=self.transport.calls
+        self.assertEqual([method for method,_,_ in calls],['sendMessage','getUpdates','answerCallbackQuery','sendMessage','answerCallbackQuery','sendMessage'])
+        self.assertEqual([payload['chat_id'] for method,payload,_ in calls if method=='sendMessage'],[42,84,126])
     def test_public_access_for_multiple_nonmanager_customers_with_isolated_purchase_state(self):
         self.bot.administrator_ids_provider=lambda:[555]
         customers=[42,84,126]
@@ -58,7 +83,7 @@ class BotChecks(unittest.TestCase):
         self.bot.flush_outbox()
         menus=[payload for method,payload,_ in self.transport.calls if method=='sendMessage' and 'به WG Portal خوش آمدید' in payload.get('text','')]
         self.assertEqual({payload['chat_id'] for payload in menus},set(customers+[555]))
-        self.assertTrue(all(len([item for row in payload['reply_markup']['inline_keyboard'] for item in row])==9 for payload in menus))
+        self.assertTrue(all(len([item for row in payload['reply_markup']['keyboard'] for item in row])==10 for payload in menus))
         steps=['shop','product:'+str(self.product['id']),'traffic:10','duration:30']
         for step in steps:
             for uid in customers:self.assertTrue(self.bot.handle_update(self.update(data=step,uid=uid)))
