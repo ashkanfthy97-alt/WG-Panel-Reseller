@@ -294,8 +294,8 @@ class BotManager:
                  [('⬅️ بازگشت / Back', 'back')]] if settings else
                 [[('➕ ساخت PEER', 'peer'), ('👥 ساخت نماینده', 'child')],
                  [('📦 ساخت انبوه', 'bulk'), ('⚙️ تنظیمات', 'settings')]])
-        return {'inline_keyboard': [[{'text': text, 'callback_data': 'reseller:' + action}
-                                     for text, action in items] for items in rows]}
+        return {'keyboard': [[{'text': text} for text, action in items] for items in rows],
+                'resize_keyboard': True, 'is_persistent': True}
 
     def bundle(self, row, peer_id):
         """Read every artifact through ownership-checked native reseller routes."""
@@ -567,12 +567,13 @@ class BotManager:
                 peers = result.get('peers', [])
                 page = int(argument) if re.fullmatch(r'[0-9]{1,6}', argument) else 0
                 start = page * 10
-                messages = [{'text': str(peer['id']) + ' — ' + str(peer.get('name', ''))[:256],
-                             'reply_markup': self.peer_keyboard(peer['id'])} for peer in peers[start:start + 10]]
+                messages = [{'text': '📋 تعداد مشتری‌ها: ' + str(len(peers))}]
+                messages += [{'text': str(index) + '. ' + str(peer.get('name', ''))[:256] + ' · شناسه: ' + str(peer['id']),
+                             'reply_markup': self.peer_keyboard(peer['id'])} for index, peer in enumerate(peers[start:start + 10], start + 1)]
                 if start + 10 < len(peers):
                     messages.append({'text': 'صفحه بعد / Next page', 'reply_markup': {'inline_keyboard': [[
                         {'text': 'بعدی / Next', 'callback_data': 'page:' + str(page + 1)}]]}})
-                if not messages:
+                if not peers:
                     messages.append({'text': 'بدون مشتری / No peers'})
                 messages.append({'text': '← Back', 'reply_markup': {'inline_keyboard': [[
                     {'text': '← Back', 'callback_data': 'reseller:back'}]]}})
@@ -740,6 +741,11 @@ def install_reseller_bot(app, csrf, database):
         request.max_content_length = 4096
         identity = session.get('reseller_identity') or {}
         account = manager.accounts.get(identity.get('id', 0)) if isinstance(identity, dict) else None
+        if session.get('assumed_owner') is not None:
+            guard = app.extensions.get('portal_reseller_identity_guard')
+            # Administrative viewing sessions require the native owner cookie
+            # on every separate bot-settings request as well as reseller APIs.
+            account = guard() if callable(guard) else None
         if not account or account['auth_version'] != identity.get('version'):
             return jsonify(error='login_required'), 401
         if not account['active']:
@@ -814,3 +820,4 @@ def install_reseller_bot(app, csrf, database):
         return response
 
     app.register_blueprint(bp)
+

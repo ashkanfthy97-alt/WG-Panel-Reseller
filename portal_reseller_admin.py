@@ -78,7 +78,7 @@ def install_admin_bridge(bp, store, handlers, account_details):
             account_id = payload.get('id')
             if type(account_id) is not int or account_id < 1:
                 abort(400)
-            kwargs['account_id'] = account_id
+            kwargs['notice_id' if action == 'notices_update' else 'account_id'] = account_id
             path = path.format(id=account_id)
             payload = {name:value for name,value in payload.items() if name!='id'}
         if action in {'approve','revoke'}:
@@ -89,10 +89,16 @@ def install_admin_bridge(bp, store, handlers, account_details):
             if payload:
                 abort(400)
             payload = {'enabled':action=='enable'}
-        elif action in {'list','defaults_get'} and payload:
+        elif action == 'peers':
+            account_id = payload.get('id')
+            if set(payload) != {'id'} or type(account_id) is not int or account_id < 1:
+                abort(400)
+            path += '?reseller_id=' + str(account_id)
+            payload = {}
+        elif action in {'list','defaults_get','notices_list'} and payload:
             abort(400)
         request_id = body.get('request_id','')
-        if action == 'renew' and not re.fullmatch(r'[A-Za-z0-9_-]{16,80}', str(request_id)):
+        if action in {'renew','notices_create'} and not re.fullmatch(r'[A-Za-z0-9_-]{16,80}', str(request_id)):
             abort(400)
         # Invoke the same private owner service bodies, with an internal request
         # context for validated JSON. No native owner cookie/session is created,
@@ -108,3 +114,4 @@ def install_admin_bridge(bp, store, handlers, account_details):
         value.pop('csrf',None)
         value.pop('native_csrf',None)
         return jsonify(value), status
+

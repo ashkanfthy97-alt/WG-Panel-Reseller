@@ -44,13 +44,19 @@ async def call(update, api_call, action, payload=None, request_id=None):
     body = {'action': action, 'payload': payload or {},
         'actor': {'id': str(user.id), 'username': str(getattr(user, 'username', '') or '')},
         'request_id': request_id or secrets.token_hex(16)}
-    result = await asyncio.to_thread(api_call, 'POST', '/api/portal/reseller-admin', payload=body, timeout=90)
+    try:
+        result = await asyncio.to_thread(api_call, 'POST', '/api/portal/reseller-admin', payload=body, timeout=90)
+    except Exception:
+        # Keep the confirmation receipt available for a safe same-key retry.
+        return {'error': 'admin_transport_unavailable'}
     if not isinstance(result, dict):
         return {'error': 'invalid_admin_response'}
     if result.get('error') or result.get('ok') is False:
         return result
-    field = 'accounts' if action == 'list' else 'defaults' if action in {'defaults_get','defaults_set'} else 'account'
-    expected = list if field == 'accounts' else dict
+    field = {'list':'accounts', 'peers':'peers', 'notices_list':'notices',
+             'notices_create':'notice', 'notices_update':'notice'}.get(action,
+             'defaults' if action in {'defaults_get','defaults_set'} else 'account')
+    expected = list if field in {'accounts','peers','notices'} else dict
     if not isinstance(result.get(field), expected):
         return {'error': 'invalid_admin_response'}
     if field == 'account' and type(result[field].get('id')) is not int:
@@ -76,6 +82,7 @@ async def listing(update, context, api_call, send, page=0, parent=None):
     if (page+1)*8 < len(accounts): nav.append(('بعدی ➡️',f'resellers:page:{page+1}'))
     if nav: rows.append(nav)
     rows += [[('➕ ساخت نماینده','resellers:create'),('⚙️ پیش‌فرض اینترفیس','resellers:defaults')],
+             [('📣 اطلاع‌رسانی','resellers:notices')],
              [('🔄 تازه‌سازی','resellers:menu'),('🏠 منوی اصلی','home:main')]]
     await send(update, '\n'.join(lines), kb(rows))
 
@@ -91,7 +98,7 @@ async def detail(update, api_call, send, account_id):
     state = 'حساب بسته‌شده' if account.get('deleted') else 'در انتظار تأیید پرداخت' if account.get('approval_status') != 'approved' else 'فعال' if account.get('active') else 'متوقف'
     lines = ['👤 <b>'+escape(str(account.get('username','')) )+'</b>',
         f'شناسه: {account_id}', 'والد: '+escape(str(parent)), 'وضعیت: '+state,
-        'سقف Peer: '+str(account.get('max_peers',0)),
+        'Peerهای موجود / سقف: '+str(account.get('peer_count',0))+' / '+str(account.get('max_peers',0)),
         'ورود دومرحله‌ای: '+('فعال' if account.get('twofa_enabled') else 'غیرفعال'),
         'زیرمجموعهٔ مستقیم / کل: '+str(account.get('direct_child_count',0))+' / '+str(account.get('descendant_count',0)),
         'هزینهٔ ثبت این حساب: '+format(int(account.get('creation_fee_toman',0)), ',')+' تومان',
@@ -105,7 +112,7 @@ async def detail(update, api_call, send, account_id):
                  [('📊 سقف Peer',f'resellers:quota:{account_id}'),('🛠 بازیابی اینترفیس',f'resellers:setinterface:{account_id}')],
                  [('🔐 بازنشانی ورود دومرحله‌ای',f'resellers:reset2fa:{account_id}')],
                  [('🗃 بستن حساب با حفظ مشتری‌ها',f'resellers:archive:{account_id}')]]
-    rows += [[('👥 زیرمجموعه‌ها',f'resellers:children:{account_id}')], [('🔄 تازه‌سازی',f'resellers:open:{account_id}'),('↩️ فهرست','resellers:menu')]]
+    rows += [[('📋 مشتری‌ها و تعداد Peer',f'resellers:peers:{account_id}'),('👥 زیرمجموعه‌ها',f'resellers:children:{account_id}')], [('🔄 تازه‌سازی',f'resellers:open:{account_id}'),('↩️ فهرست','resellers:menu')]]
     await send(update, '\n'.join(lines), kb(rows))
 
 
@@ -123,7 +130,17 @@ async def confirm(update, context, send, action, account_id, payload=None):
         'archive':'بستن حساب و بات با حفظ Peerها، زیرمجموعه‌ها و سابقه', 'reset2fa':'بازنشانی ورود دومرحله‌ای این حساب',
         'renew':'افزودن '+str(state['values'].get('days',''))+' روز به اعتبار', 'quota':'تغییر سقف Peer', 'setinterface':'ثبت اینترفیس بررسی‌شده برای بازیابی',
         'defaults_set':'ذخیرهٔ پیش‌فرض ساخت اینترفیس نمایندگان جدید'}
-    await send(update, '⚠️ <b>تأیید عملیات</b>\n'+escape(descriptions.get(action, action))+'\nشناسه: '+str(account_id or '—'),
+    if action == 'notices_create':
+        raw = str(state['values'].get('title',''))+'\n\n'+str(state['values'].get('body',''))
+        await send(update,'📣 <b>پیش‌نمایش اطلاعیه</b>',back('resellers:notices'))
+        # Escaped '<' and astral characters can exceed Telegram's UTF-16 limit
+        # even when the original text is short. Bounded raw chunks remain safe.
+        for start in range(0, len(raw), 500):
+            await send(update,escape(raw[start:start+500]),back('resellers:notices'))
+        preview = 'این پیام در داشبورد نمایندگان نمایش داده شود؟'
+    else:
+        preview = '⚠️ <b>تأیید عملیات</b>\n'+escape(descriptions.get(action, action))+'\nشناسه: '+str(account_id or '—')
+    await send(update, preview,
         kb([[('✅ تأیید', 'resellers:confirm:'+state['request_id'])],[('❌ لغو','resellers:menu')]]))
 
 
@@ -152,6 +169,25 @@ async def handle_callback(update, context, data, api_call, send):
         await listing(update,context,api_call,send,page); return True
     if action=='create':
         flow(context,'create',fields=['username','password','max_peers']); await send(update,'نام کاربری نماینده را بفرستید.',back()); return True
+    if action=='noticecompose':
+        flow(context,'notices_create',fields=['title','body']); await send(update,'عنوان اطلاعیه را بفرستید (حداکثر ۱۶۰ نویسه).',back('resellers:notices')); return True
+    if action=='notices':
+        result=await call(update,api_call,'notices_list')
+        if result.get('error'): await send(update,error_text(result),back()); return True
+        notices=result['notices']
+        await send(update,'📣 <b>اطلاع‌رسانی به نمایندگان</b>\n'+('اطلاعیه‌ای ثبت نشده است.' if not notices else 'آخرین اطلاعیه‌ها:'),
+                   kb([[('✍️ ثبت اطلاعیه','resellers:noticecompose')]]))
+        # Separate bounded cards preserve Telegram limits without truncating the list.
+        page = int(parts[2]) if len(parts)==3 and parts[2].isdigit() else 0
+        page = max(0,min(page,max(0,(len(notices)-1)//8)))
+        for notice in notices[page*8:page*8+8]:
+            text=('✅ فعال' if notice.get('active') else '🗃 بایگانی')+' · '+escape(str(notice.get('title',''))[:160])
+            await send(update,text,kb([[('🗃 بایگانی' if notice.get('active') else '▶️ نمایش مجدد',
+                  'resellers:noticearchive:' + str(notice['id']) if notice.get('active') else 'resellers:noticeactivate:' + str(notice['id']))]]))
+        navigation=[]
+        if page: navigation.append(('⬅️ قبلی','resellers:notices:'+str(page-1)))
+        if (page+1)*8<len(notices): navigation.append(('بعدی ➡️','resellers:notices:'+str(page+1)))
+        await send(update,'بازگشت به مدیریت نمایندگان',kb(([navigation] if navigation else [])+[[('↩️ فهرست','resellers:menu')]])); return True
     if action=='defaults':
         result=await call(update,api_call,'defaults_get')
         if result.get('error') or result.get('ok') is False: await send(update,error_text(result),back()); return True
@@ -169,7 +205,17 @@ async def handle_callback(update, context, data, api_call, send):
     if len(parts)!=3 or not parts[2].isdigit() or not 0<int(parts[2])<10**12:
         await send(update,'گزینه معتبر نیست.',back()); return True
     account_id=int(parts[2])
-    if action=='open': await detail(update,api_call,send,account_id)
+    if action in {'noticearchive','noticeactivate'}:
+        await confirm(update,context,send,'notices_update',account_id,{'active':action=='noticeactivate'})
+    elif action=='peers':
+        result=await call(update,api_call,'peers',{'id':account_id})
+        if result.get('error'): await send(update,error_text(result),back()); return True
+        peers=result['peers']
+        await send(update,'📋 تعداد Peerهای نماینده: '+str(len(peers)),back(f'resellers:open:{account_id}'))
+        for start in range(0,len(peers),5):
+            lines=[str(index)+'. '+escape(str(peer.get('name',''))[:100])+' · شناسه: '+escape(str(peer.get('id',''))) for index,peer in enumerate(peers[start:start+5],start+1)]
+            await send(update,'\n'.join(lines),back(f'resellers:open:{account_id}'))
+    elif action=='open': await detail(update,api_call,send,account_id)
     elif action=='children': await listing(update,context,api_call,send,parent=account_id)
     elif action in {'renew','quota','setinterface'}:
         field={'renew':'days','quota':'max_peers','setinterface':'iface_id'}[action]
@@ -190,7 +236,11 @@ async def handle_text(update, context, api_call, send):
     if not state['fields']:
         await send(update,'از دکمهٔ تأیید یا لغو استفاده کنید.',back()); return True
     field=state['fields'][0]
-    if field in {'username','password'}:
+    if state['action']=='notices_create':
+        if not value or len(value)>(160 if field=='title' else 2000):
+            await send(update,'عنوان حداکثر ۱۶۰ و متن حداکثر ۲۰۰۰ نویسه باشد.',back('resellers:notices')); return True
+        parsed=value
+    elif field in {'username','password'}:
         if field == 'password': value = str(update.effective_message.text or '')
         if not value or len(value)>(1024 if field=='password' else 64) or (field=='password' and len(value)<12):
             await send(update,'مقدار معتبر بفرستید؛ رمز باید حداقل ۱۲ نویسه باشد.',back()); return True
@@ -210,7 +260,7 @@ async def handle_text(update, context, api_call, send):
             await send(update,'عدد معتبر در محدودهٔ مجاز بفرستید.',back()); return True
     state['values'][field]=parsed; state['fields'].pop(0)
     if state['fields']:
-        prompt='رمز اولیه (حداقل ۱۲ نویسه) را بفرستید؛ آن را در این گفتگو بازنشر نمی‌کنم.' if state['fields'][0]=='password' else 'سقف Peer را بفرستید (۱ تا ۱۰۰۰۰).'
+        prompt='متن اطلاعیه را بفرستید (حداکثر ۲۰۰۰ نویسه).' if state['fields'][0]=='body' else 'رمز اولیه (حداقل ۱۲ نویسه) را بفرستید؛ آن را در این گفتگو بازنشر نمی‌کنم.' if state['fields'][0]=='password' else 'سقف Peer را بفرستید (۱ تا ۱۰۰۰۰).'
         await send(update,prompt,back()); return True
     if state['action']=='create':
         try:
@@ -225,3 +275,4 @@ async def handle_text(update, context, api_call, send):
     if state['action']=='defaults_set': payload=payload
     await confirm(update,context,send,state['action'],state['id'],payload)
     return True
+

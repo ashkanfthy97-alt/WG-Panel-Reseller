@@ -69,6 +69,11 @@ class NativeCore:
 def reseller_blueprint(panel_url, database, api_key, *, core=None,
                        owner_cookie_reader=None, native_scheme=False):
     bp = Blueprint('reseller', __name__)
+    from portal_reseller_notices import StoreError as NoticeError
+
+    @bp.errorhandler(NoticeError)
+    def invalid_notice(error):
+        return jsonify(error='invalid_notice', message=str(error)), 400
     store = ResellerStore(database)
     core = core if core is not None else NativeCore(panel_url, api_key)
     ui = Path(__file__).parent / 'reseller_ui'
@@ -89,6 +94,9 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         value = session.get('reseller_identity') or {}
         if not isinstance(value, dict):
             return None
+        assumed = session.get('assumed_owner')
+        if assumed is not None and (not isinstance(assumed, str) or not assumed or owner() != assumed):
+            return None
         account = store.get(value.get('id', 0))
         if not account or account.get('deleted') or account['auth_version'] != value.get('version'):
             return None
@@ -107,6 +115,10 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
             return data.get('username') if status == 200 and isinstance(data, dict) else None
         except CoreError:
             return None
+
+    @bp.record_once
+    def register_identity_guard(state):
+        state.app.extensions['portal_reseller_identity_guard'] = active_account
 
     def require_owner(fn):
         @wraps(fn)
@@ -395,7 +407,10 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
             from flask_wtf.csrf import generate_csrf
             factory = generate_csrf
         account = active_account()
-        return jsonify(csrf=csrf(), account=account, activation={
+        admin_context = ({'owner_username': session['assumed_owner'],
+                          'reseller_username': account['username'], 'return_url': '/resellers'}
+                         if account and session.get('assumed_owner') else None)
+        return jsonify(csrf=csrf(), account=account, admin_context=admin_context, activation={
             'amount': account['creation_fee_toman'] if account is not None else RESELLER_CREATION_FEE_TOMAN,
             'currency': 'toman', 'manual': True,
             'telegram_url': 'https://t.me/AshkanfathiOfficial',
@@ -439,6 +454,8 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     def credit():
         # A paused or pending account may inspect its own validity and capacity;
         # operational routes still require require_reseller's active check.
+        if not active_account():
+            return jsonify(error='login_required'), 401
         identity = session.get('reseller_identity') or {}
         if (not isinstance(identity, dict) or type(identity.get('id')) is not int
                 or type(identity.get('version')) is not int):
@@ -476,6 +493,64 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     def logout():
         session.clear()
         return jsonify(ok=True, signin_url='/login')
+
+    def entry_audit(account_id, action, actor):
+        import time
+        with store.db(write=True) as db:
+            db.execute('INSERT INTO reseller_audit(reseller_id,action,actor,created_at) VALUES(?,?,?,?)',
+                       (account_id, action, actor, int(time.time())))
+
+    @bp.post('/resellers/api/accounts/<int:account_id>/enter')
+    @require_owner
+    def enter_account(account_id):
+        account = store.get(account_id)
+        if not account or account.get('deleted'):
+            abort(404)
+        entry_audit(account_id, 'owner:enter', g.reseller_owner)
+        session['reseller_identity'] = {'id': account['id'], 'version': account['auth_version']}
+        session['assumed_owner'] = g.reseller_owner
+        return jsonify(url='/reseller')
+
+    @bp.post('/reseller/api/return-owner')
+    @require_owner
+    def return_owner():
+        if session.get('assumed_owner') != g.reseller_owner:
+            abort(403)
+        identity = session.get('reseller_identity') or {}
+        entry_audit(identity.get('id') if isinstance(identity, dict) else None,
+                    'owner:return', g.reseller_owner)
+        session.pop('reseller_identity', None)
+        session.pop('assumed_owner', None)
+        return jsonify(url='/resellers')
+
+    @bp.get('/resellers/api/notices')
+    @require_owner
+    def notices_list():
+        from portal_reseller_notices import listing
+        return jsonify(notices=listing(store), csrf=csrf())
+
+    @bp.post('/resellers/api/notices')
+    @require_owner
+    def notices_create():
+        from portal_reseller_notices import create
+        notice = create(store, data(), g.reseller_owner, request.headers.get('Idempotency-Key'))
+        return jsonify(notice=notice), 201
+
+    @bp.put('/resellers/api/notices/<int:notice_id>')
+    @require_owner
+    def notices_update(notice_id):
+        from portal_reseller_notices import update
+        notice = update(store, notice_id, data(), g.reseller_owner)
+        if notice is None:
+            abort(404)
+        return jsonify(notice=notice)
+
+    @bp.get('/reseller/api/notices')
+    def reseller_notices():
+        from portal_reseller_notices import listing
+        if not active_account():
+            return jsonify(error='login_required'), 401
+        return jsonify(notices=listing(store, public=True), csrf=csrf())
 
     @bp.get('/resellers/api/accounts')
     @require_owner
@@ -870,6 +945,10 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
     if native_scheme:
         from portal_reseller_admin import install_admin_bridge
         install_admin_bridge(bp, store, {
+            'peers': (owner_peers, '/resellers/api/peers', 'GET'),
+            'notices_list': (notices_list, '/resellers/api/notices', 'GET'),
+            'notices_create': (notices_create, '/resellers/api/notices', 'POST'),
+            'notices_update': (notices_update, '/resellers/api/notices/{id}', 'PUT'),
             'list': (accounts, '/resellers/api/accounts', 'GET'),
             'create': (create_account, '/resellers/api/accounts', 'POST'),
             'approve': (approve, '/resellers/api/accounts/{id}/approval', 'POST'),
@@ -884,5 +963,6 @@ def reseller_blueprint(panel_url, database, api_key, *, core=None,
         }, account_details)
 
     return bp
+
 
 

@@ -17,3 +17,17 @@
 
 /* Navigation restrictions apply in both native design modes. */
 #reseller-navigation[hidden],#reseller-navigation [hidden]{display:none!important}
+
+
+/* Owner operations stay within the native panel shell. */
+.portal-reseller-workspace .owner-tabs{display:flex;gap:.5rem;max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;padding:.5rem 0;margin-bottom:1.25rem;scrollbar-width:thin}
+.portal-reseller-workspace .owner-tabs button{flex:0 0 auto;white-space:nowrap;background:#102b3c;color:#b8d7e8;border:1px solid #285064}
+.portal-reseller-workspace .owner-tabs button[aria-selected="true"]{background:#59d1ed;color:#062231;border-color:#59d1ed}
+.portal-reseller-workspace [data-owner-pane][hidden]{display:none!important}
+.portal-reseller-workspace .owner-peer-count{font-size:1.65rem;display:block;color:#64dcf4}
+.portal-reseller-workspace .peer-quota{display:block;white-space:nowrap;margin-bottom:.5rem}
+.portal-reseller-workspace textarea{display:block;box-sizing:border-box;width:100%;min-height:10rem;resize:vertical;background:#092230;border:1px solid #315469;border-radius:12px;color:#e5f2ff;padding:1rem;font:inherit;line-height:1.8;margin-bottom:1rem}
+.portal-reseller-workspace .announcement-body{font-size:clamp(22px,2.2vw,32px);line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;margin-block:1rem}
+.portal-reseller-workspace .announcement{border-inline-start:4px solid #59d1ed}
+.portal-reseller-workspace .admin-context{border-color:#e5b563;background:#24313a}
+.portal-reseller-workspace .reseller-notices{max-width:100%;margin-block:1rem}

@@ -220,6 +220,8 @@
     document.title = $("#page-title").textContent + " · WG Portal";
     try { localStorage.setItem("wgportal-language", language); } catch { /* The current page still changes language. */ }
     if (adminData) renderAdmin(adminData);
+    renderNotices();
+    renderAdminContext(currentAdminContext);
     if (ownerPeerAudit) renderOwnerPeerAudit(ownerPeerAudit);
     if (account) renderAccount();
     if (peerData && account?.active) renderPeers(peerData);
@@ -294,7 +296,7 @@
       cell(row, date(item.expires_at));
       const peerCell=row.insertCell();const count=document.createElement("strong");count.className="owner-peer-count";count.textContent=Number.isSafeInteger(item.peer_count)?number.format(item.peer_count):"—";
       const inspect=document.createElement("button");inspect.type="button";inspect.className="secondary owner-peer-inspect";inspect.textContent=text("مشاهده Peerها","View peers");inspect.setAttribute("aria-label",inspect.textContent+" · "+item.username);
-      inspect.addEventListener("click",()=>{ $("#owner-peer-filter").value=String(item.id);loadOwnerPeerAudit();$("#owner-peer-audit").scrollIntoView({block:"start"});$("#owner-peer-audit-title").focus({preventScroll:true});});peerCell.append(count,inspect);
+      inspect.addEventListener("click",()=>{ selectOwnerTab("accounts");$("#owner-peer-filter").value=String(item.id);loadOwnerPeerAudit();$("#owner-peer-audit").scrollIntoView({block:"start"});$("#owner-peer-audit-title").focus({preventScroll:true});});const quota=document.createElement("small");quota.className="peer-quota";quota.textContent=text("از سقف ","of limit ")+number.format(item.max_peers);peerCell.append(count,quota,inspect);
       cell(row, item.max_peers);
       cell(row, item.parent_username || text("مدیر اصلی", "Owner"));
       cell(row, number.format(item.direct_child_count || 0) + " / " + number.format(item.descendant_count || 0));
@@ -339,7 +341,7 @@
       }));
       const signin = document.createElement("button"); signin.type = "button"; signin.className = "secondary";
       signin.textContent = text("لینک ورود نماینده", "Reseller sign-in link");
-      signin.addEventListener("click", () => showSignin("/reseller"));
+      signin.addEventListener("click", () => action(signin, null, async () => { const result = await api(`/resellers/api/accounts/${Number(item.id)}/enter`, {method:"POST",payload:{}}); if(result.url !== "/reseller") throw new Error(text("پاسخ ورود معتبر نیست.","Invalid entry response.")); location.assign(result.url); }));
       actions.append(days, renew, access, signin, deleteControl("account", item, true)); row.insertCell().append(actions);
     }
     if (!accounts.length) empty(rows, text("هنوز نماینده‌ای ساخته نشده است.", "No reseller accounts yet."), 10);
@@ -456,8 +458,8 @@
   function renderPeers(data) {
     peerData = data;
     const rows = $("#peer-rows"); rows.replaceChildren();
-    for (const peer of data.peers || []) {
-      const row = rows.insertRow(); cell(row, peer.name);
+    for (const [index, peer] of (data.peers || []).entries()) {
+      const row = rows.insertRow(); cell(row, new Intl.NumberFormat(language === "fa" ? "fa-IR" : "en-GB").format(index + 1)); cell(row, peer.name);
       const state = String(peer.panel_status || peer.status || "unknown");
       cell(row, String(peer.conn_status || "—") + " / " + state);
       const used = Math.max(0, Number(peer.used_bytes) || 0) / 1073741824;
@@ -527,7 +529,7 @@
   function renderOwnerPeerAudit(value) {
     const rows=$("#owner-peer-rows");rows.replaceChildren();const number=new Intl.NumberFormat(language==="fa"?"fa-IR":"en-GB");
     const accounts=new Map((adminData?.accounts || []).map(item=>[item.id,item]));
-    for(const peer of value.peers){const row=rows.insertRow();cell(row,peer.id);cell(row,peer.name || "—");cell(row,peer.reseller.username+(peer.reseller.deleted?text(" (بسته‌شده)"," (archived)"):""));cell(row,accounts.get(peer.reseller.parent_id)?.username || (peer.reseller.parent_id?"#"+peer.reseller.parent_id:text("مدیر اصلی","Owner")));cell(row,peer.iface || peer.iface_name || "—");const address=cell(row,peer.address || "—");if(address)address.dir="ltr";cell(row,peer.conn_status || peer.panel_status || peer.status || "—");cell(row,(Number.isFinite(peer.used_bytes)?number.format(Math.round(peer.used_bytes/1048576))+" MiB":"—")+" / "+(peer.data_limit==null?"—":String(peer.data_limit)+" "+String(peer.limit_unit || "")));cell(row,peer.ttl_seconds==null?"—":number.format(Math.max(0,Math.ceil(Number(peer.ttl_seconds)/86400)))+text(" روز"," days"));}
+    for(const [index,peer] of value.peers.entries()){const row=rows.insertRow();cell(row,number.format(index+1));cell(row,peer.id);cell(row,peer.name || "—");cell(row,peer.reseller.username+(peer.reseller.deleted?text(" (بسته‌شده)"," (archived)"):""));cell(row,accounts.get(peer.reseller.parent_id)?.username || (peer.reseller.parent_id?"#"+peer.reseller.parent_id:text("مدیر اصلی","Owner")));cell(row,peer.iface || peer.iface_name || "—");const address=cell(row,peer.address || "—");if(address)address.dir="ltr";cell(row,peer.conn_status || peer.panel_status || peer.status || "—");cell(row,(Number.isFinite(peer.used_bytes)?number.format(Math.round(peer.used_bytes/1048576))+" MiB":"—")+" / "+(peer.data_limit==null?"—":String(peer.data_limit)+" "+String(peer.limit_unit || "")));cell(row,peer.ttl_seconds==null?"—":number.format(Math.max(0,Math.ceil(Number(peer.ttl_seconds)/86400)))+text(" روز"," days"));}
     $("#owner-peer-state").textContent=value.peers.length?text("تعداد Peerهای این فهرست: ","Peers in this list: ")+number.format(value.total):text("برای این انتخاب Peer ثبت‌شده‌ای وجود ندارد.","No registered peers match this selection.");
     for(const item of value.counts || []){const count=document.querySelector('#account-rows tr[data-account-id="'+Number(item.reseller_id)+'"] .owner-peer-count');if(count)count.textContent=number.format(item.peer_count);}
   }
@@ -536,10 +538,36 @@
     try {const id=$("#owner-peer-filter").value;const value=await api("/resellers/api/peers"+(id?"?reseller_id="+encodeURIComponent(id):""));if(serial!==ownerPeerRequest)return;if(!Array.isArray(value.peers)||!Number.isSafeInteger(value.total)||value.peers.some(peer=>!peer.reseller||!Number.isSafeInteger(peer.id)))throw new Error(text("فهرست Peerها معتبر نیست.","Invalid peer list."));ownerPeerAudit=value;renderOwnerPeerAudit(value);}
     catch(error){if(serial!==ownerPeerRequest)return;$("#owner-peer-state").textContent=error.message || text("دریافت Peerها ناموفق بود؛ دوباره تلاش کنید.","Peer list failed to load. Retry.");}
   }
+  let noticesData = [], selectedOwnerTab = "accounts", currentAdminContext = null;
+  const ownerTabDefinitions = [["accounts","نماینده‌ها","Resellers"],["hierarchy","زیرمجموعه و هزینهٔ ثبت","Subresellers and fees"],["events","رویدادهای اخیر نمایندگی","Recent events"],["review","درخواست‌های نیازمند بررسی مدیر","Owner review"],["notices","اطلاع‌رسانی","Announcements"]];
+  function selectOwnerTab(key, focus = false) {
+    selectedOwnerTab = key;
+    document.querySelectorAll("[data-owner-tab]").forEach(button => { const active = button.dataset.ownerTab === key;button.setAttribute("aria-selected",String(active));button.tabIndex=active?0:-1;if(active&&focus)button.focus(); });
+    document.querySelectorAll("[data-owner-pane]").forEach(panel => panel.hidden = panel.dataset.ownerPane !== key);
+  }
+  function setupOwnerTabs() {
+    const root=$("#admin-view"), tabs=$("#owner-tabs");
+    const targets = {accounts:[...root.querySelectorAll(":scope > section")].filter(node=>!node.classList.contains("hierarchy-overview")&&!node.querySelector("#audit-list")&&node.id!=="operations-card"),hierarchy:[root.querySelector(".hierarchy-overview")],events:[root.querySelector("#audit-list").closest("section")],review:[$("#operations-card")]};
+    for(const [key,fa,en] of ownerTabDefinitions){const button=document.createElement("button");button.type="button";button.id="owner-tab-"+key;button.dataset.ownerTab=key;button.dataset.fa=fa;button.dataset.en=en;button.textContent=text(fa,en);button.setAttribute("role","tab");button.setAttribute("aria-controls","owner-pane-"+key);button.addEventListener("click",()=>selectOwnerTab(key));tabs.append(button);const pane=document.createElement("div");pane.id="owner-pane-"+key;pane.dataset.ownerPane=key;pane.setAttribute("role","tabpanel");pane.setAttribute("aria-labelledby",button.id);for(const node of targets[key]||[])pane.append(node);root.append(pane);if(key==="accounts"){const summary=root.querySelector(":scope > .summary-grid");if(summary)pane.prepend(summary);}}
+    tabs.addEventListener("keydown",event=>{const keys=["ArrowLeft","ArrowRight","Home","End"];if(!keys.includes(event.key))return;event.preventDefault();let index=ownerTabDefinitions.findIndex(item=>item[0]===selectedOwnerTab);index=event.key==="Home"?0:event.key==="End"?4:(index+(event.key==="ArrowRight"?(language==="fa"?-1:1):(language==="fa"?1:-1))+5)%5;selectOwnerTab(ownerTabDefinitions[index][0],true);});
+    const pane=$("#owner-pane-notices");pane.innerHTML=`<section class="card"><h2 data-fa="اطلاع‌رسانی به همهٔ نمایندگان" data-en="Announce to all resellers">اطلاع‌رسانی به همهٔ نمایندگان</h2><form id="announcement-form"><label for="announcement-title" data-fa="عنوان پیام" data-en="Message title">عنوان پیام</label><input id="announcement-title" maxlength="160" required><label for="announcement-body" data-fa="متن پیام" data-en="Message">متن پیام</label><textarea id="announcement-body" rows="7" maxlength="8000" required></textarea><h3 data-fa="پیش‌نمایش" data-en="Preview">پیش‌نمایش</h3><div id="announcement-preview" class="announcement-body" aria-live="polite"></div><button type="submit" data-fa="انتشار برای همهٔ نمایندگان" data-en="Publish to all resellers">انتشار برای همهٔ نمایندگان</button><p id="announcement-result" role="status"></p></form></section><section class="card"><h2 data-fa="پیام‌های منتشرشده و بایگانی" data-en="Published and archived messages">پیام‌های منتشرشده و بایگانی</h2><div id="announcement-history"></div></section>`;
+    $("#announcement-body").addEventListener("input",()=>$("#announcement-preview").textContent=$("#announcement-body").value);
+    $("#announcement-form").addEventListener("submit",event=>{event.preventDefault();const form=event.currentTarget;action(form.querySelector("button"),"#announcement-result",async()=>{const payload={title:$("#announcement-title").value.trim(),body:$("#announcement-body").value.trim()};const operation=await receipt("announcement",payload);await api("/resellers/api/notices",{method:"POST",payload,key:operation.key});finishReceipt(operation);form.reset();$("#announcement-preview").textContent="";await loadNotices();formResult("#announcement-result",text("پیام منتشر شد.","Message published."));});});
+    selectOwnerTab("accounts");
+  }
+  function renderAdminContext(context) { currentAdminContext=context;const banner=$("#admin-context");banner.hidden=!context;if(context)$("#admin-context-copy").textContent=text("نمای مدیر از پنل نماینده: ","Administrator view of reseller: ")+String(context.reseller_username||account?.username||""); }
+  function renderNotices(){
+    const root=ownerView?$("#announcement-history"):$("#reseller-notices");if(!root)return;root.replaceChildren();const items=ownerView?noticesData:noticesData.filter(item=>item.active);if(!ownerView)root.hidden=!items.length;
+    for(const item of items){const card=document.createElement("article");card.className="card announcement";const title=document.createElement("h2"),body=document.createElement("p");title.textContent=item.title;body.textContent=item.body;body.className="announcement-body";card.append(title,body);if(ownerView){const meta=document.createElement("p");meta.className="muted";meta.textContent=date(item.created_at)+" · "+(item.active?text("منتشرشده","Published"):text("بایگانی‌شده","Archived"));card.append(meta);if(item.active){const archive=document.createElement("button");archive.type="button";archive.className="secondary";archive.textContent=text("بایگانی پیام","Archive message");archive.addEventListener("click",()=>action(archive,null,async()=>{await api("/resellers/api/notices/"+Number(item.id),{method:"PUT",payload:{active:false}});await loadNotices();}));card.append(archive);}}root.append(card);}
+    if(ownerView&&!items.length)root.textContent=text("هنوز پیامی منتشر نشده است.","No announcements yet.");
+  }
+  async function loadNotices(){try{const value=await api(ownerView?"/resellers/api/notices":"/reseller/api/notices");noticesData=Array.isArray(value.notices)?value.notices:[];renderNotices();}catch(error){notice(error.message,"error");}}
+  setupOwnerTabs();
+  $("#return-owner").addEventListener("click",event=>action(event.currentTarget,null,async()=>{const value=await api("/reseller/api/return-owner",{method:"POST",payload:{}});if(value.url!=="/resellers")throw new Error(text("پاسخ بازگشت معتبر نیست.","Invalid return response."));location.assign(value.url);}));
   $("#owner-peer-filter").addEventListener("change",loadOwnerPeerAudit);
   $("#owner-peer-refresh").addEventListener("click",loadOwnerPeerAudit);
   async function loadAdmin() {
-    try { renderAdmin(await api("/resellers/api/accounts")); await Promise.all([loadProvisionDefaults(),loadOwnerPeerAudit()]); }
+    try { renderAdmin(await api("/resellers/api/accounts")); await Promise.all([loadProvisionDefaults(),loadOwnerPeerAudit(),loadNotices()]); }
     catch (error) { ownerVisibility(false); throw error; }
   }
   async function loadPeers() { if (account?.active) renderPeers(await api("/reseller/api/peers")); }
@@ -636,7 +664,7 @@
     try {
       const result = await api("/reseller/api/session"); account = result.account || null; activationData = result.activation || null;
       if (ownerView) await loadAdmin();
-      else { renderAccount(); if (account?.active) await Promise.all([loadPeers(), loadChildren(), loadBot()]); }
+      else { renderAccount(); renderAdminContext(result.admin_context); if(account) await loadNotices(); if (account?.active) await Promise.all([loadPeers(), loadChildren(), loadBot()]); }
     } catch (error) {
       if (ownerView) ownerVisibility(false);
       else if (error.status === 401 || error.status === 403) { peerData = null; $("#peer-rows").replaceChildren(); $("#active-view").hidden = true; }
@@ -931,5 +959,6 @@
   $("#qr-image").addEventListener("error", () => { closeQR(); notice(text("تصویر QR دریافت نشد؛ وضعیت حساب و سرویس را تازه کنید.", "The QR image could not be loaded. Refresh your account and service status."), "error"); });
   translate(language); load();
 })();
+
 
 
