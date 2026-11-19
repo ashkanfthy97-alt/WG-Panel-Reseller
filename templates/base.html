@@ -377,6 +377,8 @@
           </a>
 
           <a href="/resellers" class="sb2-link{{ ' active' if request.path == '/resellers' else '' }}" data-tip="Resellers" {% if request.path == '/resellers' %}aria-current="page"{% endif %}><i class="fas fa-user-group" aria-hidden="true"></i><span class="sb2-text" data-portal-ui>Resellers</span></a>
+          <a href="/telegram-commerce" class="sb2-link{{ ' active' if request.path == '/telegram-commerce' else '' }}" data-tip="فروش تلگرامی"><i class="fas fa-shopping-cart" aria-hidden="true"></i><span class="sb2-text">فروش تلگرامی</span></a>
+          <a href="/telegram-commerce" class="sb2-link{{ ' active' if request.path == '/telegram-commerce' else '' }}" data-tip="فروش تلگرامی"><i class="fas fa-shopping-cart" aria-hidden="true"></i><span class="sb2-text">فروش تلگرامی</span></a>
           {% if HAS_SETTINGS %}
           <a
             href="{{ url_for('settings_page') }}?tab=panel"
@@ -999,4 +1001,3 @@
     <script defer src="{{ url_for('static', filename='js/visual-preferences.js') }}?v=8"></script>
   </body>
 </html>
-

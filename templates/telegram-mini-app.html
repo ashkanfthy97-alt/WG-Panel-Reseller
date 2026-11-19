@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071521"><meta name="color-scheme" content="dark">
+  <title>WG Portal · پنل کاربری</title>
+  <link rel="icon" href="/static/img/wg-portal-logo.png">
+  <link rel="stylesheet" href="/static/css/telegram-mini-app.css?v=20261119">
+  <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script defer src="/static/js/telegram-mini-app.js?v=20261119"></script>
+</head>
+<body>
+<div id="tg-app" class="tg-app">
+  <header class="app-header"><a class="brand" href="#home" aria-label="خانه WG Portal"><img src="/static/img/wg-portal-logo.png" alt=""><span>WG <b>Portal</b><small>همراهِ اتصال شما</small></span></a><button id="refresh-app" class="icon-button" type="button" aria-label="تازه‌سازی وضعیت">↻</button></header>
+  <div id="app-status" class="app-status" role="status" aria-live="polite" hidden></div>
+  <section id="auth-panel" class="surface auth-panel" hidden><span class="large-icon" aria-hidden="true">🔐</span><h1>ورود امن از تلگرام</h1><p>برای دیدن حساب و اشتراک‌ها، این صفحه را از دکمهٔ «ورود به پنل کاربری» در بات تلگرام باز کنید.</p><button id="retry-auth" type="button">بررسی دوبارهٔ ورود</button></section>
+  <main id="customer-workspace" aria-busy="true">
+    <section data-page="home" id="page-home" aria-labelledby="home-title">
+      <div class="welcome"><p class="eyebrow">فضای اختصاصی شما</p><h1 id="home-title">سلام، <span id="customer-name">دوست عزیز</span> 👋</h1><p>خرید، تمدید و مدیریت اتصال؛ همه در یک‌جا.</p></div>
+      <section class="balance-card"><div><span>موجودی کیف پول</span><strong id="home-balance" class="skeleton">—</strong><small>تومان</small></div><button type="button" data-go="wallet" class="light-button">＋ افزایش موجودی</button></section>
+      <div class="stat-grid"><article class="surface stat"><span>اشتراک فعال</span><strong id="home-active" class="skeleton">—</strong></article><article class="surface stat"><span>حجم باقی‌مانده</span><strong id="home-traffic" class="skeleton">—</strong></article><article class="surface stat"><span>نزدیک‌ترین انقضا</span><strong id="home-days" class="skeleton">—</strong></article></div>
+      <div id="home-notices" class="notices"></div>
+      <section class="surface quick-start"><div><span class="eyebrow">برای شروع آماده‌ای؟</span><h2>اتصال خودت را انتخاب کن</h2><p>طرح‌ها را ببین یا ابتدا کیفیت اتصال را آزمایش کن.</p></div><div class="actions"><button type="button" data-go="catalog">🛒 خرید اشتراک</button><button id="request-trial" type="button" class="secondary">🧪 تست رایگان</button></div></section>
+      <section><div class="section-title"><h2>اشتراک‌های شما</h2><button type="button" class="text-button" data-go="subscriptions">مشاهدهٔ همه ←</button></div><div id="home-subscriptions" class="card-list"><div class="surface skeleton-card" aria-label="در حال دریافت اشتراک‌ها"></div></div></section>
+      <div class="shortcut-grid"><button type="button" id="open-support">🎧<span>پشتیبانی</span></button><button type="button" id="open-guides">📚<span>آموزش اتصال</span></button><button type="button" id="open-downloads">📥<span>دریافت برنامه</span></button><button type="button" id="open-referrals">🎁<span>دعوت دوستان</span></button></div>
+    </section>
+    <section data-page="catalog" id="page-catalog" aria-labelledby="catalog-title" hidden><div class="welcome"><p class="eyebrow">یک انتخاب برای اتصال بهتر</p><h1 id="catalog-title">خرید اشتراک</h1><p>قیمت نهایی را پیش از پرداخت می‌بینید.</p></div><div id="catalog-filters" class="filter-tabs" role="group" aria-label="دسته‌بندی طرح‌ها"></div><div id="product-list" class="product-grid"></div></section>
+    <section data-page="subscriptions" id="page-subscriptions" aria-labelledby="subscriptions-title" hidden><div class="welcome"><p class="eyebrow">همهٔ اتصال‌های شما</p><h1 id="subscriptions-title">اشتراک‌های من</h1><p>کانفیگ و QR، مصرف و تمدید اشتراک.</p></div><div id="subscription-list" class="card-list"></div><section class="surface"><h2>سفارش‌ها و پرداخت‌ها</h2><div id="order-list" class="card-list"></div></section></section>
+    <section data-page="wallet" id="page-wallet" aria-labelledby="wallet-title" hidden><div class="welcome"><p class="eyebrow">حساب‌وکتاب شفاف</p><h1 id="wallet-title">کیف پول</h1></div><section class="balance-card"><div><span>موجودی قابل استفاده</span><strong id="wallet-balance">—</strong><small>تومان</small></div><span class="large-icon" aria-hidden="true">◈</span></section><section class="surface"><h2>افزایش موجودی</h2><p class="muted">موجودی پس از بررسی رسید و تأیید مدیر اضافه می‌شود.</p><form id="topup-form"><div id="topup-options" class="chip-list"></div><label for="topup-amount">مبلغ به تومان</label><input id="topup-amount" type="number" inputmode="numeric" min="1" max="1000000000" required><button type="submit">دریافت اطلاعات پرداخت</button></form></section><section class="surface"><h2>تاریخچهٔ تراکنش‌ها</h2><div id="wallet-ledger"></div></section></section>
+    <section data-page="profile" id="page-profile" aria-labelledby="profile-title" hidden><div class="welcome"><p class="eyebrow">حساب اختصاصی شما</p><h1 id="profile-title">حساب من</h1></div><section class="surface"><div class="profile-avatar" aria-hidden="true">👤</div><h2 id="profile-name">—</h2><p id="profile-username" class="muted"></p><dl id="profile-details" class="detail-list"></dl></section><section class="surface"><h2>دعوت دوستان</h2><div id="referral-summary"></div><button id="share-referral" type="button">🎁 دریافت و اشتراک لینک دعوت</button></section><section class="surface"><div class="section-title"><h2>گفت‌وگوهای پشتیبانی</h2><button id="new-ticket" type="button" class="secondary">＋ درخواست جدید</button></div><div id="ticket-list"></div></section></section>
+  </main>
+  <nav id="bottom-nav" class="bottom-nav" aria-label="بخش‌های پنل کاربری"><button type="button" data-go="home" aria-current="page"><span aria-hidden="true">⌂</span>خانه</button><button type="button" data-go="catalog"><span aria-hidden="true">🛒</span>خرید</button><button type="button" data-go="subscriptions"><span aria-hidden="true">▣</span>اشتراک‌ها</button><button type="button" data-go="wallet"><span aria-hidden="true">◈</span>کیف پول</button><button type="button" data-go="profile"><span aria-hidden="true">♙</span>حساب من</button></nav>
+  <dialog id="app-dialog" aria-labelledby="dialog-title"><div class="dialog-heading"><h2 id="dialog-title"></h2><button id="close-dialog" class="icon-button" type="button" aria-label="بستن">×</button></div><div id="dialog-content"></div></dialog>
+</div>
+</body></html>

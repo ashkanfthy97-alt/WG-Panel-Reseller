@@ -181,6 +181,8 @@ def install_reseller(app, csrf, *, native_admin_lookup=None):
         native_scheme=True)
     csrf.exempt(bp)
     app.register_blueprint(bp)
+    from portal_commerce import install_commerce
+    install_commerce(app, csrf)
 
     @app.before_request
     def unified_login():

@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}WG Portal · فروش تلگرام{% endblock %}
+{% block final_styles %}{{ super() }}<link rel="stylesheet" href="/static/css/telegram-commerce.css?v=20261119">{% endblock %}
+{% block content %}
+<div id="commerce-admin" class="commerce-admin" lang="fa" dir="rtl">
+  <header class="commerce-heading"><div><p class="commerce-eyebrow">مدیریت فروش مستقیم</p><h1 tabindex="-1">فروش تلگرام</h1><p>بات عمومی، مشتری‌ها، پرداخت‌های دستی و سرویس‌های WireGuard.</p></div><div class="commerce-actions"><a href="/telegram-app" class="commerce-button secondary" target="_blank" rel="noopener">مشاهدهٔ پنل کاربری ↗</a><button id="commerce-refresh" type="button">↻ تازه‌سازی</button></div></header>
+  <p id="commerce-status" class="commerce-status" role="status" aria-live="polite" hidden></p>
+  <nav id="commerce-tabs" class="commerce-tabs" role="tablist" aria-label="مدیریت فروش تلگرام"></nav>
+  <div id="commerce-loading" class="commerce-loading" role="status">در حال دریافت اطلاعات…</div>
+  <section id="commerce-panel" role="tabpanel" tabindex="-1"></section>
+  <dialog id="commerce-dialog" aria-labelledby="commerce-dialog-title"><div class="commerce-dialog-heading"><h2 id="commerce-dialog-title"></h2><button id="commerce-dialog-close" type="button" class="secondary" aria-label="بستن">×</button></div><div id="commerce-dialog-body"></div></dialog>
+</div>
+{% endblock %}
+{% block body_extras %}{{ super() }}<script defer src="/static/js/telegram-commerce.js?v=20261119"></script>{% endblock %}

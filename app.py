@@ -26770,6 +26770,7 @@ def _subscription_row(sub):
             }
 
         locs.append({
+            'public_key': getattr(peer, 'public_key', None),
             'link_id': getattr(
                 link,
                 'id',
@@ -32174,5 +32175,3 @@ if __name__ == "__main__":
         app.logger.exception("bootstrap failed: %s", e)
 
     _Guni(app, options).run()
-
-
