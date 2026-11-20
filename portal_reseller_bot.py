@@ -100,7 +100,8 @@ def telegram_result(status, value, method=None):
 
 
 TELEGRAM_METHODS = {'getMe', 'getWebhookInfo', 'getChat', 'getUpdates', 'getFile', 'sendMessage',
-                    'sendDocument', 'sendPhoto', 'answerCallbackQuery', 'editMessageText', 'editMessageReplyMarkup'}
+                    'sendDocument', 'sendPhoto', 'answerCallbackQuery', 'editMessageText', 'editMessageReplyMarkup',
+                    'deleteMessage'}
 
 
 def telegram_payload(payload):

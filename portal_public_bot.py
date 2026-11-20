@@ -22,6 +22,7 @@ MENU=[('🛒 خرید اشتراک','shop'),('🧪 دریافت تست رایگ�
 CATEGORIES={'economy':'🔥 طرح‌های اقتصادی','custom':'📊 اشتراک حجمی','unlimited':'♾ اشتراک نامحدود'}
 PRICE_MENU='📋 طرح‌ها و قیمت‌ها'
 MENU_ACTIONS={**dict(MENU),PRICE_MENU:'prices'}
+QUIET_SHORTCUTS={label for label,action in MENU if action in {'shop','trialinfo','subscriptions'}}
 MAIN_MENU_ROWS=[[MENU[0]],[MENU[1]],[MENU[2],MENU[3]],
                 [(PRICE_MENU,'prices'),MENU[5]],[MENU[4],MENU[7]],[MENU[6]]]
 UNIT_PRICES=('per_gb_toman','per_day_toman','per_device_toman')
@@ -124,6 +125,13 @@ class PublicBot:
                 if db.execute('SELECT 1 FROM commerce_public_updates WHERE bot_id=? AND update_id=? AND done=1',(bot,update_id)).fetchone():return True
             text='' if callback else str(message.get('text') or '').strip()
             message_id=message.get('message_id')
+            shortcut_message_id=(
+                message_id if not callback and type(message_id) is int and message_id>0
+                and message.get('text')==text and text in QUIET_SHORTCUTS
+                and not any(field in message for field in (
+                    'forward_origin','via_bot','reply_to_message','external_reply','quote','photo','document',
+                )) else None
+            )
             author=message.get('from')
             callback_message_id=(message_id if callback and type(message_id) is int and message_id>0
                                  and isinstance(message.get('text'),str) and isinstance(author,dict) and author.get('is_bot') is True
@@ -186,6 +194,8 @@ class PublicBot:
                         encoded=item['text'].encode('utf-16-le')
                         screen=item['text'] if len(encoded)<=8000 else encoded[:7998].decode('utf-16-le',errors='ignore')+'…'
                         item=dict(item,text=screen,menu_message_id=callback_message_id)
+                        if shortcut_message_id is not None:
+                            item['shortcut_message_id']=shortcut_message_id
                         if menu_command or attachment or typed_value:
                             item['fresh_menu']=True
                     db.execute('INSERT INTO commerce_public_outbox(bot_id,customer_id,chat_id,payload) VALUES(?,?,?,?)',(bot,cid,uid,json.dumps(item,ensure_ascii=False)))
@@ -514,6 +524,7 @@ class PublicBot:
                 if db.execute('UPDATE commerce_public_outbox SET locked_until=? WHERE id=? AND sent=0 AND locked_until<=?',(now+60,row['id'],now)).rowcount!=1:continue
             try:
                 payload=json.loads(row['payload'])
+                shortcut_message_id=payload.pop('shortcut_message_id',None)
                 menu_message_id=None
                 previous_menu_id=None
                 rendered=True
@@ -543,6 +554,13 @@ class PublicBot:
                         WHERE excluded.outbox_id>commerce_public_menu_messages.outbox_id''',
                         (bot,row['chat_id'],menu_message_id,row['id']))
                 db.execute('UPDATE commerce_public_outbox SET sent=1,locked_until=0 WHERE id=?',(row['id'],))
+            if shortcut_message_id is not None:
+                try:
+                    self.transport.call(token,'deleteMessage',{
+                        'chat_id':row['chat_id'],'message_id':shortcut_message_id,
+                    },timeout=(2,3))
+                except Exception as error:
+                    logger.info('Telegram commerce shortcut cleanup (%s)',telegram_error_label(error))
             if previous_menu_id is not None:
                 try:
                     self.transport.call(token,'editMessageReplyMarkup',{

@@ -63,6 +63,55 @@ class BotChecks(unittest.TestCase):
         self.assertTrue(any('https://t.me/wgportal_test_bot?start=ref_' in str(call) for call in self.transport.calls))
         self.assertTrue(any('https://www.wireguard.com/install/' in str(call) for call in self.transport.calls))
 
+    def test_three_private_keyboard_shortcuts_edit_menu_and_remove_only_the_shortcut(self):
+        from portal_public_bot import MENU
+        self.send('/start');self.bot.flush_outbox()
+        for index,(label,_) in enumerate(MENU[:3]):
+            update=self.update(label)
+            update['message']['message_id']=801+index
+            self.bot.handle_update(update);self.bot.flush_outbox()
+            self.assertTrue(self.bot.handle_update(update))
+            self.assertEqual(self.bot.flush_outbox(),0)
+        calls=self.transport.calls[2:]
+        self.assertEqual([method for method,_,_ in calls],['editMessageText','deleteMessage']*3)
+        self.assertEqual([payload['message_id'] for method,payload,_ in calls
+                          if method=='editMessageText'],[2,2,2])
+        self.assertEqual([payload for method,payload,_ in calls if method=='deleteMessage'],
+                         [{'chat_id':42,'message_id':mid} for mid in (801,802,803)])
+
+        wallet=self.update('💰 کیف پول')
+        wallet['message']['message_id']=900
+        self.bot.handle_update(wallet)
+        forwarded=self.update(MENU[0][0])
+        forwarded['message'].update(message_id=901,forward_origin={'type':'user'})
+        self.bot.handle_update(forwarded)
+        group=self.update(MENU[0][0],kind='group')
+        group['message']['message_id']=902
+        self.assertFalse(self.bot.handle_update(group))
+        self.bot.flush_outbox()
+        self.assertEqual([method for method,_,_ in self.transport.calls[8:]],['editMessageText']*2)
+
+    def test_shortcut_cleanup_does_not_repeat_or_replace_the_menu_on_failure(self):
+        from portal_reseller_bot import BotError
+        self.send('/start');self.bot.flush_outbox()
+        update=self.update('🛒 خرید اشتراک')
+        update['message']['message_id']=801
+        self.bot.handle_update(update)
+        self.transport.fail=True
+        self.bot.flush_outbox()
+        self.assertEqual(self.transport.calls[-1][0],'editMessageText')
+        self.transport.fail=False
+        self.now+=60
+        original=self.transport.call
+        def rejected(token,method,payload=None,**kwargs):
+            if method=='deleteMessage':
+                raise BotError('telegram_bad_request')
+            return original(token,method,payload,**kwargs)
+        self.transport.call=rejected
+        self.assertEqual(self.bot.flush_outbox(),1)
+        self.assertEqual(self.transport.calls[-1][0],'editMessageText')
+        self.assertEqual(self.bot.flush_outbox(),0)
+
     def test_old_outbox_item_cannot_remove_the_restored_reply_keyboard(self):
         self.send('/start')
         with self.store.db(write=True) as db:
