@@ -22,7 +22,6 @@ MENU=[('🛒 خرید اشتراک','shop'),('🧪 دریافت تست رایگ�
 CATEGORIES={'economy':'🔥 طرح‌های اقتصادی','custom':'📊 اشتراک حجمی','unlimited':'♾ اشتراک نامحدود'}
 PRICE_MENU='📋 طرح‌ها و قیمت‌ها'
 MENU_ACTIONS={**dict(MENU),PRICE_MENU:'prices'}
-QUIET_SHORTCUTS={label for label,action in MENU if action in {'shop','trialinfo','subscriptions'}}
 MAIN_MENU_ROWS=[[MENU[0]],[MENU[1]],[MENU[2],MENU[3]],
                 [(PRICE_MENU,'prices'),MENU[5]],[MENU[4],MENU[7]],[MENU[6]]]
 UNIT_PRICES=('per_gb_toman','per_day_toman','per_device_toman')
@@ -127,7 +126,7 @@ class PublicBot:
             message_id=message.get('message_id')
             shortcut_message_id=(
                 message_id if not callback and type(message_id) is int and message_id>0
-                and message.get('text')==text and text in QUIET_SHORTCUTS
+                and message.get('text')==text and text in MENU_ACTIONS
                 and not any(field in message for field in (
                     'forward_origin','via_bot','reply_to_message','external_reply','quote','photo','document',
                 )) else None
@@ -554,7 +553,7 @@ class PublicBot:
                         WHERE excluded.outbox_id>commerce_public_menu_messages.outbox_id''',
                         (bot,row['chat_id'],menu_message_id,row['id']))
                 db.execute('UPDATE commerce_public_outbox SET sent=1,locked_until=0 WHERE id=?',(row['id'],))
-            if shortcut_message_id is not None:
+            if rendered and shortcut_message_id is not None:
                 try:
                     self.transport.call(token,'deleteMessage',{
                         'chat_id':row['chat_id'],'message_id':shortcut_message_id,

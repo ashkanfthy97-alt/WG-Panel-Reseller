@@ -63,25 +63,29 @@ class BotChecks(unittest.TestCase):
         self.assertTrue(any('https://t.me/wgportal_test_bot?start=ref_' in str(call) for call in self.transport.calls))
         self.assertTrue(any('https://www.wireguard.com/install/' in str(call) for call in self.transport.calls))
 
-    def test_three_private_keyboard_shortcuts_edit_menu_and_remove_only_the_shortcut(self):
+    def test_all_private_keyboard_shortcuts_edit_menu_and_remove_only_the_shortcut(self):
         from portal_public_bot import MENU
+        self.bot.bot_username='wgportal_test_bot'
         self.send('/start');self.bot.flush_outbox()
-        for index,(label,_) in enumerate(MENU[:3]):
+        keyboard=self.transport.calls[0][1]['reply_markup']['keyboard']
+        labels=[button['text'] for row in keyboard for button in row]
+        self.assertEqual(len(labels),10)
+        for index,label in enumerate(labels):
             update=self.update(label)
             update['message']['message_id']=801+index
             self.bot.handle_update(update);self.bot.flush_outbox()
             self.assertTrue(self.bot.handle_update(update))
             self.assertEqual(self.bot.flush_outbox(),0)
         calls=self.transport.calls[2:]
-        self.assertEqual([method for method,_,_ in calls],['editMessageText','deleteMessage']*3)
+        self.assertEqual([method for method,_,_ in calls],['editMessageText','deleteMessage']*len(labels))
         self.assertEqual([payload['message_id'] for method,payload,_ in calls
-                          if method=='editMessageText'],[2,2,2])
+                          if method=='editMessageText'],[2]*len(labels))
         self.assertEqual([payload for method,payload,_ in calls if method=='deleteMessage'],
-                         [{'chat_id':42,'message_id':mid} for mid in (801,802,803)])
+                         [{'chat_id':42,'message_id':801+index} for index in range(len(labels))])
 
-        wallet=self.update('💰 کیف پول')
-        wallet['message']['message_id']=900
-        self.bot.handle_update(wallet)
+        note=self.update('💰 کیف پول من')
+        note['message']['message_id']=900
+        self.bot.handle_update(note)
         forwarded=self.update(MENU[0][0])
         forwarded['message'].update(message_id=901,forward_origin={'type':'user'})
         self.bot.handle_update(forwarded)
@@ -89,7 +93,7 @@ class BotChecks(unittest.TestCase):
         group['message']['message_id']=902
         self.assertFalse(self.bot.handle_update(group))
         self.bot.flush_outbox()
-        self.assertEqual([method for method,_,_ in self.transport.calls[8:]],['editMessageText']*2)
+        self.assertEqual([method for method,_,_ in self.transport.calls[2+len(calls):]],['editMessageText']*2)
 
     def test_shortcut_cleanup_does_not_repeat_or_replace_the_menu_on_failure(self):
         from portal_reseller_bot import BotError
