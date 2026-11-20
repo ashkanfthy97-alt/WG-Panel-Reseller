@@ -49,12 +49,13 @@ def _ensure(db):
 
 
 class PublicBot:
-    def __init__(self,service,transport,base_url,token_provider,*,artifact_provider=None,administrator_ids_provider=None,admin_provider=None,clock=None,bot_username=None):
+    def __init__(self,service,transport,base_url,token_provider,*,artifact_provider=None,receipt_image_provider=None,administrator_ids_provider=None,admin_provider=None,clock=None,bot_username=None):
         parsed=urlsplit(base_url)
         if parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError('public_miniapp_https_required')
         self.service=service;self.store=service.store;self.transport=transport;self.base_url=base_url.rstrip('/')
         self.token_provider=token_provider;self.artifact_provider=artifact_provider;self.clock=clock or time.time
+        self.receipt_image_provider=receipt_image_provider
         self.administrator_ids_provider=administrator_ids_provider or admin_provider or (lambda:[])
         self.bot_username=bot_username if isinstance(bot_username,str) and re.fullmatch(r'[A-Za-z0-9_]{5,64}',bot_username) else None
         self.lock=threading.RLock()
@@ -135,8 +136,13 @@ class PublicBot:
             },referral_code=referral)
             cid=customer['id'];key='public-bot-'+bot+'-'+str(update_id)
             state=self._state(bot,uid)
+            data=callback.get('data')
+            attachment=not callback and ('photo' in message or 'document' in message)
             try:
-                messages,new_state=self._route(cid,text,callback.get('data'),state,key)
+                if attachment:
+                    messages,new_state=self._receipt_attachment(cid,message,state,key)
+                else:
+                    messages,new_state=self._route(cid,text,data,state,key)
             except ValueError as error:
                 # Domain error codes are mapped locally, never reflect internal
                 # exception text, tokens, native responses or private keys.
@@ -144,8 +150,19 @@ class PublicBot:
                 friendly={'trial_already_used':'تست رایگان قبلاً دریافت شده است.',
                     'insufficient_balance':'موجودی کیف پول کافی نیست.',
                     'payment_unconfigured':'پرداخت هنوز توسط مدیر تنظیم نشده است.',
+                    'payment_expired':'مهلت این پرداخت تمام شده است. سفارش تازه‌ای ثبت کنید.',
+                    'payment_not_pending':'این پرداخت دیگر رسید جدید نمی‌پذیرد.',
+                    'receipt_file_too_large':'حجم تصویر رسید بیشتر از ۵ مگابایت است. نسخهٔ کم‌حجم‌تر را بفرستید.',
+                    'invalid_receipt':'یک تصویر سالم JPEG یا PNG از رسید بفرستید.',
+                    'receipt_file_unavailable':'دریافت تصویر از تلگرام ممکن نشد. عکس را دوباره بفرستید.',
+                    'telegram_rate_limited':'تلگرام موقتاً دریافت تصویر را محدود کرده است. کمی بعد دوباره امتحان کنید.',
+                    'telegram_unavailable':'تلگرام موقتاً پاسخ نمی‌دهد. کمی بعد دوباره امتحان کنید.',
+                    'telegram_connection_failed':'ارتباط با تلگرام برقرار نشد. کمی بعد دوباره امتحان کنید.',
                     'customer_suspended':'دسترسی حساب متوقف شده است؛ با پشتیبانی تماس بگیرید.'}.get(code,'عملیات انجام نشد؛ وضعیت درخواست را در پنل بررسی کنید و کمی بعد تلاش کنید.')
-                messages,new_state=[self._message(friendly)],None
+                retry_rows=None
+                if isinstance(data,str) and data.startswith('receiptpick:') and state and state.get('step')=='receipt_select':
+                    retry_rows=state.get('rows') if code in {'telegram_rate_limited','telegram_unavailable','telegram_connection_failed'} else None
+                messages,new_state=[self._message(friendly,retry_rows)],state if attachment or retry_rows else None
             with self.store.db(write=True) as db:
                 _ensure(db)
                 if db.execute('SELECT 1 FROM commerce_public_updates WHERE bot_id=? AND update_id=? AND done=1',(bot,update_id)).fetchone():return True
@@ -278,10 +295,19 @@ class PublicBot:
             result=self._action(cid,'topup',{'amount_toman':int(normalized)},key)
             return self._payment_messages(result.get('order',{}),result['payment']),None
         match=re.fullmatch(r'receipt:([1-9][0-9]*)',data or '')
-        if match:return [self._message('شماره پیگیری و توضیح تراکنش را ارسال کنید. برای بارگذاری تصویر رسید از پنل کاربری استفاده کنید.')],{'step':'receipt','payment_id':int(match[1])}
-        if state and state.get('step')=='receipt' and not data:
+        if match:
+            pid=int(match[1])
+            self._action(cid,'payment',{'id':pid})
+            return [self._message('📷 عکس رسید واریز را در همین چت بفرستید. شمارهٔ پیگیری را می‌توانید جداگانه یا در توضیح عکس بنویسید.')],{'step':'receipt','payment_id':pid}
+        match=re.fullmatch(r'receiptpick:([1-9][0-9]*)',data or '')
+        if match and state and state.get('step')=='receipt_select':
+            pid=int(match[1])
+            if pid not in state['payment_ids']:
+                return [self._message('پرداخت را از فهرست پرداخت‌های خودتان انتخاب کنید.',state['rows'])],state
+            return self._submit_chat_image(cid,pid,state['file_id'],state['caption'],key)
+        if state and state.get('step')=='receipt' and not data and text:
             self._action(cid,'submit_receipt',{'payment_id':state['payment_id'],'transaction_text':text[:1000]},key)
-            return [self._message('⏳ رسید برای بررسی مدیر ثبت شد. تا تأیید پرداخت، اشتراک فعال نمی‌شود.')],None
+            return [self._message('⏳ اطلاعات پرداخت برای بررسی مدیر ثبت شد. اگر عکس رسید دارید، آن را در همین چت بفرستید.')],state
         if data=='subscriptions':
             subs=self._action(cid,'subscriptions').get('subscriptions',[])
             rows=[[(str(s.get('product_name',s.get('name','اشتراک')))[:35]+' · '+str(s['id']),'subscription:'+str(s['id']))] for s in subs[:80]]
@@ -351,7 +377,58 @@ class PublicBot:
     def _payment_messages(self,order,payment):
         destination=payment.get('payment_destination') or order.get('payment_destination') or {}
         card=destination.get('card_number','');name=destination.get('cardholder_name',destination.get('holder_name',''))
-        return [self._message('💳 پرداخت کارت‌به‌کارت\nسفارش: '+str(order.get('id',payment.get('id','')))+'\nمبلغ: '+format(payment.get('amount_toman',order.get('total_toman',0)),',')+' تومان\nشماره کارت: '+str(card)+'\nصاحب کارت: '+str(name)+'\nبانک: '+str(destination.get('bank_name',''))+'\n'+str(destination.get('instructions',''))+'\nپس از پرداخت شماره پیگیری یا تصویر رسید را ثبت کنید. تأیید پرداخت فقط توسط مدیر انجام می‌شود.',[[('📤 ثبت رسید','receipt:'+str(payment['id']))]])]
+        return [self._message('💳 پرداخت کارت‌به‌کارت\nسفارش: '+str(order.get('id',payment.get('id','')))+'\nمبلغ: '+format(payment.get('amount_toman',order.get('total_toman',0)),',')+' تومان\nشماره کارت: '+str(card)+'\nصاحب کارت: '+str(name)+'\nبانک: '+str(destination.get('bank_name',''))+'\n'+str(destination.get('instructions',''))+'\nپس از پرداخت، عکس رسید را در همین چت بفرستید یا «ثبت رسید» را بزنید. پرداخت پس از بررسی مدیر تأیید می‌شود.',[[('📤 ثبت رسید','receipt:'+str(payment['id']))]])]
+
+    def _receipt_attachment(self,cid,message,state,key):
+        photos=message.get('photo')
+        image=None
+        if isinstance(photos,list):
+            image=next((item for item in reversed(photos) if isinstance(item,dict) and item.get('file_id')),None)
+        else:
+            document=message.get('document')
+            if isinstance(document,dict):
+                mime=document.get('mime_type')
+                name=document.get('file_name')
+                if mime in ('image/jpeg','image/png') or (
+                    mime in (None,'application/octet-stream') and isinstance(name,str)
+                    and name.lower().endswith(('.jpg','.jpeg','.png'))
+                ):
+                    image=document
+        file_id=image.get('file_id') if image else None
+        if not isinstance(file_id,str) or not 1<=len(file_id)<=1024:
+            return [self._message('عکس رسید را به صورت تصویر یا فایل JPEG یا PNG بفرستید.')],state
+        size=image.get('file_size')
+        if type(size) is int and size>5*1024*1024:
+            return [self._message('حجم تصویر رسید باید حداکثر ۵ مگابایت باشد.')],state
+        caption=message.get('caption')
+        caption=''.join(char for char in caption[:1000] if ord(char)>=32 or char in '\n\r\t').strip() if isinstance(caption,str) else ''
+        if state and state.get('step')=='receipt':
+            return self._submit_chat_image(cid,state['payment_id'],file_id,caption,key)
+        payments=self._action(cid,'receipt_payments').get('payments',[])
+        if not payments:
+            return [self._message('پرداختی برای ثبت عکس رسید پیدا نشد. وضعیت پرداخت را در پنل کاربری بررسی کنید. برای پیوست عکس به درخواست پشتیبانی هم می‌توانید از همان پنل استفاده کنید.')],state
+        if len(payments)==1:
+            return self._submit_chat_image(cid,payments[0]['id'],file_id,caption,key)
+        choices=payments[:40]
+        rows=[[(('سفارش #'+str(p['order_id']) if p['order_id'] else 'شارژ کیف پول #'+str(p['id']))+
+                ' · '+format(p['amount_toman'],',')+' تومان','receiptpick:'+str(p['id']))] for p in choices]
+        return [self._message('📷 این عکس مربوط به کدام پرداخت است؟',rows)],{
+            'step':'receipt_select','file_id':file_id,'caption':caption,'payment_ids':[p['id'] for p in choices],'rows':rows}
+
+    def _submit_chat_image(self,cid,pid,file_id,caption,key):
+        payment=self._action(cid,'payment',{'id':pid})['payment']
+        if payment['expires_at']<=int(self.clock()) or payment['status'] not in {'pending_payment','pending_review'}:
+            return [self._message('این پرداخت دیگر رسید نمی‌پذیرد. وضعیت سفارش را در پنل کاربری بررسی کنید.')],None
+        if not callable(self.receipt_image_provider):
+            return [self._message('دریافت عکس در بات موقتاً در دسترس نیست. می‌توانید رسید را در پنل کاربری بارگذاری کنید.')],None
+        body=self.transport.download_file(self._token(),file_id)
+        reference=self.receipt_image_provider(body,f'telegram:{cid}:{pid}:{key}')
+        payload={'payment_id':pid,'receipt_reference':reference}
+        if caption:
+            payload['transaction_text']=caption
+        self._action(cid,'submit_receipt',payload,key)
+        return [self._message('✅ عکس رسید ثبت شد و در انتظار بررسی مدیر است.',
+                              [[('ثبت شمارهٔ پیگیری','receipt:'+str(pid))]])],None
 
     def _send_artifact(self,token,chat_id,kind,body):
         payload={'chat_id':chat_id,'filename':'wireguard.conf' if kind=='config' else 'wireguard-qr.png'}

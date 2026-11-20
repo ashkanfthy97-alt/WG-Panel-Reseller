@@ -53,4 +53,39 @@ class Transport(unittest.TestCase):
                 transport.call(token,'sendMessage',{'chat_id':12345,'text':'آزمایش'})
             self.assertEqual(error.exception.code,'telegram_bad_request')
 
+    def test_downloads_telegram_receipt_from_fixed_origin_without_redirects(self):
+        token='123456:fixture-token-for-unit-tests'
+        with patch('portal_reseller_bot.requests.Session') as factory:
+            client=factory.return_value.__enter__.return_value
+            client.post.return_value=self.response({'file_path':'photos/file_1.jpg','file_size':5})
+            response=client.get.return_value.__enter__.return_value
+            response.status_code=200
+            response.headers={}
+            response.iter_content.return_value=iter([b'test',b'!'])
+            self.assertEqual(TelegramTransport().download_file(token,'file-id'),b'test!')
+            self.assertEqual(client.post.call_args.args,('https://api.telegram.org/bot'+token+'/getFile',))
+            self.assertEqual(client.get.call_args.args,('https://api.telegram.org/file/bot'+token+'/photos/file_1.jpg',))
+            self.assertFalse(client.get.call_args.kwargs['allow_redirects'])
+            self.assertTrue(client.get.call_args.kwargs['stream'])
+            self.assertFalse(client.trust_env)
+
+    def test_download_rejects_external_paths_and_stream_caps(self):
+        token='123456:fixture-token-for-unit-tests'
+        with patch('portal_reseller_bot.requests.Session') as factory:
+            client=factory.return_value.__enter__.return_value
+            transport=TelegramTransport()
+            for path in ('https://example.test/file.jpg','photos/../file.jpg','photos/%2e%2e/file.jpg'):
+                with self.subTest(path=path):
+                    client.post.return_value=self.response({'file_path':path})
+                    with self.assertRaisesRegex(BotError,'^receipt_file_unavailable$'):
+                        transport.download_file(token,'file-id')
+            client.get.assert_not_called()
+            client.post.return_value=self.response({'file_path':'photos/file.jpg'})
+            response=client.get.return_value.__enter__.return_value
+            response.status_code=200
+            response.headers={}
+            response.iter_content.return_value=iter([b'abc',b'def'])
+            with self.assertRaisesRegex(BotError,'^receipt_file_too_large$'):
+                transport.download_file(token,'file-id',max_bytes=5)
+
 if __name__=='__main__':unittest.main()

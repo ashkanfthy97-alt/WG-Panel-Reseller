@@ -30,7 +30,10 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
  let authed=authenticated,authCalls=0,receipt=false,approved=false,targetFailures=unavailableTargets?1:0,settingsFailure=null,managerID='321987654';const calls=[],errors=[];
  let order={id:1,status:'pending_payment',payment_id:1,total_toman:200000,created_at:1700000000,payment_destination:destination};
  let payment={id:1,order_id:1,customer_id:1,status:'pending_review',kind:'order',amount_toman:200000,payment_destination:destination,transaction_text:'شماره پیگیری آزمایشی',receipt_reference:'fixture.png',created_at:1700000000};
- let ticket={id:1,customer_id:1,category:'connection',status:'open',created_at:1700000000},messages=[{id:1,actor:'admin:owner',body:'پاسخ آزمایشی <script>alert(1)</script>',attachment_reference:'fixture.png',created_at:1700000000}];
+ const legacyBody='پاسخ آزمایشی\\n\\nVPN <script>alert(1)</script>';
+ const customerReceipt={id:1,customer_id:1,order_id:1,status:'pending_review',amount_toman:200000,created_at:1700000000};
+ const unlinkedReceipt={id:3,customer_id:2,order_id:null,status:'pending_review',amount_toman:100000,created_at:1700000000};
+ let ticket={id:1,customer_id:1,category:'connection',status:'open',created_at:1700000000,receipt_count:1},messages=[{id:1,actor:'admin:owner',body:legacyBody,attachment_reference:'fixture.png',created_at:1700000000}];
  const respond=(route,value,status=200)=>route.fulfill({status,json:{csrf:'commerce-fixture',...value}});
  await context.route('**/*',async route=>{
   const request=route.request(),u=new URL(request.url()),p=u.pathname,method=request.method();
@@ -61,9 +64,9 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
   if(endpoint==='/payments/2')return respond(route,{payment:{id:2,kind:'topup',status:receipt?'pending_review':'pending_payment',amount_toman:100000,payment_destination:destination}});
   if(endpoint==='/referrals')return respond(route,{referral_count:2,successful_purchases:1,earnings_toman:10000,referral_link:'https://t.me/fixture_bot?start=ref_abc'});
   if(endpoint==='/trial')return respond(route,{subscription:{id:2,status:'pending',product_name:'تست رایگان',peers:[]}});
-  if(endpoint==='/tickets'&&method==='GET')return respond(route,{tickets:[ticket]});
+  if(endpoint==='/tickets'&&method==='GET')return respond(route,{tickets:[ticket],...(owner?{receipts:[customerReceipt,unlinkedReceipt]}:{})});
   if(endpoint==='/tickets'&&method==='POST'){messages.push({id:2,actor:'customer:1',body:request.postDataJSON().body});return respond(route,{ticket});}
-  if(endpoint==='/tickets/1')return respond(route,{ticket,messages});
+  if(endpoint==='/tickets/1')return respond(route,{ticket,messages,...(owner?{receipts:[customerReceipt]}:{})});
   if(endpoint==='/tickets/1/messages'||endpoint==='/tickets/1/reply'){messages.push({id:3,actor:owner?'admin:owner':'customer:1',body:request.postDataJSON().body});return respond(route,{ticket,messages});}
   if(endpoint==='/guides')return respond(route,{guides:[{title:'اندروید',steps:['نصب WireGuard','ورود کانفیگ'],links:[{title:'دانلود رسمی',url:'https://www.wireguard.com/install/'}]}]});
   if(endpoint==='/downloads')return respond(route,{downloads:[{title:'WireGuard',url:'https://www.wireguard.com/install/'}]});
@@ -96,7 +99,20 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
  await page.locator('#bottom-nav [data-go=catalog]').click();await page.locator('#product-list button').click();await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#payment-method').waitFor();await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#transaction-text').fill('شماره پیگیری آزمایشی');await page.locator('#dialog-content form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#dialog-content').textContent.includes('صف بررسی'));await page.locator('#close-dialog').click();
  await page.locator('#bottom-nav [data-go=subscriptions]').click();await page.locator('#subscription-list button').filter({hasText:'کانفیگ و QR'}).click();await page.locator('#dialog-content button').filter({hasText:'مشاهده و کپی کانفیگ'}).click();await page.locator('.config-text').waitFor();assert((await page.locator('.config-text').textContent()).includes('[Interface]'));await page.locator('#dialog-content button').filter({hasText:'بازگشت'}).click();await page.locator('#dialog-content button').filter({hasText:'نمایش QR'}).click();await page.locator('.qr-image').waitFor();assert(await page.locator('.qr-image').evaluate(image=>image.complete&&image.naturalWidth>0));await page.locator('#close-dialog').click();
  await page.locator('#bottom-nav [data-go=wallet]').click();assert((await page.locator('#wallet-ledger').textContent()).includes('شارژ آزمایشی'));await page.locator('#topup-amount').fill('100000');await page.locator('#topup-form button[type=submit]').click();await page.locator('#transaction-text').fill('پیگیری شارژ');await page.locator('#dialog-content form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#dialog-content').textContent.includes('صف بررسی'));await page.locator('#close-dialog').click();
- await page.locator('#bottom-nav [data-go=profile]').click();await page.locator('#ticket-list button').click();assert.equal(await page.locator('#dialog-content script').count(),0);assert((await page.locator('#dialog-content').textContent()).includes('<script>'));assert((await page.locator('#dialog-content a').first().getAttribute('href')).endsWith('/attachments/1'));await page.locator('#ticket-message').fill('پیام آزمایشی');await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#ticket-message').waitFor();await page.locator('#close-dialog').click();await page.locator('#share-referral').click();assert((await page.locator('#dialog-content input').inputValue()).startsWith('https://t.me/'));await page.locator('#close-dialog').click();
+ await page.locator('#bottom-nav [data-go=profile]').click();await page.locator('#ticket-list button').click();
+ const customerMessage=page.locator('#dialog-content .ticket-message-body').first();
+ assert.equal(await customerMessage.textContent(),'پاسخ آزمایشی\n\nVPN <script>alert(1)</script>');
+ assert.equal(await customerMessage.evaluate(el=>getComputedStyle(el).whiteSpace),'pre-wrap');
+ assert.equal(await page.locator('#dialog-content script').count(),0);
+ assert((await page.locator('#dialog-content a').first().getAttribute('href')).endsWith('/attachments/1'));
+ await page.locator('#ticket-message').fill('پیام آزمایشی');await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#ticket-message').waitFor();await page.locator('#close-dialog').click();
+ await page.locator('#new-ticket').click();
+ await page.locator('#ticket-subject').fill('موضوع');
+ await page.locator('#ticket-message').fill('خط اول\nخط دوم');
+ await page.locator('#dialog-content form button[type=submit]').click();
+ await page.locator('#dialog-content .ticket-message-body').last().waitFor();
+ assert.equal(calls.filter(item=>item.path.endsWith('/tickets')&&item.method==='POST').at(-1).data.body,'موضوع\n\nخط اول\nخط دوم');
+ await page.locator('#close-dialog').click();await page.locator('#share-referral').click();assert((await page.locator('#dialog-content input').inputValue()).startsWith('https://t.me/'));await page.locator('#close-dialog').click();
  await page.locator('#bottom-nav [data-go=home]').click();await page.locator('#open-guides').click();assert.equal(await page.locator('#dialog-content ol li').count(),2);await page.locator('#close-dialog').click();await page.locator('#request-trial').click();await page.locator('#dialog-content .empty-state').waitFor();await page.locator('#close-dialog').click();assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Customer viewport fits');assert.deepEqual(errors,[]);results.push({role:'customer',width,status:'passed',requests:calls.length});await context.close();
  const ownerContext=await browser.newContext({viewport:{width,height:1000},reducedMotion:'reduce'}),ownerFixture=await attach(ownerContext,{owner:true}),admin=ownerFixture.page;await admin.goto('https://fixture/telegram-commerce');await admin.waitForFunction(()=>document.querySelector('#commerce-panel').getAttribute('aria-busy')==='false');assert.equal(await admin.locator('#commerce-tabs button').count(),11);assert(await admin.locator('#commerce-panel').textContent());
  for(const theme of ['modern','legacy','modern']){
@@ -160,6 +176,17 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
  }
 
  await tab('discounts');await admin.locator('#commerce-panel button').filter({hasText:'ویرایش'}).click();await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
- await tab('support');await admin.locator('#commerce-panel button').filter({hasText:'گفت‌وگو'}).click();assert((await admin.locator('#commerce-dialog-body a').getAttribute('href')).endsWith('/attachments/1'));await admin.locator('#commerce-field-support-reply').fill('پاسخ آزمایشی');await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
+ await tab('support');
+ assert.equal(await admin.locator('#commerce-panel th').filter({hasText:'رسیدهای پرداخت'}).count(),1);
+ assert.equal(await admin.locator('#commerce-panel a[href$="/payments/3/receipt"]').count(),1,'Payment receipt without ticket is still listed');
+ await admin.getByRole('button',{name:'۱ رسید',exact:true}).click();
+ const supportBody=admin.locator('#commerce-dialog-body');
+ await supportBody.locator('a[href$="/payments/1/receipt"]').waitFor();
+ assert.equal(await supportBody.locator('a[href$="/payments/3/receipt"]').count(),0,'Ticket shows only its own customer receipts');
+ assert.equal(await supportBody.locator('a[href$="/attachments/1"]').count(),1);
+ assert.equal(await supportBody.locator('.ticket-message-body').textContent(),'پاسخ آزمایشی\n\nVPN <script>alert(1)</script>');
+ assert.equal(await supportBody.locator('.ticket-message-body').evaluate(el=>getComputedStyle(el).whiteSpace),'pre-wrap');
+ assert.equal(await supportBody.locator('script').count(),0);
+ await admin.locator('#commerce-field-support-reply').fill('پاسخ آزمایشی');await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
  await tab('jobs');await admin.locator('#commerce-panel button').filter({hasText:'بررسی و بازیابی'}).click();await admin.locator('#commerce-field-reconcile-note').fill('بررسی آزمایشی');await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);assert(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Owner viewport fits');assert.deepEqual(ownerFixture.errors,[]);results.push({role:'owner',width,status:'passed',requests:ownerFixture.calls.length});await ownerContext.close();
 }}finally{await browser.close();}console.log(JSON.stringify(results,null,2));})().catch(error=>{console.error(error);process.exitCode=1;});

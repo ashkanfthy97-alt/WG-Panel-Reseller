@@ -75,6 +75,9 @@ def telegram_result(status, value, method=None):
     if status == 200 and value.get('ok') is True:
         return value.get('result')
     code = value.get('error_code', status)
+    if method == 'getFile' and status == 400 and code == 400:
+        description = str(value.get('description') or '').casefold()
+        raise BotError('receipt_file_too_large' if 'file is too big' in description else 'receipt_file_unavailable')
     if status in {401, 404} or code in {401, 404}:
         raise BotError('telegram_invalid_token')
     if status == 409 or code == 409:
@@ -96,7 +99,7 @@ def telegram_result(status, value, method=None):
     raise BotError('telegram_unavailable')
 
 
-TELEGRAM_METHODS = {'getMe', 'getWebhookInfo', 'getChat', 'getUpdates', 'sendMessage',
+TELEGRAM_METHODS = {'getMe', 'getWebhookInfo', 'getChat', 'getUpdates', 'getFile', 'sendMessage',
                     'sendDocument', 'sendPhoto', 'answerCallbackQuery', 'editMessageText'}
 
 
@@ -130,6 +133,53 @@ class TelegramTransport:
             raise BotError('telegram_connection_failed') from None
         except (ValueError, TypeError):
             raise BotError('telegram_response_invalid') from None
+
+    def download_file(self, token, file_id, max_bytes=5*1024*1024):
+        """Read a bounded file from Telegram's authenticated file endpoint."""
+        if not isinstance(token, str) or not re.fullmatch(r'[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,120}', token):
+            raise BotError('telegram_invalid_token')
+        if not isinstance(file_id, str) or not re.fullmatch(r'[!-~]{1,1024}', file_id):
+            raise BotError('receipt_file_unavailable')
+        if type(max_bytes) is not int or not 0 < max_bytes <= 20*1024*1024:
+            raise ValueError('invalid_telegram_file_limit')
+        info = self.call(token, 'getFile', {'file_id': file_id}, timeout=(3, 5))
+        path = info.get('file_path') if isinstance(info, dict) else None
+        size = info.get('file_size') if isinstance(info, dict) else None
+        if type(size) is int and size > max_bytes:
+            raise BotError('receipt_file_too_large')
+        if (not isinstance(path, str) or len(path) > 512
+                or not re.fullmatch(r'[A-Za-z0-9_-][A-Za-z0-9_.-]*(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*', path)):
+            raise BotError('receipt_file_unavailable')
+
+        body = bytearray()
+        deadline = time.monotonic() + 12
+        try:
+            with requests.Session() as client:
+                client.trust_env = False
+                with client.get('https://api.telegram.org/file/bot' + token + '/' + path,
+                                timeout=(3, 5), allow_redirects=False, stream=True,
+                                headers={'Accept-Encoding': 'identity'}) as response:
+                    if response.status_code == 429:
+                        retry_after = response.headers.get('Retry-After', '')
+                        delay = int(retry_after) if re.fullmatch(r'[0-9]{1,9}', retry_after) else 30
+                        raise BotError('telegram_rate_limited', retry_after=delay)
+                    if response.status_code != 200:
+                        code = 'telegram_unavailable' if response.status_code >= 500 else 'receipt_file_unavailable'
+                        raise BotError(code)
+                    length = response.headers.get('Content-Length', '')
+                    if re.fullmatch(r'[0-9]{1,20}', length) and int(length) > max_bytes:
+                        raise BotError('receipt_file_too_large')
+                    for chunk in response.iter_content(chunk_size=64*1024):
+                        if time.monotonic() >= deadline:
+                            raise BotError('telegram_connection_failed')
+                        if len(body) + len(chunk) > max_bytes:
+                            raise BotError('receipt_file_too_large')
+                        body.extend(chunk)
+        except requests.RequestException:
+            raise BotError('telegram_connection_failed') from None
+        if not body:
+            raise BotError('receipt_file_unavailable')
+        return bytes(body)
 
 
 class BotStore:

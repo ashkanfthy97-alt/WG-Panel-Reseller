@@ -4,6 +4,7 @@ Amounts are integer toman. One toman is ten Iranian rial. No prices, bank
 destinations or promotions are enabled implicitly.
 """
 import hashlib
+from collections import Counter
 from datetime import datetime, timezone
 import json
 import re
@@ -364,6 +365,11 @@ class CommerceService:
                 row=db.execute('SELECT * FROM payments WHERE id=? AND customer_id=?',(integer(payload.get('id'),1),cid)).fetchone()
                 if not row: fail('not_found','پرداخت پیدا نشد.',404)
                 return {'payment':self._payment_value(row)}
+            if action == 'receipt_payments':
+                rows=db.execute("""SELECT id,order_id,amount_toman FROM payments
+                    WHERE customer_id=? AND status IN ('pending_payment','pending_review') AND expires_at>?
+                    ORDER BY id DESC LIMIT 41""",(cid,self.now()))
+                return {'payments':[dict(row) for row in rows]}
             if action == 'cancel_order':
                 oid=integer(payload.get('id'),1);row=db.execute('SELECT * FROM orders WHERE id=? AND customer_id=?',(oid,cid)).fetchone()
                 if not row:fail('not_found','سفارش پیدا نشد.',404)
@@ -439,7 +445,8 @@ class CommerceService:
         transaction=text(payload.get('transaction_text',''),1000,False)
         if reference and not re.fullmatch(r'[A-Za-z0-9_.-]{1,160}',reference):fail()
         if not reference and not transaction:fail('receipt_required','رسید یا اطلاعات تراکنش را ثبت کنید.')
-        db.execute("UPDATE payments SET status='pending_review',receipt_reference=?,transaction_text=? WHERE id=?",(reference or None,transaction,pid))
+        db.execute("UPDATE payments SET status='pending_review',receipt_reference=?,transaction_text=? WHERE id=?",
+                   (reference or row['receipt_reference'],transaction or row['transaction_text'] or '',pid))
         self._notify(db,cid,'payment_submitted',{'payment_id':pid},'payment-submitted:'+str(pid))
         self._notify(db,None,'admin_payment_submitted',{'payment_id':pid,'customer_id':cid,'amount_toman':row['amount_toman']},'admin-payment-submitted:'+str(pid))
         self._audit(db,'customer:'+str(cid),'payment:submit',pid)
@@ -465,6 +472,18 @@ class CommerceService:
         tid=db.execute("INSERT INTO support_tickets(customer_id,category,status,created_at,updated_at) VALUES(?,?,'open',?,?)",(cid,category,self.now(),self.now())).lastrowid
         self._reply(db,tid,'customer:'+str(cid),{'body':body,'attachment_reference':payload.get('attachment_reference')})
         return {'ticket':dict(db.execute('SELECT * FROM support_tickets WHERE id=?',(tid,)).fetchone())}
+
+    @staticmethod
+    def _support_receipts(db,customer_id=None):
+        customer_filter='AND customer_id=?' if customer_id is not None else ''
+        params=(customer_id,) if customer_id is not None else ()
+        return [dict(row) for row in db.execute(f"""
+            SELECT id,customer_id,order_id,amount_toman,status,created_at FROM payments
+            WHERE length(receipt_reference)=52 AND substr(receipt_reference,-4)='.png'
+                AND substr(receipt_reference,1,48) NOT GLOB '*[^0-9a-f]*'
+                {customer_filter}
+            ORDER BY id DESC
+        """,params)]
 
     def _reply(self,db,tid,actor,payload):
         body=text(payload.get('body'),4000)
@@ -534,13 +553,20 @@ class CommerceService:
             if action=='save_settings':return self._save_settings(db,actor,payload)
             if action=='discounts':return {'discounts':[dict(row) for row in db.execute('SELECT * FROM discounts ORDER BY id DESC')]}
             if action=='save_discount':return self._save_discount(db,actor,payload)
-            if action=='tickets':return {'tickets':[dict(row) for row in db.execute('SELECT * FROM support_tickets ORDER BY id DESC')]}
+            if action=='tickets':
+                receipts=self._support_receipts(db)
+                counts=Counter(receipt['customer_id'] for receipt in receipts)
+                tickets=[dict(row,receipt_count=counts[row['customer_id']])
+                         for row in db.execute('SELECT * FROM support_tickets ORDER BY id DESC')]
+                return {'tickets':tickets,'receipts':receipts}
             if action in {'ticket_messages','reply_ticket'}:
                 tid=integer(payload.get('id'),1);ticket=db.execute('SELECT * FROM support_tickets WHERE id=?',(tid,)).fetchone()
                 if not ticket:fail('not_found','تیکت پیدا نشد.',404)
                 if action=='reply_ticket':
                     return self._receipt(db,'admin:'+actor,request_id,{'action':action,**payload},lambda:self._reply_result(db,tid,'admin:'+actor,payload))
-                return {'ticket':dict(ticket),'messages':[dict(row) for row in db.execute('SELECT * FROM support_messages WHERE ticket_id=? ORDER BY id',(tid,))]}
+                return {'ticket':dict(ticket),
+                        'messages':[dict(row) for row in db.execute('SELECT * FROM support_messages WHERE ticket_id=? ORDER BY id',(tid,))],
+                        'receipts':self._support_receipts(db,ticket['customer_id'])}
             if action=='ticket_attachment':
                 row=db.execute('SELECT attachment_reference FROM support_messages WHERE ticket_id=? AND id=?',(integer(payload.get('id'),1),integer(payload.get('attachment_id'),1))).fetchone()
                 if not row or not row['attachment_reference']:fail('not_found','پیوست پیدا نشد.',404)

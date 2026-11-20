@@ -201,6 +201,59 @@ class BotChecks(unittest.TestCase):
         self.send(data='receipt:'+str(payment['id']));self.send('شماره پیگیری آزمایشی')
         with self.store.db() as db:self.assertEqual(db.execute('SELECT status FROM payments').fetchone()[0],'pending_review')
         self.assertEqual(self.service.admin_action('owner','dashboard')['active_subscriptions'],0)
+
+    def test_telegram_photo_completes_existing_text_receipt_and_replay_is_safe(self):
+        self.purchase()
+        with self.store.db() as db:
+            pid=db.execute('SELECT id FROM payments').fetchone()['id']
+        self.send(data='receipt:'+str(pid))
+        self.send('tracking-test')
+        downloads=[]
+        def download(token,file_id):
+            downloads.append((token,file_id))
+            return b'test image'
+        self.transport.download_file=download
+        self.bot.receipt_image_provider=lambda body,identity: 'a'*48+'.png'
+        update=self.update()
+        update['message']['photo']=[{'file_id':'small-test'},{'file_id':'large-test'}]
+        self.assertTrue(self.bot.handle_update(update))
+        self.assertTrue(self.bot.handle_update(update))
+        self.assertEqual(downloads,[(TOKEN,'large-test')])
+        with self.store.db() as db:
+            row=db.execute('SELECT status,receipt_reference,transaction_text FROM payments WHERE id=?',(pid,)).fetchone()
+        self.assertEqual(tuple(row),('pending_review','a'*48+'.png','tracking-test'))
+
+    def test_receipt_document_selects_own_payment_before_downloading(self):
+        self.send('/start')
+        cid=self.customer()['id']
+        own=[self.service.customer_action(cid,'topup',{'amount_toman':amount},request_id='fixture-topup-'+str(amount))['payment']['id']
+             for amount in (100000,200000)]
+        stranger=self.service.customer_from_telegram({'id':84})['id']
+        foreign=self.service.customer_action(stranger,'topup',{'amount_toman':100000},request_id='fixture-topup-foreign')['payment']['id']
+        downloads=[]
+        def download(token,file_id):
+            downloads.append(file_id)
+            return b'test image'
+        self.transport.download_file=download
+        self.bot.receipt_image_provider=lambda body,identity: 'b'*48+'.png'
+        update=self.update()
+        update['message'].update(document={'file_id':'document-test','mime_type':'image/png'},caption='caption-test')
+        self.bot.handle_update(update)
+        self.send(data='receiptpick:'+str(foreign))
+        self.assertEqual(downloads,[])
+        self.send(data='receiptpick:'+str(own[0]))
+        self.assertEqual(downloads,['document-test'])
+        with self.store.db() as db:
+            saved=[tuple(row) for row in db.execute('SELECT id,receipt_reference,transaction_text FROM payments WHERE receipt_reference IS NOT NULL')]
+        self.assertEqual(saved,[(own[0],'b'*48+'.png','caption-test')])
+        self.bot.flush_outbox()
+        button=self.transport.calls[-1][1]['reply_markup']['inline_keyboard'][0][0]
+        self.assertEqual(button['callback_data'],'receipt:'+str(own[0]))
+        self.send(data=button['callback_data'])
+        self.send('new-tracking-test')
+        with self.store.db() as db:
+            row=db.execute('SELECT receipt_reference,transaction_text FROM payments WHERE id=?',(own[0],)).fetchone()
+        self.assertEqual(tuple(row),('b'*48+'.png','new-tracking-test'))
     def test_private_identity_only_and_restart_dedup(self):
         self.assertFalse(self.bot.handle_update(self.update('/start',kind='group')))
         update=self.send('/start')

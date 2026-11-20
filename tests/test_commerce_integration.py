@@ -5,10 +5,11 @@ from urllib.parse import urlencode
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from flask import Flask
 from PIL import Image
-from portal_commerce import install_commerce
+from portal_commerce import install_commerce, save_image
 from portal_commerce_auth import Auth
 from portal_commerce_service import CommerceService
 from portal_commerce_store import Store
+from portal_public_bot import PublicBot
 
 TOKEN='123456:abcdefghijklmnopqrstuvwxyz_fixture_123'
 class Native:
@@ -59,6 +60,58 @@ class Integrated(unittest.TestCase):
         self.assertNotEqual(repeated.status_code,200)
         self.service.admin_action('mother','suspend_customer',{'id':self.cid,'suspended':True})
         response=self.client.get('/telegram-app/api/dashboard',base_url='https://localhost');self.assertIn(response.status_code,{401,403})
+
+    def test_support_lists_private_receipts_with_and_without_tickets(self):
+        destination={'card_number':'1111222233334444','cardholder_name':'fixture','active':True}
+        self.service.admin_action('mother','save_destination',destination)
+        other_id=self.service.customer_from_telegram({'id':1202})['id']
+        expired=self.service.customer_action(self.cid,'topup',{'amount_toman':100000},'expired-topup-fixture')['payment']
+        with self.service.store.db(write=True) as db:
+            db.execute('UPDATE payments SET expires_at=0 WHERE id=?',(expired['id'],))
+        image=io.BytesIO()
+        Image.new('RGB',(2,2),'white').save(image,format='JPEG')
+        class SimulatedTelegram:
+            def download_file(self,token,file_id):
+                return image.getvalue()
+        bot=PublicBot(self.service,SimulatedTelegram(),'https://localhost',lambda:TOKEN,
+                      receipt_image_provider=lambda body,identity:save_image(
+                          io.BytesIO(body),Path(self.tmp.name)/'telegram-commerce',identity=identity))
+        payments={}
+        for cid,telegram_id in ((self.cid,1201),(other_id,1202)):
+            payment=self.service.customer_action(cid,'topup',{'amount_toman':100000},'receipt-topup-fixture')['payment']
+            pid=payment['id'];payments[cid]=pid
+            candidates=self.service.customer_action(cid,'receipt_payments',{})['payments']
+            self.assertEqual([row['id'] for row in candidates],[pid])
+            def submit(step,**fields):
+                return self.service.customer_action(cid,'submit_receipt',{'payment_id':pid,**fields},f'fixture-receipt-step-{step}')
+            submit(1,transaction_text='ابتدا شماره پیگیری')
+            with self.app.app_context():
+                update={'update_id':telegram_id,'message':{'from':{'id':telegram_id},
+                    'chat':{'id':telegram_id,'type':'private'},'photo':[{'file_id':'fixture-image'}]}}
+                self.assertTrue(bot.handle_update(update))
+                self.assertTrue(bot.handle_update(update))
+            saved=self.service.customer_action(cid,'payment',{'id':pid})['payment']
+            reference=saved['receipt_reference']
+            self.assertRegex(reference,r'^[a-f0-9]{48}\.png$')
+            self.assertEqual(saved['transaction_text'],'ابتدا شماره پیگیری')
+            self.assertEqual(submit(3,transaction_text='تکمیل شماره پیگیری')['payment']['receipt_reference'],reference)
+        ticket=self.service.customer_action(self.cid,'create_ticket',{'category':'payment','body':'درخواست\n\nتوضیح'},
+                                            'fixture-ticket-12345')['ticket']
+        base='https://localhost'
+        result=self.admin.get('/telegram-commerce/api/tickets',base_url=base)
+        self.assertEqual(result.status_code,200)
+        self.assertEqual(result.json['tickets'][0]['receipt_count'],1)
+        self.assertEqual({row['id'] for row in result.json['receipts']},set(payments.values()))
+        detail=self.admin.get(f"/telegram-commerce/api/tickets/{ticket['id']}",base_url=base).json
+        self.assertEqual([row['id'] for row in detail['receipts']],[payments[self.cid]])
+        self.assertNotIn('receipt_reference',detail['receipts'][0])
+        self.assertEqual(detail['messages'][0]['body'],'درخواست\n\nتوضیح')
+        url=f"/telegram-commerce/api/payments/{payments[self.cid]}/receipt"
+        with self.admin.get(url,base_url=base) as receipt:
+            self.assertEqual(receipt.mimetype,'image/png')
+            self.assertIn('no-store',receipt.headers['Cache-Control'])
+        self.owner=False
+        self.assertEqual(self.admin.get(url,base_url=base).status_code,401)
     def test_settings_reject_unknown_interface_before_saving_any_selection(self):
         value={'bot_target':{'scope':'local','iface_id':999},'trial_target':{'scope':'local','iface_id':2}}
         result=self.send(self.admin,'PUT','/telegram-commerce/api/settings',value,csrf=self.admin_csrf)

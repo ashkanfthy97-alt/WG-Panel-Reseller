@@ -780,6 +780,7 @@ def run_runtime(app,service,config,private):
             service, TelegramTransport(), row['base_url'], lambda: token,
             bot_username=row.get('bot_username'),
             artifact_provider=artifact_provider,
+            receipt_image_provider=lambda body,identity:save_image(io.BytesIO(body),private,identity=identity),
             admin_provider=lambda: native_admin_notification_recipients(app, config),
         )
 
