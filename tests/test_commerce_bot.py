@@ -40,19 +40,14 @@ class BotChecks(unittest.TestCase):
         self.send('/start');self.send(data='shop');self.send(data='product:'+str(self.product['id']))
         self.send(data='traffic:10');self.send(data='duration:30');self.send(data='devices:1')
         return self.send(data='buy:card')
-    def test_inline_and_persistent_menu_buttons_and_https_launcher(self):
+    def test_removes_legacy_keyboard_and_keeps_inline_menu_and_https_launcher(self):
         self.send('/start');self.bot.flush_outbox()
-        persistent=self.transport.calls[0][1]['reply_markup']
-        self.assertTrue(persistent['is_persistent'])
-        self.assertTrue(persistent['resize_keyboard'])
-        reply_buttons=[button for row in persistent['keyboard'] for button in row]
-        self.assertEqual(len(reply_buttons),10)
-        self.assertEqual(reply_buttons[-1],{'text':'🚀 ورود به پنل کاربری'})
+        self.assertEqual(self.transport.calls[0][1]['reply_markup'],{'remove_keyboard':True})
+        self.assertTrue(self.transport.calls[0][1]['disable_notification'])
         markup=self.transport.calls[-1][1]['reply_markup'];buttons=[b for row in markup['inline_keyboard'] for b in row]
         self.assertEqual(len(buttons),10)
-        self.assertEqual([button['text'] for button in reply_buttons],[button['text'] for button in buttons])
         self.assertEqual(buttons[-1]['web_app']['url'],'https://portal.example.test/telegram-app')
-        self.send(reply_buttons[-1]['text']);self.bot.flush_outbox()
+        self.send('🚀 ورود به پنل کاربری');self.bot.flush_outbox()
         method,launcher,_=self.transport.calls[-1]
         self.assertEqual((method,launcher['message_id']),('editMessageText',2))
         self.assertEqual(launcher['reply_markup']['inline_keyboard'][0][0]['web_app']['url'],
@@ -62,9 +57,19 @@ class BotChecks(unittest.TestCase):
         self.bot.flush_outbox()
         self.assertTrue(any('https://t.me/wgportal_test_bot?start=ref_' in str(call) for call in self.transport.calls))
         self.assertTrue(any('https://www.wireguard.com/install/' in str(call) for call in self.transport.calls))
+
+    def test_old_outbox_item_cannot_restore_a_reply_keyboard(self):
+        self.send('/start')
+        with self.store.db(write=True) as db:
+            existing=db.execute('SELECT MIN(id) FROM commerce_public_outbox').fetchone()[0]
+            legacy={'text':'legacy setup','reply_markup':{'keyboard':[[{'text':'legacy'}]]}}
+            db.execute('UPDATE commerce_public_outbox SET payload=? WHERE id=?',(json.dumps(legacy),existing))
+        self.bot.flush_outbox()
+        self.assertEqual(self.transport.calls[0][1]['reply_markup'],{'remove_keyboard':True})
+        self.assertIn('inline_keyboard',self.transport.calls[1][1]['reply_markup'])
     def test_keyboard_purchase_categories_and_back_navigation(self):
         self.send('/start')
-        self.send('🛒 خرید اشتراک')
+        self.send(data='shop')
         self.send(data='categoryshop:economy')
         self.send(data='product:'+str(self.product['id']))
         self.send(data='traffic:10')
@@ -158,8 +163,7 @@ class BotChecks(unittest.TestCase):
         self.transport.call=reject_web_app
         self.send('/start')
         self.assertEqual(self.bot.flush_outbox(),2)
-        self.assertTrue(self.transport.calls[0][1]['reply_markup']['is_persistent'])
-        self.assertEqual(sum(map(len,self.transport.calls[0][1]['reply_markup']['keyboard'])),10)
+        self.assertEqual(self.transport.calls[0][1]['reply_markup'],{'remove_keyboard':True})
         self.assertIn('خوش آمدید',self.transport.calls[-1][1]['text'])
         self.send(data='shop')
         self.assertEqual(self.bot.flush_outbox(),1)

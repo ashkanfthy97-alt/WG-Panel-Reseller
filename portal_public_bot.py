@@ -24,6 +24,11 @@ PRICE_MENU='📋 طرح‌ها و قیمت‌ها'
 MENU_ACTIONS={**dict(MENU),PRICE_MENU:'prices'}
 MAIN_MENU_ROWS=[[MENU[0]],[MENU[1]],[MENU[2],MENU[3]],
                 [(PRICE_MENU,'prices'),MENU[5]],[MENU[4],MENU[7]],[MENU[6]]]
+REMOVE_REPLY_KEYBOARD={
+    'text':'گزینه‌ها را از دکمه‌های زیر پیام منو انتخاب کنید.',
+    'disable_notification':True,
+    'reply_markup':{'remove_keyboard':True},
+}
 MENU_COMMAND=re.compile(r'^/(start|menu)(?:@[A-Za-z0-9_]+)?(?=\s|$)')
 GUIDES='📚 راهنمای اتصال WireGuard\n۱. برنامهٔ رسمی WireGuard را نصب کنید.\n۲. فایل کانفیگ را وارد کنید یا کد QR اشتراک را اسکن کنید.\n۳. اتصال را روشن کنید.\nدر ویندوز و مک از Import tunnel from file و در اندروید و iOS از افزودن تونل استفاده کنید.'
 DOWNLOADS='📥 برنامه‌های رسمی WireGuard برای اندروید، iOS، ویندوز و macOS:\nhttps://www.wireguard.com/install/'
@@ -74,15 +79,6 @@ class PublicBot:
 
     def _miniapp_button(self):
         return {'text':MENU[-1][0],'web_app':{'url':self.base_url+'/telegram-app'}}
-
-    def _reply_keyboard(self):
-        rows=[[{'text':label} for label,_ in row] for row in MAIN_MENU_ROWS]
-        rows.append([{'text':MENU[-1][0]}])
-        return {
-            'text':'می‌توانید از دکمه‌های پایین چت هم به گزینه‌های اصلی دسترسی داشته باشید.',
-            'disable_notification':True,
-            'reply_markup':{'keyboard':rows,'is_persistent':True,'resize_keyboard':True},
-        }
 
     def _action(self,cid,action,payload=None,key=None):
         return self.service.customer_action(cid,action,payload or {},request_id=key)
@@ -170,7 +166,7 @@ class PublicBot:
                 else:db.execute('INSERT INTO commerce_public_states VALUES(?,?,?,?) ON CONFLICT(bot_id,telegram_id) DO UPDATE SET value=excluded.value,expires_at=excluded.expires_at',(bot,uid,json.dumps(new_state,ensure_ascii=False),int(self.clock())+600))
                 if menu_command:
                     db.execute('INSERT INTO commerce_public_outbox(bot_id,customer_id,chat_id,payload) VALUES(?,?,?,?)',
-                               (bot,cid,uid,json.dumps(self._reply_keyboard(),ensure_ascii=False)))
+                               (bot,cid,uid,json.dumps(REMOVE_REPLY_KEYBOARD,ensure_ascii=False)))
                 for item in messages:
                     if 'text' in item:
                         encoded=item['text'].encode('utf-16-le')
@@ -463,7 +459,11 @@ class PublicBot:
                 elif 'menu_message_id' in payload:
                     menu_message_id=self._deliver_menu(token,bot,row,payload)
                     rendered=menu_message_id is not None
-                else:self.transport.call(token,'sendMessage',{'chat_id':row['chat_id'],'disable_web_page_preview':True,**payload})
+                else:
+                    if 'keyboard' in payload.get('reply_markup',{}):
+                        # A queued setup from an older release must not restore the reply keyboard.
+                        payload=REMOVE_REPLY_KEYBOARD
+                    self.transport.call(token,'sendMessage',{'chat_id':row['chat_id'],'disable_web_page_preview':True,**payload})
             except Exception as error:
                 attempts=row['attempts']+1;delay=max(min(3600,2**min(attempts,11)),int(getattr(error,'retry_after',0) or 0))
                 if attempts in {1,12}:
