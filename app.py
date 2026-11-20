@@ -32049,6 +32049,12 @@ if __name__ == "__main__":
         SESSION_COOKIE_SAMESITE="Lax",
     )
 
+    def start_bot_workers():
+        app.extensions['reseller_bots'].ensure_started()
+        start_commerce=app.extensions.get('portal_commerce_start_runtime')
+        if start_commerce is not None:
+            start_commerce()
+
     if not use_gunicorn:
         ssl_ctx = (cert_path, key_path) if tls_enabled else None
 
@@ -32063,7 +32069,7 @@ if __name__ == "__main__":
             http_base = rt_port if rt_port else http_port
             chosen_port = int(os.getenv("DEV_PORT", str(_valid_port(http_base, 8000))))
 
-        app.extensions['reseller_bots'].ensure_started()
+        start_bot_workers()
         app.run(
             host=os.getenv("DEV_HOST", "127.0.0.1"),
             port=chosen_port,
@@ -32146,7 +32152,7 @@ if __name__ == "__main__":
         "loglevel": loglevel,
         "preload_app": False,
         "capture_output": True,
-        "post_worker_init": lambda worker: app.extensions['reseller_bots'].ensure_started(),
+        "post_worker_init": lambda worker: start_bot_workers(),
     }
 
     if tls_enabled:

@@ -461,7 +461,7 @@ def install_commerce(app, csrf):
 
 
 def install_runtime_starter(app,service,runtime,private):
-    """Wait for WSGI serving: native application registration must finish first."""
+    """Start once per serving process after native registration completes."""
     gate=threading.Lock()
     started_pid=None
     @app.before_request
@@ -475,6 +475,7 @@ def install_runtime_starter(app,service,runtime,private):
                                     daemon=True,name='telegram-commerce-supervisor')
             thread.start()
             started_pid=pid
+    app.extensions['portal_commerce_start_runtime']=start_after_setup
 
 
 def save_image(upload, private, *, identity=None):
@@ -673,6 +674,8 @@ def native_admin_notification_recipients(app,config):
 
 
 def _run_runtime_leader(app, service, config, make_bot, stop):
+    from portal_reseller_bot import telegram_error_label
+
     active_bot = None
     bot_lock = threading.Lock()
 
@@ -749,7 +752,7 @@ def _run_runtime_leader(app, service, config, make_bot, stop):
                 with bot_lock:
                     active_bot = None
                 # Exception contents may include a bot token.
-                app.logger.warning('Telegram commerce polling will retry')
+                app.logger.warning('Telegram commerce polling will retry (%s)',telegram_error_label(error))
                 with app.app_context():
                     try:
                         config.status('retrying')

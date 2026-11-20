@@ -114,6 +114,32 @@ class BotChecks(unittest.TestCase):
                for method,payload,_ in self.transport.calls if method=='editMessageText']
         self.assertEqual(edits,[(84,2),(42,1)])
 
+    def test_rejected_mini_app_button_does_not_stop_the_public_menu(self):
+        from portal_reseller_bot import BotError
+        call=self.transport.call
+        def reject_web_app(token,method,payload=None,**files):
+            if method=='sendMessage' and any(
+                'web_app' in button for row in payload['reply_markup']['inline_keyboard'] for button in row
+            ):
+                raise BotError('telegram_miniapp_button_rejected')
+            return call(token,method,payload,**files)
+        self.transport.call=reject_web_app
+        self.send('/start')
+        self.assertEqual(self.bot.flush_outbox(),1)
+        self.assertIn('خوش آمدید',self.transport.calls[-1][1]['text'])
+        self.send(data='shop')
+        self.assertEqual(self.bot.flush_outbox(),1)
+        self.assertEqual(self.transport.calls[-1][0],'editMessageText')
+
+    def test_malformed_update_does_not_block_the_next_customer(self):
+        malformed_profile=self.update('/start',update_id=2)
+        malformed_profile['message']['from']['username']=None
+        self.transport.updates=[{'update_id':1,'callback_query':['invalid']},
+                                malformed_profile,self.update('/start',uid=84,update_id=3)]
+        self.assertEqual(self.bot.poll_once(deliver_notifications=False),2)
+        self.assertEqual([payload['chat_id'] for method,payload,_ in self.transport.calls
+                          if method=='sendMessage'],[42,84])
+
     def test_public_customer_cannot_retrieve_another_customers_configuration(self):
         for uid in [42,84]:self.bot.handle_update(self.update('/start',uid=uid))
         first=self.customer()['id']

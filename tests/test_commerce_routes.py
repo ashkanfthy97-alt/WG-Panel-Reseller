@@ -81,4 +81,15 @@ class Routes(unittest.TestCase):
             self.assertEqual(client.get('/native-final-route').status_code,200)
             self.assertEqual(thread.call_count,1)
 
+    def test_worker_can_start_bot_without_receiving_a_web_request(self):
+        from unittest.mock import patch
+        from portal_commerce import install_runtime_starter
+        application=Flask('runtime-worker-fixture')
+        with patch('portal_commerce.threading.Thread') as thread:
+            install_runtime_starter(application,None,None,Path(self.tmp.name))
+            application.extensions['portal_commerce_start_runtime']()
+            thread.return_value.start.assert_called_once()
+            application.test_client().get('/')
+            thread.return_value.start.assert_called_once()
+
 if __name__=='__main__':unittest.main()

@@ -5,10 +5,15 @@ from private updates retrieved over the authenticated Telegram Bot API.
 """
 import hashlib
 import json
+import logging
 import re
 import threading
 import time
 from urllib.parse import urlsplit
+
+from portal_reseller_bot import BotError, telegram_error_label
+
+logger = logging.getLogger(__name__)
 
 
 MENU=[('🛒 خرید اشتراک','shop'),('🧪 دریافت تست رایگان','trialinfo'),('📦 اشتراک‌های من','subscriptions'),
@@ -23,6 +28,12 @@ DOWNLOADS='📥 برنامه‌های رسمی WireGuard برای اندروید
 
 def keyboard(rows):
     return {'inline_keyboard':[[{'text':label,'callback_data':value} for label,value in line] for line in rows]}
+
+
+def _profile_text(value,limit):
+    if not isinstance(value,str):
+        return ''
+    return ''.join(character for character in value[:limit] if character.isprintable())
 
 
 def _ensure(db):
@@ -75,9 +86,12 @@ class PublicBot:
     def _private(update):
         if not isinstance(update,dict) or type(update.get('update_id')) is not int or update['update_id']<0:return None
         callback=update.get('callback_query') or {}
+        if not isinstance(callback,dict):return None
         message=callback.get('message') or update.get('message') or {}
+        if not isinstance(message,dict):return None
         sender=(callback.get('from') if callback else message.get('from')) or {}
         chat=message.get('chat') or {}
+        if not isinstance(sender,dict) or not isinstance(chat,dict):return None
         uid=sender.get('id')
         if type(uid) is not int or not 0<uid<2**52 or sender.get('is_bot') or chat.get('type')!='private' or chat.get('id')!=uid:return None
         return sender,message,callback
@@ -94,12 +108,16 @@ class PublicBot:
                 if db.execute('SELECT 1 FROM commerce_public_updates WHERE bot_id=? AND update_id=? AND done=1',(bot,update_id)).fetchone():return True
             text='' if callback else str(message.get('text') or '').strip()
             message_id=message.get('message_id')
-            author=message.get('from') or {}
+            author=message.get('from')
             callback_message_id=(message_id if callback and type(message_id) is int and message_id>0
-                                 and isinstance(message.get('text'),str) and author.get('is_bot') is True
+                                 and isinstance(message.get('text'),str) and isinstance(author,dict) and author.get('is_bot') is True
                                  and str(author.get('id'))==bot else None)
             referral=text[11:] if text.startswith('/start ref_') else None
-            customer=self.service.customer_from_telegram({key:sender.get(key,'') for key in ('id','first_name','last_name','username')},referral_code=referral)
+            customer=self.service.customer_from_telegram({
+                'id':uid,
+                'first_name':_profile_text(sender.get('first_name'),128),
+                'username':_profile_text(sender.get('username'),64),
+            },referral_code=referral)
             cid=customer['id'];key='public-bot-'+bot+'-'+str(update_id)
             state=self._state(bot,uid)
             try:
@@ -348,6 +366,8 @@ class PublicBot:
                 else:self.transport.call(token,'sendMessage',{'chat_id':row['chat_id'],'disable_web_page_preview':True,**payload})
             except Exception as error:
                 attempts=row['attempts']+1;delay=max(min(3600,2**min(attempts,11)),int(getattr(error,'retry_after',0) or 0))
+                if attempts in {1,12}:
+                    logger.warning('Telegram commerce reply delivery failed (%s, attempt %d)',telegram_error_label(error),attempts)
                 with self.store.db(write=True) as db:
                     db.execute('UPDATE commerce_public_outbox SET attempts=?,next_at=?,locked_until=0,sent=? WHERE id=?',(attempts,now+delay,-1 if attempts>=12 else 0,row['id']))
                 continue
@@ -372,15 +392,28 @@ class PublicBot:
         response={'chat_id':row['chat_id'],'link_preview_options':{'is_disabled':True},**payload}
         if message_id is not None:
             try:
-                self.transport.call(token,'editMessageText',dict(response,message_id=message_id))
+                self._write_menu(token,'editMessageText',dict(response,message_id=message_id))
                 return message_id
             except Exception as error:
                 if getattr(error,'code','')!='telegram_message_uneditable':raise
-        result=self.transport.call(token,'sendMessage',response)
+        result=self._write_menu(token,'sendMessage',response)
         new_id=result.get('message_id') if isinstance(result,dict) else None
         if type(new_id) is not int or new_id<=0:
             raise ValueError('telegram_message_id_missing')
         return new_id
+
+    def _write_menu(self,token,method,response):
+        try:
+            return self.transport.call(token,method,response)
+        except BotError as error:
+            if error.code!='telegram_miniapp_button_rejected':
+                raise
+            rows=response['reply_markup']['inline_keyboard']
+            fallback=[[button for button in row if 'web_app' not in button] for row in rows]
+            if rows==fallback:
+                raise
+            logger.warning('Telegram commerce Mini App button rejected; delivering the public menu')
+            return self.transport.call(token,method,dict(response,reply_markup={'inline_keyboard':[row for row in fallback if row]}))
 
     def notify_pending(self,limit=20):
         claim=getattr(self.service,'claim_notifications',None)
@@ -466,7 +499,7 @@ class PublicBot:
         for update in updates:
             if not isinstance(update,dict) or type(update.get('update_id')) is not int or update['update_id']<offset:continue
             callback=update.get('callback_query') or {}
-            if callback.get('id'):
+            if isinstance(callback,dict) and isinstance(callback.get('id'),str):
                 try:self.transport.call(token,'answerCallbackQuery',{'callback_query_id':str(callback['id'])[:256]},timeout=(2,3))
                 except Exception:pass
             self.handle_update(update)

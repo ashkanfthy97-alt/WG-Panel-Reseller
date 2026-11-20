@@ -41,6 +41,7 @@ class Transport(unittest.TestCase):
             reject('Bad Request: message is not modified: same content')
             self.assertIs(transport.call(token,'editMessageText',payload),True)
             for description,code in [('message to edit not found','telegram_message_uneditable'),
+                                     ('BUTTON_URL_INVALID','telegram_miniapp_button_rejected'),
                                      ('message text is empty','telegram_bad_request')]:
                 with self.subTest(description=description):
                     reject('Bad Request: '+description)

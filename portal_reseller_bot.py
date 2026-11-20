@@ -57,6 +57,18 @@ class BotError(ValueError):
         self.retry_after = min(3600, max(0, int(retry_after or 0)))
 
 
+def telegram_error_label(error):
+    code = getattr(error, 'code', '')
+    if isinstance(code, str) and code in {
+        'bot_configuration_unavailable', 'bot_conflict', 'invalid_bot_token',
+        'telegram_bad_request', 'telegram_conflict', 'telegram_connection_failed',
+        'telegram_invalid_token', 'telegram_message_uneditable', 'telegram_miniapp_button_rejected',
+        'telegram_rate_limited', 'telegram_response_invalid', 'telegram_unavailable',
+    }:
+        return code
+    return type(error).__name__
+
+
 def telegram_result(status, value, method=None):
     if not isinstance(value, dict):
         raise BotError('telegram_response_invalid')
@@ -71,8 +83,11 @@ def telegram_result(status, value, method=None):
         parameters = value.get('parameters') or {}
         raise BotError('telegram_rate_limited', retry_after=parameters.get('retry_after', 30))
     if status == 400 and code == 400:
-        if method == 'editMessageText':
+        if method in {'sendMessage', 'editMessageText'}:
             description = str(value.get('description') or '').casefold().removeprefix('bad request: ')
+            if description in {'button_url_invalid', 'button_type_invalid', 'web_app_invalid'}:
+                raise BotError('telegram_miniapp_button_rejected')
+        if method == 'editMessageText':
             if description == 'message is not modified' or description.startswith('message is not modified:'):
                 return True
             if description in {'message to edit not found', "message can't be edited", "message can't be edited by the bot"}:
