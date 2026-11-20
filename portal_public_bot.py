@@ -22,6 +22,8 @@ MENU=[('🛒 خرید اشتراک','shop'),('🧪 دریافت تست رایگ�
 CATEGORIES={'economy':'🔥 طرح‌های اقتصادی','custom':'📊 اشتراک حجمی','unlimited':'♾ اشتراک نامحدود'}
 PRICE_MENU='📋 طرح‌ها و قیمت‌ها'
 MENU_ACTIONS={**dict(MENU),PRICE_MENU:'prices'}
+MAIN_MENU_ROWS=[[MENU[0]],[MENU[1]],[MENU[2],MENU[3]],
+                [(PRICE_MENU,'prices'),MENU[5]],[MENU[4],MENU[7]],[MENU[6]]]
 MENU_COMMAND=re.compile(r'^/(start|menu)(?:@[A-Za-z0-9_]+)?(?=\s|$)')
 GUIDES='📚 راهنمای اتصال WireGuard\n۱. برنامهٔ رسمی WireGuard را نصب کنید.\n۲. فایل کانفیگ را وارد کنید یا کد QR اشتراک را اسکن کنید.\n۳. اتصال را روشن کنید.\nدر ویندوز و مک از Import tunnel from file و در اندروید و iOS از افزودن تونل استفاده کنید.'
 DOWNLOADS='📥 برنامه‌های رسمی WireGuard برای اندروید، iOS، ویندوز و macOS:\nhttps://www.wireguard.com/install/'
@@ -65,11 +67,21 @@ class PublicBot:
     def _bot(self):return self._token().split(':')[0]
 
     def main(self):
-        rows=[[MENU[0]],[MENU[1]],[MENU[2],MENU[3]],
-              [(PRICE_MENU,'prices'),MENU[5]],[MENU[4],MENU[7]],[MENU[6]]]
-        markup=keyboard(rows)
-        markup['inline_keyboard'].append([{'text':MENU[-1][0],'web_app':{'url':self.base_url+'/telegram-app'}}])
+        markup=keyboard(MAIN_MENU_ROWS)
+        markup['inline_keyboard'].append([self._miniapp_button()])
         return {'text':'به WG Portal خوش آمدید. گزینهٔ موردنظر را انتخاب کنید.','reply_markup':markup}
+
+    def _miniapp_button(self):
+        return {'text':MENU[-1][0],'web_app':{'url':self.base_url+'/telegram-app'}}
+
+    def _reply_keyboard(self):
+        rows=[[{'text':label} for label,_ in row] for row in MAIN_MENU_ROWS]
+        rows.append([{'text':MENU[-1][0]}])
+        return {
+            'text':'می‌توانید از دکمه‌های پایین چت هم به گزینه‌های اصلی دسترسی داشته باشید.',
+            'disable_notification':True,
+            'reply_markup':{'keyboard':rows,'is_persistent':True,'resize_keyboard':True},
+        }
 
     def _action(self,cid,action,payload=None,key=None):
         return self.service.customer_action(cid,action,payload or {},request_id=key)
@@ -139,6 +151,9 @@ class PublicBot:
                 if db.execute('SELECT 1 FROM commerce_public_updates WHERE bot_id=? AND update_id=? AND done=1',(bot,update_id)).fetchone():return True
                 if new_state is None:db.execute('DELETE FROM commerce_public_states WHERE bot_id=? AND telegram_id=?',(bot,uid))
                 else:db.execute('INSERT INTO commerce_public_states VALUES(?,?,?,?) ON CONFLICT(bot_id,telegram_id) DO UPDATE SET value=excluded.value,expires_at=excluded.expires_at',(bot,uid,json.dumps(new_state,ensure_ascii=False),int(self.clock())+600))
+                if menu_command:
+                    db.execute('INSERT INTO commerce_public_outbox(bot_id,customer_id,chat_id,payload) VALUES(?,?,?,?)',
+                               (bot,cid,uid,json.dumps(self._reply_keyboard(),ensure_ascii=False)))
                 for item in messages:
                     if 'text' in item:
                         encoded=item['text'].encode('utf-16-le')
@@ -165,7 +180,10 @@ class PublicBot:
             elif data=='back:devices':
                 state['step']='duration'
                 data='duration:'+str(selection['days'])
-        if data=='miniapp':return [self.main()],None
+        if data=='miniapp':
+            screen=self._message('🚀 پنل کاربری\n\nبرای ورود امن از داخل تلگرام، دکمهٔ زیر را بزنید.')
+            screen['reply_markup']['inline_keyboard'].insert(0,[self._miniapp_button()])
+            return [screen],None
         if data=='shop':
             products=self._action(cid,'products').get('products',[])
             available={p.get('category') for p in products}
