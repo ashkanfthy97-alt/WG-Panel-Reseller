@@ -61,6 +61,24 @@ class Integrated(unittest.TestCase):
         self.service.admin_action('mother','suspend_customer',{'id':self.cid,'suspended':True})
         response=self.client.get('/telegram-app/api/dashboard',base_url='https://localhost');self.assertIn(response.status_code,{401,403})
 
+    def test_fixed_checkout_http_uses_customer_session_and_exact_defaults(self):
+        self.service.admin_action('mother','save_destination',{
+            'card_number':'1111222233334444','cardholder_name':'fixture','active':True,
+        })
+        product=self.service.admin_action('mother','save_product',{
+            'name':'ثابت','category':'economy','traffic_gb':12,'days':20,'devices':2,
+            'price_toman':75000,'active':True,'target':{'scope':'local','iface_id':1},
+        })['product']
+        path='/telegram-app/api/checkout'
+        payload={'product_id':product['id']}
+        self.assertEqual(self.send(self.admin,'POST',path,payload).status_code,401)
+        self.assertEqual(self.send(self.client,'POST',path,payload,csrf='incorrect').status_code,403)
+        result=self.send(self.client,'POST',path,payload)
+        self.assertEqual(result.status_code,200,result.json)
+        self.assertEqual(self.send(self.client,'POST',path,payload).json,result.json)
+        self.assertEqual(result.json['payment']['payment_destination']['card_number'],'1111222233334444')
+        self.assertEqual(result.json['order']['total_toman'],75000)
+
     def test_support_lists_private_receipts_with_and_without_tickets(self):
         destination={'card_number':'1111222233334444','cardholder_name':'fixture','active':True}
         self.service.admin_action('mother','save_destination',destination)

@@ -24,11 +24,9 @@ PRICE_MENU='📋 طرح‌ها و قیمت‌ها'
 MENU_ACTIONS={**dict(MENU),PRICE_MENU:'prices'}
 MAIN_MENU_ROWS=[[MENU[0]],[MENU[1]],[MENU[2],MENU[3]],
                 [(PRICE_MENU,'prices'),MENU[5]],[MENU[4],MENU[7]],[MENU[6]]]
-REMOVE_REPLY_KEYBOARD={
-    'text':'گزینه‌ها را از دکمه‌های زیر پیام منو انتخاب کنید.',
-    'disable_notification':True,
-    'reply_markup':{'remove_keyboard':True},
-}
+UNIT_PRICES=('per_gb_toman','per_day_toman','per_device_toman')
+CUSTOM_FIELDS=(('traffic_gb','حجم به گیگابایت',100000),('days','مدت به روز',3650),('devices','تعداد دستگاه',5))
+DECIMAL_DIGITS=str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩','01234567890123456789')
 MENU_COMMAND=re.compile(r'^/(start|menu)(?:@[A-Za-z0-9_]+)?(?=\s|$)')
 GUIDES='📚 راهنمای اتصال WireGuard\n۱. برنامهٔ رسمی WireGuard را نصب کنید.\n۲. فایل کانفیگ را وارد کنید یا کد QR اشتراک را اسکن کنید.\n۳. اتصال را روشن کنید.\nدر ویندوز و مک از Import tunnel from file و در اندروید و iOS از افزودن تونل استفاده کنید.'
 DOWNLOADS='📥 برنامه‌های رسمی WireGuard برای اندروید، iOS، ویندوز و macOS:\nhttps://www.wireguard.com/install/'
@@ -50,6 +48,7 @@ def _ensure(db):
     db.execute('CREATE TABLE IF NOT EXISTS commerce_public_offsets (bot_id TEXT PRIMARY KEY, offset INTEGER NOT NULL DEFAULT 0)')
     db.execute('CREATE TABLE IF NOT EXISTS commerce_public_outbox (id INTEGER PRIMARY KEY, bot_id TEXT NOT NULL, customer_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, sent INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0)')
     db.execute('CREATE TABLE IF NOT EXISTS commerce_public_menu_messages (bot_id TEXT NOT NULL, chat_id INTEGER NOT NULL, message_id INTEGER NOT NULL, outbox_id INTEGER NOT NULL, PRIMARY KEY(bot_id,chat_id))')
+    db.execute('CREATE TABLE IF NOT EXISTS commerce_public_receipt_targets (request_key TEXT PRIMARY KEY, payment_id INTEGER NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS commerce_public_notification_deliveries (bot_id TEXT NOT NULL, job_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, part INTEGER NOT NULL, PRIMARY KEY(bot_id,job_id,chat_id,part))')
 
 
@@ -79,6 +78,13 @@ class PublicBot:
 
     def _miniapp_button(self):
         return {'text':MENU[-1][0],'web_app':{'url':self.base_url+'/telegram-app'}}
+
+    def _reply_keyboard(self):
+        rows=[[{'text':label} for label,_ in row] for row in MAIN_MENU_ROWS]
+        rows.append([{'text':MENU[-1][0]}])
+        return {'text':'از دکمه‌های پایین چت هم می‌توانید گزینه‌های اصلی را باز کنید.',
+                'disable_notification':True,
+                'reply_markup':{'keyboard':rows,'is_persistent':True,'resize_keyboard':True}}
 
     def _action(self,cid,action,payload=None,key=None):
         return self.service.customer_action(cid,action,payload or {},request_id=key)
@@ -133,7 +139,15 @@ class PublicBot:
             cid=customer['id'];key='public-bot-'+bot+'-'+str(update_id)
             state=self._state(bot,uid)
             data=callback.get('data')
+            if callback_message_id is not None:
+                with self.store.db() as db:
+                    active=db.execute('SELECT message_id FROM commerce_public_menu_messages WHERE bot_id=? AND chat_id=?',(bot,uid)).fetchone()
+                if active and callback_message_id!=active['message_id']:
+                    return True
             attachment=not callback and ('photo' in message or 'document' in message)
+            typed_value=not callback and text and text not in MENU_ACTIONS and state and state.get('step') in {
+                'topup','custom_quantity','receipt','discount',
+            } and not text.startswith('/')
             try:
                 if attachment:
                     messages,new_state=self._receipt_attachment(cid,message,state,key)
@@ -166,16 +180,18 @@ class PublicBot:
                 else:db.execute('INSERT INTO commerce_public_states VALUES(?,?,?,?) ON CONFLICT(bot_id,telegram_id) DO UPDATE SET value=excluded.value,expires_at=excluded.expires_at',(bot,uid,json.dumps(new_state,ensure_ascii=False),int(self.clock())+600))
                 if menu_command:
                     db.execute('INSERT INTO commerce_public_outbox(bot_id,customer_id,chat_id,payload) VALUES(?,?,?,?)',
-                               (bot,cid,uid,json.dumps(REMOVE_REPLY_KEYBOARD,ensure_ascii=False)))
+                               (bot,cid,uid,json.dumps(self._reply_keyboard(),ensure_ascii=False)))
                 for item in messages:
                     if 'text' in item:
                         encoded=item['text'].encode('utf-16-le')
                         screen=item['text'] if len(encoded)<=8000 else encoded[:7998].decode('utf-16-le',errors='ignore')+'…'
                         item=dict(item,text=screen,menu_message_id=callback_message_id)
-                        if menu_command:
+                        if menu_command or attachment or typed_value:
                             item['fresh_menu']=True
                     db.execute('INSERT INTO commerce_public_outbox(bot_id,customer_id,chat_id,payload) VALUES(?,?,?,?)',(bot,cid,uid,json.dumps(item,ensure_ascii=False)))
                 db.execute('INSERT INTO commerce_public_updates VALUES(?,?,1) ON CONFLICT(bot_id,update_id) DO UPDATE SET done=1',(bot,update_id))
+                if attachment:
+                    db.execute('DELETE FROM commerce_public_receipt_targets WHERE request_key=?',(key,))
             return True
 
     def _route(self,cid,text,data,state,key):
@@ -203,25 +219,42 @@ class PublicBot:
             rows=[[(label,'categoryshop:'+kind)] for kind,label in CATEGORIES.items() if kind in available]
             if not rows and products:rows=[[('📋 همهٔ طرح‌ها','prices')]]
             rows.append([('🧪 دریافت تست رایگان','trialinfo')])
-            text=('🛒 خرید اشتراک WireGuard\n\nدستهٔ موردنظر را انتخاب کنید. در هر دسته، قیمت پایهٔ طرح‌ها را می‌بینید. '
-                  'پس از انتخاب طرح، حجم، مدت و تعداد دستگاه را مشخص کنید.' if products
+            text=('🛒 خرید اشتراک WireGuard\n\nدستهٔ موردنظر را انتخاب کنید. طرح ثابت مستقیم به پرداخت می‌رسد و در طرح دلخواه مقدارها را خودتان وارد می‌کنید.' if products
                   else '🛒 خرید اشتراک\n\nدر حال حاضر طرحی برای فروش فعال نیست.')
             return [self._message(text,rows)],None
         category=re.fullmatch(r'categoryshop:(economy|custom|unlimited)',data or '')
         if data=='prices' or category:
             products=self._action(cid,'products').get('products',[])
             if category:products=[p for p in products if p.get('category')==category[1]]
-            rows=[[(str(p.get('name','اشتراک'))[:50]+' · '+format(p.get('price_toman',0),',')+' تومان','product:'+str(p['id']))] for p in products[:80]]
+            rows=[]
+            for product in products[:80]:
+                pricing=product.get('pricing') or {}
+                price=('بر اساس انتخاب شما' if product.get('category')=='custom' and all(field in pricing for field in UNIT_PRICES)
+                       else f'{product.get("price_toman",0):,} تومان')
+                rows.append([(str(product.get('name','اشتراک'))[:50]+' · '+price,'product:'+str(product['id']))])
             rows.append([('⬅️ دسته‌بندی طرح‌ها','shop')])
             title=CATEGORIES[category[1]] if category else PRICE_MENU
-            detail=('یک طرح را انتخاب کنید تا گزینه‌های حجم، مدت و تعداد دستگاه آن را ببینید.'
+            detail=('برای دیدن اطلاعات پرداخت، طرح ثابت را انتخاب کنید. طرح دلخواه با مقدارهای انتخابی شما محاسبه می‌شود.'
                     if products else 'در این دسته فعلاً طرح فعالی برای خرید وجود ندارد.')
             return [self._message(title+'\n\n'+detail,rows)],None
         match=re.fullmatch(r'product:([1-9][0-9]*)',data or '')
         if match:
             product=next((p for p in self._action(cid,'products').get('products',[]) if p['id']==int(match[1])),None)
             if product is None:return [self._message('طرح در دسترس نیست.')],None
+            if product.get('category')!='custom':
+                if state and state.get('step')=='fixed_payment' and state['product_id']==product['id']:
+                    existing=self._action(cid,'payment',{'id':state['payment_id']})['payment']
+                    if existing['status']=='pending_payment' and existing['expires_at']>int(self.clock()):
+                        return self._payment_messages(state['order'],existing),state
+                result=self._action(cid,'checkout',{'product_id':product['id']},key)
+                payment=result['payment']
+                return self._payment_messages(result['order'],payment),{
+                    'step':'fixed_payment','product_id':product['id'],'payment_id':payment['id'],'order':{'id':result['order']['id']},
+                }
             pricing=product.get('pricing') or {}
+            if all(field in pricing for field in UNIT_PRICES):
+                custom={'step':'custom_quantity','index':0,'selection':{'product_id':product['id']}}
+                return [self._custom_prompt(custom,pricing)],custom
             selection={'product_id':product['id'],'traffic_gb':product.get('traffic_gb'),'days':product['days'],'devices':product['devices']}
             state={'step':'traffic','selection':selection,'product':product}
             options=list(dict.fromkeys([product.get('traffic_gb')]+pricing.get('traffic_options',[])))
@@ -230,6 +263,17 @@ class PublicBot:
             rows.append([('⬅️ طرح‌ها','categoryshop:'+category if category in CATEGORIES else 'prices')])
             title=str(product.get('name','اشتراک'))[:100]
             return [self._message('📊 حجم اشتراک '+title+'\n\nحجم تعیین می‌کند در دورهٔ اشتراک چقدر ترافیک در اختیار دارید. یکی از گزینه‌های این طرح را انتخاب کنید.',rows)],state
+        if state and state.get('step')=='custom_quantity' and not data:
+            field,_,limit=CUSTOM_FIELDS[state['index']]
+            normalized=text.translate(DECIMAL_DIGITS)
+            if not re.fullmatch(r'[0-9]{1,6}',normalized) or not 1<=int(normalized)<=limit:
+                return [self._custom_prompt(state,error=True)],state
+            selection=dict(state['selection'],**{field:int(normalized)})
+            index=state['index']+1
+            if index<len(CUSTOM_FIELDS):
+                next_state=dict(state,index=index,selection=selection)
+                return [self._custom_prompt(next_state)],next_state
+            return self._quote_screen(cid,selection,key,back=('⬅️ انتخاب دوبارهٔ طرح','categoryshop:custom'))
         match=re.fullmatch(r'traffic:(None|[1-9][0-9]*)',data or '')
         if match and state and state.get('step')=='traffic':
             traffic=None if match[1]=='None' else int(match[1]);product=state['product'];pricing=product.get('pricing') or {}
@@ -251,13 +295,7 @@ class PublicBot:
         match=re.fullmatch(r'devices:([1-5])',data or '')
         if match and state and state.get('step')=='devices':
             selection=dict(state['selection'],devices=int(match[1]))
-            quote=self._action(cid,'quote',selection,key).get('quote',{})
-            qid=str(quote['id'])
-            rows=[[('💳 کارت‌به‌کارت','buy:card'),('💰 کیف پول','buy:wallet')],
-                  [('🎟 کد تخفیف','discount')],[('⬅️ تعداد دستگاه','back:devices')]]
-            traffic=quote.get('traffic_gb')
-            volume='نامحدود' if traffic is None else f'{traffic} گیگابایت'
-            return [self._message('🧾 پیش‌فاکتور\nطرح: '+str(quote.get('product_name',''))+'\nحجم: '+volume+'\nمدت: '+str(quote.get('days',''))+' روز\nدستگاه: '+str(quote.get('devices',''))+'\nقیمت پایه: '+format(quote.get('base_toman',0),',')+' تومان\nتخفیف: '+format(quote.get('discount_toman',0),',')+' تومان\nمبلغ نهایی: '+format(quote['total_toman'],',')+' تومان\nپرداخت را انتخاب کنید.',rows)],dict(state,step='invoice',quote_id=qid,selection=selection)
+            return self._quote_screen(cid,selection,key,state=state,back=('⬅️ تعداد دستگاه','back:devices'))
         if data=='discount' and state and state.get('step')=='invoice':
             return [self._message('🎟 کد تخفیف\n\nکد را در همین چت بفرستید تا مبلغ پیش‌فاکتور دوباره محاسبه شود.')],dict(state,step='discount')
         if state and state.get('step')=='discount' and not data:
@@ -286,7 +324,7 @@ class PublicBot:
             return [self._message('➕ شارژ کیف پول\n\nمبلغ را به تومان و فقط با عدد در همین چت بفرستید تا اطلاعات واریز نمایش داده شود.',
                                   [[('⬅️ کیف پول','wallet')]])],{'step':'topup'}
         if state and state.get('step')=='topup' and not data:
-            normalized=text.translate(str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩','01234567890123456789'))
+            normalized=text.translate(DECIMAL_DIGITS)
             if not re.fullmatch(r'[0-9]{1,10}',normalized):return [self._message('مبلغ معتبر به تومان وارد کنید.')],state
             result=self._action(cid,'topup',{'amount_toman':int(normalized)},key)
             return self._payment_messages(result.get('order',{}),result['payment']),None
@@ -370,10 +408,33 @@ class PublicBot:
             return [self._message('✅ پاسخ شما ثبت شد.')],None
         return [self.main()],None
 
+    def _custom_prompt(self,state,pricing=None,error=False):
+        _,label,limit=CUSTOM_FIELDS[state['index']]
+        prompt=f'{label} را به‌صورت عدد از ۱ تا {limit:,} در همین چت بفرستید.'
+        if pricing:
+            prompt=('📊 طرح دلخواه\n\n'
+                    f'هر گیگابایت {pricing["per_gb_toman"]:,} تومان، هر روز {pricing["per_day_toman"]:,} تومان، '
+                    f'هر دستگاه {pricing["per_device_toman"]:,} تومان.\n\n'+prompt)
+        elif error:
+            prompt='عدد واردشده معتبر نیست. '+prompt
+        return self._message(prompt,[[('⬅️ طرح‌های دلخواه','categoryshop:custom')]])
+
+    def _quote_screen(self,cid,selection,key,*,back,state=None):
+        quote=self._action(cid,'quote',selection,key)['quote']
+        rows=[[('💳 کارت‌به‌کارت','buy:card'),('💰 کیف پول','buy:wallet')],
+              [('🎟 کد تخفیف','discount')],[back]]
+        traffic=quote.get('traffic_gb')
+        volume='نامحدود' if traffic is None else f'{traffic} گیگابایت'
+        screen=self._message(
+            f'🧾 پیش‌فاکتور\nطرح: {quote["product_name"]}\nحجم: {volume}\nمدت: {quote["days"]} روز\n'
+            f'دستگاه: {quote["devices"]}\nقیمت پایه: {quote["base_toman"]:,} تومان\n'
+            f'تخفیف: {quote["discount_toman"]:,} تومان\nمبلغ نهایی: {quote["total_toman"]:,} تومان\nپرداخت را انتخاب کنید.',rows)
+        return [screen],dict(state or {},step='invoice',quote_id=str(quote['id']),selection=selection)
+
     def _payment_messages(self,order,payment):
         destination=payment.get('payment_destination') or order.get('payment_destination') or {}
         card=destination.get('card_number','');name=destination.get('cardholder_name',destination.get('holder_name',''))
-        return [self._message('💳 پرداخت کارت‌به‌کارت\nسفارش: '+str(order.get('id',payment.get('id','')))+'\nمبلغ: '+format(payment.get('amount_toman',order.get('total_toman',0)),',')+' تومان\nشماره کارت: '+str(card)+'\nصاحب کارت: '+str(name)+'\nبانک: '+str(destination.get('bank_name',''))+'\n'+str(destination.get('instructions',''))+'\nپس از پرداخت، عکس رسید را در همین چت بفرستید یا «ثبت رسید» را بزنید. پرداخت پس از بررسی مدیر تأیید می‌شود.',[[('📤 ثبت رسید','receipt:'+str(payment['id']))]])]
+        return [self._message('💳 پرداخت کارت‌به‌کارت\nسفارش: '+str(order.get('id',payment.get('id','')))+'\nمبلغ: '+format(payment.get('amount_toman',order.get('total_toman',0)),',')+' تومان\nشماره کارت: '+str(card)+'\nصاحب کارت: '+str(name)+'\nبانک: '+str(destination.get('bank_name',''))+'\n'+str(destination.get('instructions',''))+'\nبرای پرداخت و ثبت رسید تا ۱۰ دقیقه فرصت دارید. عکس رسید را در همین چت بفرستید؛ پرداخت پس از بررسی مدیر تأیید می‌شود.',[[('📤 ثبت رسید','receipt:'+str(payment['id']))]])]
 
     def _receipt_attachment(self,cid,message,state,key):
         photos=message.get('photo')
@@ -398,22 +459,25 @@ class PublicBot:
             return [self._message('حجم تصویر رسید باید حداکثر ۵ مگابایت باشد.')],state
         caption=message.get('caption')
         caption=''.join(char for char in caption[:1000] if ord(char)>=32 or char in '\n\r\t').strip() if isinstance(caption,str) else ''
+        with self.store.db() as db:
+            target=db.execute('SELECT payment_id FROM commerce_public_receipt_targets WHERE request_key=?',(key,)).fetchone()
+        if target:
+            return self._submit_chat_image(cid,target['payment_id'],file_id,caption,key)
         if state and state.get('step')=='receipt':
-            return self._submit_chat_image(cid,state['payment_id'],file_id,caption,key)
-        payments=self._action(cid,'receipt_payments').get('payments',[])
-        if not payments:
-            return [self._message('پرداختی برای ثبت عکس رسید پیدا نشد. وضعیت پرداخت را در پنل کاربری بررسی کنید. برای پیوست عکس به درخواست پشتیبانی هم می‌توانید از همان پنل استفاده کنید.')],state
-        if len(payments)==1:
-            return self._submit_chat_image(cid,payments[0]['id'],file_id,caption,key)
-        choices=payments[:40]
-        rows=[[(('سفارش #'+str(p['order_id']) if p['order_id'] else 'شارژ کیف پول #'+str(p['id']))+
-                ' · '+format(p['amount_toman'],',')+' تومان','receiptpick:'+str(p['id']))] for p in choices]
-        return [self._message('📷 این عکس مربوط به کدام پرداخت است؟',rows)],{
-            'step':'receipt_select','file_id':file_id,'caption':caption,'payment_ids':[p['id'] for p in choices],'rows':rows}
+            pid=state['payment_id']
+        else:
+            payments=self._action(cid,'receipt_payments').get('payments',[])
+            if not payments:
+                return [self._message('پرداخت بازی بدون عکس رسید پیدا نشد. وضعیت سفارش‌ها را در پنل کاربری ببینید.')],state
+            pid=payments[0]['id']
+        with self.store.db(write=True) as db:
+            db.execute('INSERT OR IGNORE INTO commerce_public_receipt_targets VALUES(?,?)',(key,pid))
+            pid=db.execute('SELECT payment_id FROM commerce_public_receipt_targets WHERE request_key=?',(key,)).fetchone()['payment_id']
+        return self._submit_chat_image(cid,pid,file_id,caption,key)
 
     def _submit_chat_image(self,cid,pid,file_id,caption,key):
         payment=self._action(cid,'payment',{'id':pid})['payment']
-        if payment['expires_at']<=int(self.clock()) or payment['status'] not in {'pending_payment','pending_review'}:
+        if payment['status'] not in {'pending_payment','pending_review'}:
             return [self._message('این پرداخت دیگر رسید نمی‌پذیرد. وضعیت سفارش را در پنل کاربری بررسی کنید.')],None
         if not callable(self.receipt_image_provider):
             return [self._message('دریافت عکس در بات موقتاً در دسترس نیست. می‌توانید رسید را در پنل کاربری بارگذاری کنید.')],None
@@ -423,7 +487,8 @@ class PublicBot:
         if caption:
             payload['transaction_text']=caption
         self._action(cid,'submit_receipt',payload,key)
-        return [self._message('✅ عکس رسید ثبت شد و در انتظار بررسی مدیر است.',
+        identifier=('سفارش '+str(payment['order_id']) if payment.get('order_id') else 'پرداخت '+str(pid))
+        return [self._message('✅ عکس رسید '+identifier+' ثبت شد و در انتظار بررسی مدیر است.',
                               [[('ثبت شمارهٔ پیگیری','receipt:'+str(pid))]])],None
 
     def _send_artifact(self,token,chat_id,kind,body):
@@ -450,6 +515,7 @@ class PublicBot:
             try:
                 payload=json.loads(row['payload'])
                 menu_message_id=None
+                previous_menu_id=None
                 rendered=True
                 if 'artifact' in payload:
                     artifact=payload['artifact']
@@ -457,12 +523,11 @@ class PublicBot:
                     body,_=self.artifact_provider(row['customer_id'],artifact['subscription_id'],artifact['peer_id'],artifact['kind'])
                     self._send_artifact(token,row['chat_id'],artifact['kind'],body)
                 elif 'menu_message_id' in payload:
-                    menu_message_id=self._deliver_menu(token,bot,row,payload)
+                    menu_message_id,previous_menu_id=self._deliver_menu(token,bot,row,payload)
                     rendered=menu_message_id is not None
                 else:
-                    if 'keyboard' in payload.get('reply_markup',{}):
-                        # A queued setup from an older release must not restore the reply keyboard.
-                        payload=REMOVE_REPLY_KEYBOARD
+                    if payload.get('reply_markup',{}).get('remove_keyboard'):
+                        payload=self._reply_keyboard()
                     self.transport.call(token,'sendMessage',{'chat_id':row['chat_id'],'disable_web_page_preview':True,**payload})
             except Exception as error:
                 attempts=row['attempts']+1;delay=max(min(3600,2**min(attempts,11)),int(getattr(error,'retry_after',0) or 0))
@@ -478,6 +543,13 @@ class PublicBot:
                         WHERE excluded.outbox_id>commerce_public_menu_messages.outbox_id''',
                         (bot,row['chat_id'],menu_message_id,row['id']))
                 db.execute('UPDATE commerce_public_outbox SET sent=1,locked_until=0 WHERE id=?',(row['id'],))
+            if previous_menu_id is not None:
+                try:
+                    self.transport.call(token,'editMessageReplyMarkup',{
+                        'chat_id':row['chat_id'],'message_id':previous_menu_id,'reply_markup':{'inline_keyboard':[]},
+                    },timeout=(2,3))
+                except Exception as error:
+                    logger.info('Telegram commerce previous menu cleanup (%s)',telegram_error_label(error))
             sent+=rendered
         return sent
 
@@ -488,20 +560,20 @@ class PublicBot:
             menu=db.execute('SELECT message_id,outbox_id FROM commerce_public_menu_messages WHERE bot_id=? AND chat_id=?',
                             (bot,row['chat_id'])).fetchone()
         if menu and menu['outbox_id']>=row['id']:
-            return None
+            return None,None
         message_id=menu['message_id'] if menu else callback_message_id
         response={'chat_id':row['chat_id'],'link_preview_options':{'is_disabled':True},**payload}
         if not fresh_menu and message_id is not None:
             try:
                 self._write_menu(token,'editMessageText',dict(response,message_id=message_id))
-                return message_id
+                return message_id,None
             except Exception as error:
                 if getattr(error,'code','')!='telegram_message_uneditable':raise
         result=self._write_menu(token,'sendMessage',response)
         new_id=result.get('message_id') if isinstance(result,dict) else None
         if type(new_id) is not int or new_id<=0:
             raise ValueError('telegram_message_id_missing')
-        return new_id
+        return new_id,message_id if new_id!=message_id else None
 
     def _write_menu(self,token,method,response):
         try:

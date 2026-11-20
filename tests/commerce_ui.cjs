@@ -3,6 +3,9 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH);
 const[root,shell,rendered]=process.argv.slice(2);
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=','base64');
 const product={id:1,name:'طرح آزمایشی <img src=x onerror=alert(1)>',category:'custom',traffic_gb:30,days:30,devices:1,price_toman:200000,active:true,target:{scope:'local',iface_id:1},pricing:{traffic_options:[30,50],duration_options:[30,60],device_options:[1,2],traffic_prices:{30:200000,50:300000},duration_percent:{60:200},additional_device_toman:50000}};
+const fixedProduct={...product,id:2,name:'طرح ثابت آزمایشی',category:'economy',pricing:{}};
+const unitRates={per_gb_toman:1000,per_day_toman:2000,per_device_toman:3000};
+const unitProduct={...product,id:3,name:'طرح با نرخ واحد',pricing:unitRates};
 const destination={id:1,card_number:'0000000000000000',cardholder_name:'حساب آزمایشی',bank_name:'بانک آزمایشی',instructions:'رسید را ارسال کنید.',active:true};
 const customer={id:1,telegram_id:12345,first_name:'کاربر <img src=x>',username:'fixture',created_at:1700000000,suspended:false};
 const subscription={id:1,product_name:'اشتراک آزمایشی',status:'active',traffic_gb:30,used_bytes:1073741824,remaining_bytes:29*1073741824,expires_at:1900000000,remaining_seconds:86400*15,devices:1,peers:[{id:7,name:'دستگاه اول'}]};
@@ -18,12 +21,12 @@ async function liveContracts(){
   const page=await customerContext.newPage(),admin=await ownerContext.newPage(),errors=[];
   for(const tab of [page,admin]){tab.setDefaultTimeout(12000);tab.on('pageerror',error=>errors.push(error.message));}
   await page.goto(origin+'/telegram-app');await page.locator('#customer-workspace').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelector('#customer-workspace').getAttribute('aria-busy')==='false');
-  await page.locator('#bottom-nav [data-go=catalog]').click();await page.locator('#product-list button').click();await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#payment-method').waitFor();await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#transaction-text').fill('تراکنش آزمایشی قرارداد واقعی');await page.locator('#dialog-content form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#dialog-content').textContent.includes('صف بررسی'));await page.locator('#close-dialog').click();
+  await page.locator('#bottom-nav [data-go=catalog]').click();await page.locator('#product-list').getByRole('button',{name:'خرید و مشاهدهٔ شماره کارت'}).click();await page.locator('#transaction-text').fill('تراکنش آزمایشی قرارداد واقعی');await page.locator('#dialog-content form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#dialog-content').textContent.includes('صف بررسی'));await page.locator('#close-dialog').click();
   await admin.goto(origin+'/telegram-commerce#payments');await admin.locator('#commerce-panel button').filter({hasText:'بررسی رسید'}).click();await admin.locator('#commerce-field-review-confirm').check();await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
   await page.locator('#refresh-app').click();await page.waitForFunction(()=>document.querySelector('#customer-workspace').getAttribute('aria-busy')==='false');await page.locator('#bottom-nav [data-go=subscriptions]').click();await page.locator('#subscription-list button').filter({hasText:'کانفیگ و QR'}).click();await page.locator('#dialog-content button').filter({hasText:'مشاهده و کپی کانفیگ'}).click();await page.locator('.config-text').waitFor();assert((await page.locator('.config-text').textContent()).includes('[Interface]'));await page.locator('#dialog-content button').filter({hasText:'بازگشت'}).click();await page.locator('#dialog-content button').filter({hasText:'نمایش QR'}).click();await page.locator('.qr-image').waitFor();await page.waitForFunction(()=>document.querySelector('.qr-image')?.naturalWidth>0);await page.locator('#close-dialog').click();
   await page.reload();await page.locator('#customer-workspace').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelector('#customer-workspace').getAttribute('aria-busy')==='false');assert.equal(await page.locator('#auth-panel').isVisible(),false,'Existing real session survives reload without initData replay');
   assert.deepEqual(errors,[]);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
-  console.log(JSON.stringify({mode:'actual Flask/Auth/Service/Store with mock Native',status:'passed',flow:'login → quote → card order → receipt → owner approval → native fulfillment → config/QR → reload'}));
+  console.log(JSON.stringify({mode:'actual Flask/Auth/Service/Store with mock Native',status:'passed',flow:'login → direct card order → receipt → owner approval → native fulfillment → config/QR → reload'}));
  }finally{await browser.close();}
 }
 async function attach(context,{owner=false,authenticated=false,unavailableTargets=false,storedBotTarget={}}={}){
@@ -49,9 +52,18 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
   if(endpoint==='/dashboard')return respond(route,owner?{dashboard:{total_customers:1,active_subscriptions:1,trial_subscriptions:0,pending_payments:1,revenue_toman:200000,wallet_liabilities_toman:100000,referral_rewards_toman:0,failed_provisioning:1}}:{wallet_balance_toman:100000,active_subscriptions:1,remaining_bytes:29*1073741824,subscriptions:[subscription]});
   if(endpoint==='/targets'&&targetFailures-->0)return respond(route,{error:'inventory_unavailable',message:'دریافت اینترفیس‌ها ناموفق بود.'},503);
   if(endpoint==='/targets')return respond(route,{targets:[{label:'محلی wg0',target:{scope:'local',iface_id:1}},{label:'فرانسه · wg1',target:{scope:'node',node_id:2,iface:'wg1'}}]});
-  if(endpoint==='/products'&&method==='GET')return respond(route,{products:[product]});
+  if(endpoint==='/products'&&method==='GET')return respond(route,{products:[product,fixedProduct,unitProduct]});
   if(endpoint.match(/^\/products(\/\d+)?$/)&&method!=='GET'){assert(request.postDataJSON().pricing);assert.equal(request.postDataJSON().target.scope,'local');return respond(route,{product});}
-  if(endpoint==='/quotes'||endpoint.endsWith('-quote'))return respond(route,{quote:{id:'quote-fixture',product_id:1,product_name:product.name,traffic_gb:30,days:30,devices:1,base_toman:200000,discount_toman:0,total_toman:200000}});
+  if(endpoint==='/checkout'&&method==='POST'){assert.deepEqual(request.postDataJSON(),{product_id:2});return respond(route,{order,payment:{...payment,status:'pending_payment'}});}
+  if(endpoint==='/quotes'||endpoint.endsWith('-quote')){
+   const selection=request.postDataJSON();
+   const quote={id:'quote-fixture',product_id:1,product_name:product.name,traffic_gb:30,days:30,devices:1,base_toman:200000,discount_toman:0,total_toman:200000};
+   if(selection.product_id===unitProduct.id){
+    const {traffic_gb,days,devices}=selection, total=traffic_gb*unitRates.per_gb_toman+days*unitRates.per_day_toman+devices*unitRates.per_device_toman;
+    return respond(route,{quote:{...quote,...selection,product_name:unitProduct.name,base_toman:total,total_toman:total}});
+   }
+   return respond(route,{quote});
+  }
   if(endpoint==='/orders'&&method==='POST'){assert.deepEqual(request.postDataJSON(),{quote_id:'quote-fixture',payment_method:'card'});return respond(route,{order,payment:{...payment,status:'pending_payment'}});}
   if(endpoint==='/orders')return respond(route,{orders:[order]});
   if(endpoint==='/orders/1')return respond(route,{order:{...order,payment_status:receipt?'pending_review':'pending_payment'},payment:{...payment,status:receipt?'pending_review':'pending_payment'}});
@@ -96,7 +108,20 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
  const context=await browser.newContext({viewport:{width,height:1000},reducedMotion:'reduce'}),fixture=await attach(context),{page,calls,errors}=fixture;
  await page.goto('https://fixture/telegram-app');await page.waitForFunction(()=>document.querySelector('#customer-workspace').getAttribute('aria-busy')==='false');assert.equal(fixture.authCalls(),1);assert.equal(await page.locator('#customer-name img').count(),0);assert((await page.locator('#home-balance').textContent()).includes('۱۰۰'));assert.equal(await page.locator('#bottom-nav button').count(),5);assert.equal(await page.locator('html').getAttribute('dir'),'rtl');
  await page.reload();await page.waitForFunction(()=>document.querySelector('#customer-workspace').getAttribute('aria-busy')==='false');assert.equal(fixture.authCalls(),1,'Valid customer session avoids initData replay on reload');
- await page.locator('#bottom-nav [data-go=catalog]').click();await page.locator('#product-list button').click();await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#payment-method').waitFor();await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#transaction-text').fill('شماره پیگیری آزمایشی');await page.locator('#dialog-content form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#dialog-content').textContent.includes('صف بررسی'));await page.locator('#close-dialog').click();
+ await page.locator('#bottom-nav [data-go=catalog]').click();
+ await page.locator('#product-list .product').filter({hasText:unitProduct.name}).getByRole('button').click();
+ await page.locator('#buy-traffic').fill('37');await page.locator('#buy-days').fill('44');await page.locator('#buy-devices').fill('3');
+ await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#payment-method').waitFor();
+ assert.deepEqual(calls.filter(item=>item.path.endsWith('/quotes')).at(-1).data,{product_id:3,days:44,devices:3,traffic_gb:37});
+ assert((await page.locator('.invoice-total strong').textContent()).includes(new Intl.NumberFormat('fa-IR').format(134000)));
+ await page.locator('#close-dialog').click();
+ await page.locator('#product-list .product').filter({hasText:product.name}).getByRole('button').click();
+ assert.equal(await page.locator('#buy-traffic').evaluate(input=>input.tagName),'SELECT','Legacy options stay available');
+ await page.locator('#close-dialog').click();
+ await page.locator('#product-list').getByRole('button',{name:'خرید و مشاهدهٔ شماره کارت'}).click();await page.locator('.card-number').waitFor();
+ assert.deepEqual(calls.filter(item=>item.path.endsWith('/checkout')).at(-1).data,{product_id:2});
+ assert.equal(await page.locator('#buy-days').count(),0);
+ await page.locator('#transaction-text').fill('شماره پیگیری آزمایشی');await page.locator('#dialog-content form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#dialog-content').textContent.includes('صف بررسی'));await page.locator('#close-dialog').click();
  await page.locator('#bottom-nav [data-go=subscriptions]').click();await page.locator('#subscription-list button').filter({hasText:'کانفیگ و QR'}).click();await page.locator('#dialog-content button').filter({hasText:'مشاهده و کپی کانفیگ'}).click();await page.locator('.config-text').waitFor();assert((await page.locator('.config-text').textContent()).includes('[Interface]'));await page.locator('#dialog-content button').filter({hasText:'بازگشت'}).click();await page.locator('#dialog-content button').filter({hasText:'نمایش QR'}).click();await page.locator('.qr-image').waitFor();assert(await page.locator('.qr-image').evaluate(image=>image.complete&&image.naturalWidth>0));await page.locator('#close-dialog').click();
  await page.locator('#bottom-nav [data-go=wallet]').click();assert((await page.locator('#wallet-ledger').textContent()).includes('شارژ آزمایشی'));await page.locator('#topup-amount').fill('100000');await page.locator('#topup-form button[type=submit]').click();await page.locator('#transaction-text').fill('پیگیری شارژ');await page.locator('#dialog-content form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#dialog-content').textContent.includes('صف بررسی'));await page.locator('#close-dialog').click();
  await page.locator('#bottom-nav [data-go=profile]').click();await page.locator('#ticket-list button').click();
@@ -126,7 +151,14 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
   assert.equal(await admin.locator('html').getAttribute('data-design'),theme,'Following commerce link preserves selected theme');
  }
  const tab=async name=>{await admin.locator('#commerce-tab-'+name).click();await admin.waitForFunction(()=>document.querySelector('#commerce-panel').getAttribute('aria-busy')==='false');};
- await tab('products');assert.equal(await admin.locator('#commerce-panel img').count(),0);await admin.locator('#commerce-panel button').filter({hasText:'افزودن طرح'}).click();assert.equal(await admin.locator('#commerce-field-product-target').inputValue(),'{}','New product inherits configured bot interface');await admin.locator('#commerce-dialog-close').click();await admin.locator('#commerce-panel button').filter({hasText:'ویرایش'}).click();await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
+ await tab('products');assert.equal(await admin.locator('#commerce-panel img').count(),0);await admin.locator('#commerce-panel button').filter({hasText:'افزودن طرح'}).click();assert.equal(await admin.locator('#commerce-field-product-target').inputValue(),'{}','New product inherits configured bot interface');
+ assert.equal(await admin.locator('#commerce-field-product-per-gb').isVisible(),false);
+ await admin.locator('#commerce-dialog-close').click();
+ await admin.locator('#commerce-panel tr').filter({hasText:unitProduct.name}).getByRole('button',{name:'ویرایش'}).click();
+ assert.equal(await admin.locator('#commerce-field-product-per-gb').inputValue(),'1000');
+ assert.equal(await admin.locator('#commerce-field-product-price').isVisible(),false);
+ await admin.locator('#commerce-field-product-per-gb').fill('1500');await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
+ assert.deepEqual(ownerFixture.calls.filter(item=>item.path.endsWith('/products/3')&&item.method==='PUT').at(-1).data.pricing,{...unitRates,per_gb_toman:1500});
  await tab('bank');await admin.locator('#commerce-panel button').filter({hasText:'افزودن مقصد'}).click();assert.equal(await admin.locator('#commerce-field-bank-card').inputValue(),'','No owner bank data in frontend');await admin.locator('#commerce-dialog-close').click();
  await tab('payments');await admin.locator('#commerce-panel button').filter({hasText:'بررسی رسید'}).click();await admin.locator('#commerce-field-review-confirm').check();await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
  await tab('customers');await admin.locator('#commerce-panel button').filter({hasText:'جزئیات'}).click();assert((await admin.locator('#commerce-dialog-body').textContent()).includes('سابقهٔ کیف پول'));await admin.locator('#commerce-dialog-close').click();

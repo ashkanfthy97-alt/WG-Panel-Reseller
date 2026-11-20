@@ -12,6 +12,11 @@ import secrets
 import sqlite3
 import time
 
+UNPAID_SECONDS = 10 * 60
+UNIT_PRICE_FIELDS = ('per_gb_toman', 'per_day_toman', 'per_device_toman')
+UNSUBMITTED_PAYMENT_SQL = """reviewed_at IS NULL
+    AND coalesce(receipt_reference,'')='' AND coalesce(transaction_text,'')=''"""
+
 
 class DomainError(ValueError):
     def __init__(self, code, message, status=400):
@@ -155,17 +160,18 @@ class CommerceService:
         if not row: fail('payment_unconfigured', 'مدیر هنوز روش پرداخت کارت‌به‌کارت را فعال نکرده است.', 409)
         return self._destination(row)
 
-    def _quote(self, db, cid, payload, existing_subscription=None, action='create'):
-        allowed = {'product_id', 'traffic_gb', 'days', 'devices', 'discount_code'}
-        if set(payload)-allowed: fail()
-        pid = integer(payload.get('product_id'), 1)
-        row = db.execute('SELECT * FROM products WHERE id=? AND active=1', (pid,)).fetchone()
-        if not row: fail('product_unavailable', 'این محصول در حال حاضر قابل خرید نیست.', 404)
-        product = self._product(row)
-        configured_target=self._settings(db)['bot_target']
-        selected_target=configured_target or product['target']
+    @staticmethod
+    def _priced_selection(product, payload, default_device_price):
         traffic, days, devices = product['traffic_gb'], product['days'], product['devices']
         pricing = product['pricing']
+        if product['category']=='custom' and all(field in pricing for field in UNIT_PRICE_FIELDS):
+            traffic=integer(payload.get('traffic_gb',traffic),1,100000)
+            days=integer(payload.get('days',days),1,3650)
+            devices=integer(payload.get('devices',devices),1,5)
+            base=sum(quantity*pricing[field] for quantity,field in zip((traffic,days,devices),UNIT_PRICE_FIELDS))
+            if not 0<base<=10**12:
+                fail('price_unconfigured','قیمت انتخاب‌شده معتبر نیست؛ مقدار دیگری انتخاب کنید.',409)
+            return traffic,days,devices,base
         if 'traffic_gb' in payload:
             traffic = payload['traffic_gb']
             if traffic != product['traffic_gb']:
@@ -187,8 +193,23 @@ class CommerceService:
             if str(days) not in multipliers: fail('price_unconfigured', 'قیمت این مدت تنظیم نشده است.', 409)
             base = base * integer(multipliers[str(days)], 1, 10000) // 100
         if devices != product['devices']:
-            base += (devices-product['devices']) * integer(pricing.get('additional_device_toman', self._settings(db)['extra_device_price_toman']), 0)
+            base += (devices-product['devices']) * integer(pricing.get('additional_device_toman',default_device_price),0)
         if base <= 0:fail('price_unconfigured','قیمت انتخاب‌شده معتبر نیست؛ مدیر باید قیمت محصول را اصلاح کند.',409)
+        return traffic,days,devices,base
+
+    def _available_product(self,db,pid):
+        row=db.execute('SELECT * FROM products WHERE id=? AND active=1',(pid,)).fetchone()
+        if not row:fail('product_unavailable','این محصول در حال حاضر قابل خرید نیست.',404)
+        return self._product(row)
+
+    def _quote(self, db, cid, payload, existing_subscription=None, action='create', *, product=None):
+        allowed = {'product_id', 'traffic_gb', 'days', 'devices', 'discount_code'}
+        if set(payload)-allowed: fail()
+        pid = integer(payload.get('product_id'), 1)
+        product=product or self._available_product(db,pid)
+        settings=self._settings(db)
+        selected_target=settings['bot_target'] or product['target']
+        traffic,days,devices,base=self._priced_selection(product,payload,settings['extra_device_price_toman'])
         discount_toman, discount_id = 0, None
         if payload.get('discount_code'):
             code = text(payload['discount_code'], 64).upper()
@@ -240,13 +261,32 @@ class CommerceService:
     def _payment_value(self, row):
         value = dict(row)
         value['payment_destination'] = json.loads(value.pop('destination_snapshot'))
+        deadline=self._unpaid_deadline(row)
+        if deadline is not None:
+            value['expires_at']=deadline
         return value
+
+    @staticmethod
+    def _unpaid_deadline(row):
+        if (row['status']=='pending_payment' and row['reviewed_at'] is None
+                and not row['receipt_reference'] and not row['transaction_text']):
+            return min(row['expires_at'],row['created_at']+UNPAID_SECONDS)
+        return None
 
     def _new_payment(self, db, cid, amount, kind, order_id=None):
         destination = self._destination_current(db)
+        now=self.now()
         pid = db.execute('INSERT INTO payments(customer_id,order_id,kind,amount_toman,status,destination_snapshot,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)',
-                         (cid,order_id,kind,amount,'pending_payment',dumps(destination),self.now(),self.now()+86400)).lastrowid
+                         (cid,order_id,kind,amount,'pending_payment',dumps(destination),now,now+UNPAID_SECONDS)).lastrowid
         return self._payment_value(db.execute('SELECT * FROM payments WHERE id=?', (pid,)).fetchone())
+
+    def _checkout(self,db,cid,payload):
+        if set(payload)!={'product_id'}:fail()
+        product=self._available_product(db,integer(payload['product_id'],1))
+        if product['category']=='custom':
+            fail('unsupported_selection','ابتدا حجم، مدت و تعداد دستگاه طرح دلخواه را انتخاب کنید.')
+        quote=self._quote(db,cid,payload,product=product)['quote']
+        return self._create_order(db,cid,{'quote_id':quote['id'],'payment_method':'card'})
 
     def _create_order(self, db, cid, payload):
         if set(payload) != {'quote_id','payment_method'}: fail()
@@ -333,6 +373,8 @@ class CommerceService:
         with self.store.db(write=True) as db:
             customer = self._customer(db,customer_id)
             cid = customer['id']
+            if action in {'orders','order','payment','cancel_order'}:
+                self._expire_unpaid(db,cid)
             if action == 'dashboard':
                 subs = [self._subscription(row) for row in db.execute('SELECT * FROM subscriptions WHERE customer_id=? ORDER BY id DESC',(cid,))]
                 active = [s for s in subs if s['status']=='active']
@@ -344,6 +386,9 @@ class CommerceService:
                         'trial_available':bool(self._settings(db)['trial_enabled']) and not db.execute('SELECT 1 FROM trial_claims WHERE customer_id=?',(cid,)).fetchone()}
             if action == 'products': return {'products':[{k:v for k,v in self._product(row).items() if k!='target'} for row in db.execute('SELECT * FROM products WHERE active=1 ORDER BY id')]}
             if action == 'quote': return self._quote(db,cid,payload)
+            if action=='checkout':
+                return self._receipt(db,'customer:'+str(cid),request_id,{'action':action,**payload},
+                                     lambda:self._checkout(db,cid,payload))
             if action in {'renew_quote','upgrade_quote'}:
                 sid = integer(payload.get('id'),1)
                 sub = db.execute('SELECT * FROM subscriptions WHERE id=? AND customer_id=?',(sid,cid)).fetchone()
@@ -354,7 +399,8 @@ class CommerceService:
                 return self._quote(db,cid,selection,sid,'renew' if action=='renew_quote' else 'upgrade')
             if action == 'orders':
                 if payload: return self._receipt(db,'customer:'+str(cid),request_id,{'action':action,**payload},lambda:self._create_order(db,cid,payload))
-                return {'orders':[self._order_value(db,row) for row in db.execute('SELECT * FROM orders WHERE customer_id=? ORDER BY id DESC',(cid,))]}
+                return {'orders':[self._order_value(db,row) for row in db.execute(
+                    "SELECT * FROM orders WHERE customer_id=? AND status<>'expired' ORDER BY id DESC",(cid,))]}
             if action == 'order':
                 row = db.execute('SELECT * FROM orders WHERE id=? AND customer_id=?',(integer(payload.get('id'),1),cid)).fetchone()
                 if not row: fail('not_found','سفارش پیدا نشد.',404)
@@ -366,14 +412,19 @@ class CommerceService:
                 if not row: fail('not_found','پرداخت پیدا نشد.',404)
                 return {'payment':self._payment_value(row)}
             if action == 'receipt_payments':
-                rows=db.execute("""SELECT id,order_id,amount_toman FROM payments
-                    WHERE customer_id=? AND status IN ('pending_payment','pending_review') AND expires_at>?
-                    ORDER BY id DESC LIMIT 41""",(cid,self.now()))
+                now=self.now()
+                rows=db.execute(f"""SELECT id,order_id,amount_toman FROM payments
+                    WHERE customer_id=? AND coalesce(receipt_reference,'')=''
+                    AND (status='pending_review' OR (status='pending_payment' AND
+                        (NOT ({UNSUBMITTED_PAYMENT_SQL}) OR (expires_at>? AND created_at>?))))
+                    ORDER BY id DESC LIMIT 41""",(cid,now,now-UNPAID_SECONDS))
                 return {'payments':[dict(row) for row in rows]}
             if action == 'cancel_order':
                 oid=integer(payload.get('id'),1);row=db.execute('SELECT * FROM orders WHERE id=? AND customer_id=?',(oid,cid)).fetchone()
                 if not row:fail('not_found','سفارش پیدا نشد.',404)
                 if row['status'] not in {'pending_payment','cancelled'}:fail('order_not_cancellable','این سفارش قابل لغو نیست.',409)
+                if row['payment_id'] and db.execute("SELECT 1 FROM payments WHERE id=? AND status='pending_review'",(row['payment_id'],)).fetchone():
+                    fail('order_not_cancellable','سفارش در انتظار بررسی پرداخت است و قابل لغو نیست.',409)
                 db.execute("UPDATE orders SET status='cancelled',updated_at=? WHERE id=?",(self.now(),oid))
                 db.execute("UPDATE payments SET status='cancelled' WHERE order_id=? AND status='pending_payment'",(oid,))
                 db.execute('DELETE FROM discount_redemptions WHERE order_id=?',(oid,))
@@ -439,7 +490,9 @@ class CommerceService:
         pid=integer(payload.get('payment_id',payload.get('id')),1)
         row=db.execute('SELECT * FROM payments WHERE id=? AND customer_id=?',(pid,cid)).fetchone()
         if not row:fail('not_found','پرداخت پیدا نشد.',404)
-        if row['expires_at'] <= self.now():fail('payment_expired','مهلت پرداخت تمام شده است.',409)
+        deadline=self._unpaid_deadline(row)
+        if row['status']=='expired' or (deadline is not None and deadline<=self.now()):
+            fail('payment_expired','مهلت پرداخت تمام شده است.',409)
         if row['status'] not in {'pending_payment','pending_review'}:fail('payment_not_pending','این پرداخت قابل ویرایش نیست.',409)
         reference=text(payload.get('receipt_reference',''),200,False)
         transaction=text(payload.get('transaction_text',''),1000,False)
@@ -613,7 +666,13 @@ class CommerceService:
             fail('target_required','برای فروش فعال، اینترفیس فروش بات یا مقصد این طرح را تعیین کنید.')
         pricing=p.get('pricing',{})
         if not isinstance(pricing,dict) or len(dumps(pricing))>5000:fail()
-        if set(pricing)-{'traffic_options','traffic_prices','duration_options','duration_percent','device_options','additional_device_toman'}:fail()
+        if set(pricing)-{'traffic_options','traffic_prices','duration_options','duration_percent','device_options','additional_device_toman',*UNIT_PRICE_FIELDS}:fail()
+        if any(field in pricing for field in UNIT_PRICE_FIELDS):
+            if category!='custom' or not all(field in pricing for field in UNIT_PRICE_FIELDS):
+                fail('invalid_unit_pricing','هر سه نرخ حجم، روز و دستگاه را برای طرح دلخواه وارد کنید.')
+            if not any([integer(pricing[field],0,10**9) for field in UNIT_PRICE_FIELDS]):
+                fail('invalid_unit_pricing','حداقل یکی از نرخ‌ها باید بیشتر از صفر باشد.')
+            integer(traffic,1,100000)
         for key,low,high in [('traffic_options',1,1000000),('duration_options',1,3650),('device_options',1,5)]:
             if key in pricing:
                 if not isinstance(pricing[key],list) or not 1<=len(pricing[key])<=30:fail()
@@ -872,14 +931,26 @@ class CommerceService:
             count+=1
         return {'refreshed':count}
 
+    def _expire_unpaid(self,db,customer_id=None):
+        now=self.now()
+        query=f"""SELECT id,order_id FROM payments
+                  WHERE status='pending_payment' AND ({UNSUBMITTED_PAYMENT_SQL})
+                  AND (expires_at<=? OR created_at<=?)"""
+        params=(now,now-UNPAID_SECONDS)
+        if customer_id is not None:
+            query+=' AND customer_id=?'
+            params+=(customer_id,)
+        rows=list(db.execute(query,params))
+        for row in rows:
+            db.execute("UPDATE payments SET status='expired' WHERE id=?",(row['id'],))
+            if row['order_id']:
+                db.execute("UPDATE orders SET status='expired',updated_at=? WHERE id=? AND status='pending_payment'",(now,row['order_id']))
+                db.execute('DELETE FROM discount_redemptions WHERE order_id=?',(row['order_id'],))
+        return len(rows)
+
     def expire_payments(self):
         with self.store.db(write=True) as db:
-            rows=list(db.execute("SELECT * FROM payments WHERE status='pending_payment' AND expires_at<=?",(self.now(),)))
-            for row in rows:
-                db.execute("UPDATE payments SET status='expired' WHERE id=?",(row['id'],))
-                if row['order_id']:db.execute("UPDATE orders SET status='expired',updated_at=? WHERE id=? AND status='pending_payment'",(self.now(),row['order_id']))
-                if row['order_id']:db.execute('DELETE FROM discount_redemptions WHERE order_id=?',(row['order_id'],))
-            return {'expired':len(rows)}
+            return {'expired':self._expire_unpaid(db)}
 
     def claim_notifications(self,limit=20,lease_seconds=60):
         with self.store.db(write=True) as db:

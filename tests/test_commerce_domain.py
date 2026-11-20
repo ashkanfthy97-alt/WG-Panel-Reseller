@@ -43,6 +43,71 @@ class CommerceDomain(unittest.TestCase):
         self.s.admin_action('owner','save_discount',{'code':'PROMO','kind':'percent','value':10,'active':True,'max_uses':1,'per_customer':1})
         q=self.quote(discount_code='PROMO'); self.assertEqual(q['total_toman'],90000)
         with self.assertRaises(DomainError): self.quote(price_toman=1)
+
+    def test_fixed_checkout_is_atomic_and_idempotent(self):
+        payload={'product_id':self.product['id']}
+        with self.assertRaises(DomainError):self.action(self.a,'checkout',payload)
+        with self.store.db() as db:
+            for table in ('quotes','orders','payments'):
+                self.assertEqual(db.execute(f'SELECT count(*) FROM {table}').fetchone()[0],0)
+        self.s.admin_action('owner','save_destination',{'card_number':'1111222233334444','cardholder_name':'fixture','active':True})
+        result=self.action(self.a,'checkout',payload)
+        self.assertEqual(self.action(self.a,'checkout',payload),result)
+        self.assertEqual(result['payment']['payment_destination']['card_number'],'1111222233334444')
+        self.assertEqual((result['order']['traffic_gb'],result['order']['days'],result['order']['devices']),(10,30,1))
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM orders').fetchone()[0],1)
+        with self.assertRaises(DomainError):self.action(self.b,'order',{'id':result['order']['id']})
+
+    def test_custom_unit_rates_price_quantities_and_validate_configuration(self):
+        payload={'name':'دلخواه','category':'custom','traffic_gb':10,'days':30,'devices':1,
+                 'price_toman':999999,'active':True,'target':{'scope':'local','iface_id':1}}
+        rates={'per_gb_toman':1000,'per_day_toman':100,'per_device_toman':500}
+        with self.assertRaises(DomainError):
+            self.s.admin_action('owner','save_product',{**payload,'pricing':{'per_gb_toman':1000}})
+        with self.assertRaises(DomainError):
+            self.s.admin_action('owner','save_product',{**payload,'category':'economy','pricing':rates})
+        custom=self.s.admin_action('owner','save_product',{**payload,'pricing':rates})['product']
+        selection={'product_id':custom['id'],'traffic_gb':17,'days':28,'devices':3}
+        self.assertEqual(self.action(self.a,'quote',selection)['quote']['base_toman'],21300)
+        for key,value in [('traffic_gb',100001),('traffic_gb',None),('days',3651),('devices',6)]:
+            with self.subTest(key=key,value=value),self.assertRaises(DomainError):
+                self.action(self.a,'quote',{**selection,key:value})
+        with self.assertRaises(DomainError):
+            self.action(self.a,'checkout',{'product_id':custom['id']})
+
+    def test_unpaid_deadline_applies_to_old_rows_and_keeps_review_history(self):
+        self.s.admin_action('owner','save_destination',{'card_number':'1111222233334444','cardholder_name':'fixture','active':True})
+        now=1000
+        self.s.clock=lambda:now
+        payload={'product_id':self.product['id']}
+        unpaid=self.action(self.a,'checkout',payload,'unpaid-checkout-fixture')
+        review=self.action(self.a,'checkout',payload,'review-checkout-fixture')
+        self.assertEqual(unpaid['payment']['expires_at'],1600)
+        first,second=unpaid['payment']['id'],review['payment']['id']
+        self.assertEqual([entry['id'] for entry in self.action(self.a,'receipt_payments')['payments']],[second,first])
+        with self.store.db(write=True) as db:
+            db.execute('UPDATE payments SET expires_at=87400 WHERE id=?',(first,))
+        self.action(self.a,'submit_receipt',{'payment_id':second,'transaction_text':'اولین پیگیری'},'first-receipt-fixture')
+        now=1599
+        self.assertEqual(len(self.action(self.a,'orders')['orders']),2)
+        now=1600
+        self.assertEqual([entry['id'] for entry in self.action(self.a,'receipt_payments')['payments']],[second])
+        with self.assertRaises(DomainError) as expired:
+            self.action(self.a,'submit_receipt',{'payment_id':first,'receipt_reference':'late.png'},'late-receipt-fixture')
+        self.assertEqual(expired.exception.code,'payment_expired')
+        self.assertEqual(self.s.expire_payments()['expired'],1)
+        self.assertEqual(self.s.expire_payments()['expired'],0)
+        self.assertEqual([entry['id'] for entry in self.action(self.a,'orders')['orders']],[review['order']['id']])
+        self.assertEqual(self.action(self.a,'payment',{'id':first})['payment']['status'],'expired')
+        self.s.admin_action('owner','review_payment',{'id':second,'decision':'more_info','reason':'عکس فیش'},
+                            'payment-more-info-fixture')
+        self.assertEqual(self.s.expire_payments()['expired'],0)
+        self.assertEqual([entry['id'] for entry in self.action(self.a,'receipt_payments')['payments']],[second])
+        self.action(self.a,'submit_receipt',{'payment_id':second,'receipt_reference':'image.png'},'photo-receipt-fixture')
+        self.assertEqual(self.action(self.a,'receipt_payments')['payments'],[])
+        reviewed=self.s.admin_action('owner','review_payment',{'id':second,'decision':'approved'},'review-payment-fixture')
+        self.assertEqual(reviewed['payment']['status'],'approved')
     def test_wallet_order_idempotency_and_native_once(self):
         self.funded(self.a)
         q=self.quote(); payload={'quote_id':q['id'],'payment_method':'wallet'}

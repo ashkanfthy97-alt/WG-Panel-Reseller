@@ -244,7 +244,7 @@ def install_commerce(app, csrf):
     customer_get = {'dashboard':'dashboard', 'products':'products', 'orders':'orders',
                     'wallet':'wallet', 'subscriptions':'subscriptions', 'referrals':'referrals',
                     'tickets':'tickets'}
-    customer_post = {'quotes':'quote','orders':'create_order', 'wallet/topups':'topup',
+    customer_post = {'quotes':'quote','orders':'create_order','checkout':'checkout','wallet/topups':'topup',
                      'trial':'trial', 'tickets':'create_ticket'}
     # Explicit registry: request input can never select an administrator action.
     for path, action in customer_get.items():
@@ -293,7 +293,9 @@ def install_commerce(app, csrf):
     @bp.post('/telegram-app/api/payments/<int:payment_id>/receipt')
     def receipt(payment_id):
         # Authorize the payment before accepting a file into private storage.
-        service.customer_action(g.commerce_customer['customer_id'], 'payment', {'id':payment_id})
+        payment=service.customer_action(g.commerce_customer['customer_id'],'payment',{'id':payment_id})['payment']
+        if payment['status']=='expired':
+            raise CommerceHTTPError('payment_expired','مهلت پرداخت تمام شده است.',409)
         upload = request.files.get('file')
         identity=str(g.commerce_customer['customer_id'])+':'+request.headers['Idempotency-Key']
         reference = save_image(upload, private, identity=identity) if upload else ''
@@ -684,13 +686,16 @@ def _run_runtime_leader(app, service, config, make_bot, stop):
 
     def provision():
         refresh_at = 0
+        expire_at = 0
         while not stop.is_set():
             try:
                 with app.app_context():
+                    if time.monotonic() >= expire_at:
+                        service.expire_payments()
+                        expire_at = time.monotonic() + 5
                     service.process_jobs()
                     if time.monotonic() >= refresh_at:
                         service.refresh_subscriptions()
-                        service.expire_payments()
                         refresh_at = time.monotonic() + 60
             except Exception:
                 app.logger.warning('Telegram commerce provisioning will retry')

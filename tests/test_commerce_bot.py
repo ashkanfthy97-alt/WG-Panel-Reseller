@@ -8,9 +8,12 @@ from portal_public_bot import PublicBot
 TOKEN='123456:'+('A'*35)
 
 class FakeTelegram:
-    def __init__(self):self.calls=[];self.updates=[];self.fail=False
+    def __init__(self):self.calls=[];self.cleanup_calls=[];self.updates=[];self.fail=False
     def call(self,token,method,payload=None,**files):
         assert token==TOKEN
+        if method=='editMessageReplyMarkup':
+            self.cleanup_calls.append(payload)
+            return True
         self.calls.append((method,payload,files))
         if method=='getUpdates':return self.updates
         if method=='getMe':return {'id':123456,'username':'wgportal_test_bot','is_bot':True}
@@ -25,7 +28,7 @@ class BotChecks(unittest.TestCase):
         self.service=CommerceService(self.store,clock=lambda:self.now)
         self.transport=FakeTelegram();self.bot=PublicBot(self.service,self.transport,'https://portal.example.test',lambda:TOKEN,clock=lambda:self.now)
         self.sequence=0
-        self.product=self.service.admin_action('owner','save_product',{'name':'طرح آزمایش','category':'economy','traffic_gb':10,'days':30,'devices':1,'price_toman':100000,'active':True,'target':{'scope':'local','iface_id':1},'pricing':{'device_options':[1,2],'additional_device_toman':5000}})['product']
+        self.product=self.service.admin_action('owner','save_product',{'name':'طرح آزمایش','category':'custom','traffic_gb':10,'days':30,'devices':1,'price_toman':100000,'active':True,'target':{'scope':'local','iface_id':1},'pricing':{'device_options':[1,2],'additional_device_toman':5000}})['product']
         with self.store.db(write=True) as db:db.execute("INSERT INTO payment_destinations(card_number,holder_name,bank_name,instructions,active,created_at,updated_at) VALUES('0000000000000000','fixture','fixture','فقط آزمایش',1,1,1)")
     def update(self,text='',data=None,uid=42,kind='private',update_id=None):
         self.sequence+=1;message={'text':text,'from':{'id':uid,'first_name':'مشتری'},'chat':{'id':uid,'type':kind}}
@@ -40,9 +43,11 @@ class BotChecks(unittest.TestCase):
         self.send('/start');self.send(data='shop');self.send(data='product:'+str(self.product['id']))
         self.send(data='traffic:10');self.send(data='duration:30');self.send(data='devices:1')
         return self.send(data='buy:card')
-    def test_removes_legacy_keyboard_and_keeps_inline_menu_and_https_launcher(self):
+    def test_persistent_keyboard_and_inline_menu_with_https_launcher(self):
         self.send('/start');self.bot.flush_outbox()
-        self.assertEqual(self.transport.calls[0][1]['reply_markup'],{'remove_keyboard':True})
+        reply=self.transport.calls[0][1]['reply_markup']
+        self.assertTrue(reply['is_persistent'])
+        self.assertEqual(sum(map(len,reply['keyboard'])),10)
         self.assertTrue(self.transport.calls[0][1]['disable_notification'])
         markup=self.transport.calls[-1][1]['reply_markup'];buttons=[b for row in markup['inline_keyboard'] for b in row]
         self.assertEqual(len(buttons),10)
@@ -58,19 +63,19 @@ class BotChecks(unittest.TestCase):
         self.assertTrue(any('https://t.me/wgportal_test_bot?start=ref_' in str(call) for call in self.transport.calls))
         self.assertTrue(any('https://www.wireguard.com/install/' in str(call) for call in self.transport.calls))
 
-    def test_old_outbox_item_cannot_restore_a_reply_keyboard(self):
+    def test_old_outbox_item_cannot_remove_the_restored_reply_keyboard(self):
         self.send('/start')
         with self.store.db(write=True) as db:
             existing=db.execute('SELECT MIN(id) FROM commerce_public_outbox').fetchone()[0]
-            legacy={'text':'legacy setup','reply_markup':{'keyboard':[[{'text':'legacy'}]]}}
+            legacy={'text':'legacy setup','reply_markup':{'remove_keyboard':True}}
             db.execute('UPDATE commerce_public_outbox SET payload=? WHERE id=?',(json.dumps(legacy),existing))
         self.bot.flush_outbox()
-        self.assertEqual(self.transport.calls[0][1]['reply_markup'],{'remove_keyboard':True})
+        self.assertTrue(self.transport.calls[0][1]['reply_markup']['is_persistent'])
         self.assertIn('inline_keyboard',self.transport.calls[1][1]['reply_markup'])
     def test_keyboard_purchase_categories_and_back_navigation(self):
         self.send('/start')
         self.send(data='shop')
-        self.send(data='categoryshop:economy')
+        self.send(data='categoryshop:custom')
         self.send(data='product:'+str(self.product['id']))
         self.send(data='traffic:10')
         self.send(data='duration:30')
@@ -82,9 +87,9 @@ class BotChecks(unittest.TestCase):
                          ['sendMessage']*2+['editMessageText']*(len(self.transport.calls)-2))
         replies=[payload for _,payload,_ in self.transport.calls[1:]]
         self.assertEqual({reply['message_id'] for reply in replies[1:]},{2})
-        self.assertIn('حجم، مدت و تعداد دستگاه',replies[1]['text'])
+        self.assertIn('طرح ثابت مستقیم',replies[1]['text'])
         options=lambda reply:{button.get('callback_data') for row in reply['reply_markup']['inline_keyboard'] for button in row}
-        self.assertIn('categoryshop:economy',options(replies[1]))
+        self.assertIn('categoryshop:custom',options(replies[1]))
         self.assertIn('product:'+str(self.product['id']),options(replies[2]))
         self.assertIn('buy:card',options(replies[-3]))
         self.assertIn('devices:2',options(replies[-2]))
@@ -96,6 +101,41 @@ class BotChecks(unittest.TestCase):
         calls=self.transport.calls
         self.assertEqual([method for method,_,_ in calls],['sendMessage','sendMessage','getUpdates','answerCallbackQuery','sendMessage','answerCallbackQuery','sendMessage'])
         self.assertEqual([payload['chat_id'] for method,payload,_ in calls if method=='sendMessage'],[42,42,84,126])
+
+    def test_fixed_plan_opens_card_directly_and_repeated_tap_reuses_order(self):
+        fixed=self.service.admin_action('owner','save_product',{
+            'name':'طرح ثابت','category':'economy','traffic_gb':10,'days':30,'devices':1,
+            'price_toman':100000,'active':True,'target':{'scope':'local','iface_id':1},
+        })['product']
+        self.send('/start');self.bot.flush_outbox()
+        self.send(data='product:'+str(fixed['id']));self.bot.flush_outbox()
+        self.assertEqual(self.transport.calls[-1][0],'editMessageText')
+        self.assertIn('شماره کارت',self.transport.calls[-1][1]['text'])
+        self.send(data='product:'+str(fixed['id']))
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM orders').fetchone()[0],1)
+
+    def test_custom_numeric_answers_move_menu_and_show_server_unit_total(self):
+        custom=self.service.admin_action('owner','save_product',{
+            'name':'طرح واحدی','category':'custom','traffic_gb':10,'days':30,'devices':1,
+            'price_toman':100,'active':True,'target':{'scope':'local','iface_id':1},
+            'pricing':{'per_gb_toman':1000,'per_day_toman':200,'per_device_toman':500},
+        })['product']
+        self.send('/start');self.bot.flush_outbox()
+        self.send(data='product:'+str(custom['id']));self.bot.flush_outbox()
+        self.assertEqual(self.transport.calls[-1][0],'editMessageText')
+        for value in ('۲۰','۳۱','۲'):
+            self.send(value);self.bot.flush_outbox()
+            self.assertEqual(self.transport.calls[-1][0],'sendMessage')
+        self.assertIn('27,200',self.transport.calls[-1][1]['text'])
+        self.assertEqual([item['message_id'] for item in self.transport.cleanup_calls],[2,4,5])
+        stale=self.update('old menu',data='buy:card')
+        stale['callback_query']['message'].update(message_id=2,**{'from':{'id':123456,'is_bot':True}})
+        self.bot.handle_update(stale)
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM orders').fetchone()[0],0)
+        self.send(data='buy:card');self.bot.flush_outbox()
+        self.assertIn('27,200',self.transport.calls[-1][1]['text'])
     def test_public_access_for_multiple_nonmanager_customers_with_isolated_purchase_state(self):
         self.bot.administrator_ids_provider=lambda:[555]
         customers=[42,84,126]
@@ -163,7 +203,7 @@ class BotChecks(unittest.TestCase):
         self.transport.call=reject_web_app
         self.send('/start')
         self.assertEqual(self.bot.flush_outbox(),2)
-        self.assertEqual(self.transport.calls[0][1]['reply_markup'],{'remove_keyboard':True})
+        self.assertTrue(self.transport.calls[0][1]['reply_markup']['is_persistent'])
         self.assertIn('خوش آمدید',self.transport.calls[-1][1]['text'])
         self.send(data='shop')
         self.assertEqual(self.bot.flush_outbox(),1)
@@ -227,7 +267,7 @@ class BotChecks(unittest.TestCase):
             row=db.execute('SELECT status,receipt_reference,transaction_text FROM payments WHERE id=?',(pid,)).fetchone()
         self.assertEqual(tuple(row),('pending_review','a'*48+'.png','tracking-test'))
 
-    def test_receipt_document_selects_own_payment_before_downloading(self):
+    def test_receipt_documents_go_to_latest_own_payment_without_replacing_previous_photo(self):
         self.send('/start')
         cid=self.customer()['id']
         own=[self.service.customer_action(cid,'topup',{'amount_toman':amount},request_id='fixture-topup-'+str(amount))['payment']['id']
@@ -243,20 +283,25 @@ class BotChecks(unittest.TestCase):
         update=self.update()
         update['message'].update(document={'file_id':'document-test','mime_type':'image/png'},caption='caption-test')
         self.bot.handle_update(update)
-        self.send(data='receiptpick:'+str(foreign))
-        self.assertEqual(downloads,[])
-        self.send(data='receiptpick:'+str(own[0]))
         self.assertEqual(downloads,['document-test'])
         with self.store.db() as db:
             saved=[tuple(row) for row in db.execute('SELECT id,receipt_reference,transaction_text FROM payments WHERE receipt_reference IS NOT NULL')]
-        self.assertEqual(saved,[(own[0],'b'*48+'.png','caption-test')])
+        self.assertEqual(saved,[(own[1],'b'*48+'.png','caption-test')])
         self.bot.flush_outbox()
         button=self.transport.calls[-1][1]['reply_markup']['inline_keyboard'][0][0]
-        self.assertEqual(button['callback_data'],'receipt:'+str(own[0]))
+        self.assertEqual(self.transport.calls[-1][0],'sendMessage')
+        self.assertEqual(button['callback_data'],'receipt:'+str(own[1]))
+        second=self.update()
+        second['message']['photo']=[{'file_id':'another-document'}]
+        self.bot.handle_update(second);self.bot.flush_outbox()
+        self.assertEqual(downloads,['document-test','another-document'])
+        with self.store.db() as db:
+            self.assertIsNone(db.execute('SELECT receipt_reference FROM payments WHERE id=?',(foreign,)).fetchone()[0])
+            self.assertIsNotNone(db.execute('SELECT receipt_reference FROM payments WHERE id=?',(own[0],)).fetchone()[0])
         self.send(data=button['callback_data'])
         self.send('new-tracking-test')
         with self.store.db() as db:
-            row=db.execute('SELECT receipt_reference,transaction_text FROM payments WHERE id=?',(own[0],)).fetchone()
+            row=db.execute('SELECT receipt_reference,transaction_text FROM payments WHERE id=?',(own[1],)).fetchone()
         self.assertEqual(tuple(row),('b'*48+'.png','new-tracking-test'))
     def test_private_identity_only_and_restart_dedup(self):
         self.assertFalse(self.bot.handle_update(self.update('/start',kind='group')))
@@ -274,8 +319,8 @@ class BotChecks(unittest.TestCase):
         self.assertEqual(self.transport.calls[-1][1]['message_id'],97)
         self.bot=PublicBot(self.service,self.transport,'https://portal.example.test',lambda:TOKEN,clock=lambda:self.now)
         self.send('۱۰۰۰۰۰');self.bot.flush_outbox()
-        self.assertEqual(self.transport.calls[-1][0],'editMessageText')
-        self.assertEqual(self.transport.calls[-1][1]['message_id'],97)
+        self.assertEqual(self.transport.calls[-1][0],'sendMessage')
+        self.assertEqual(self.transport.cleanup_calls[-1],{'chat_id':42,'message_id':97,'reply_markup':{'inline_keyboard':[]}})
 
     def test_replaces_uneditable_message_once_and_remembers_replacement(self):
         self.send('/start');self.bot.flush_outbox()
