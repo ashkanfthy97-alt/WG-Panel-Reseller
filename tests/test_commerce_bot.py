@@ -168,11 +168,12 @@ class BotChecks(unittest.TestCase):
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM orders').fetchone()[0],1)
 
-    def test_custom_numeric_answers_move_menu_and_show_server_unit_total(self):
+    def test_custom_numeric_answers_move_menu_and_show_exact_quantity_price(self):
         custom=self.service.admin_action('owner','save_product',{
             'name':'طرح واحدی','category':'custom','traffic_gb':10,'days':30,'devices':1,
             'price_toman':100,'active':True,'target':{'scope':'local','iface_id':1},
-            'pricing':{'per_gb_toman':1000,'per_day_toman':200,'per_device_toman':500},
+            'pricing':{'per_gb_toman':1000,'per_day_toman':200,'per_device_toman':500,
+                       'traffic_amount_prices':{'20':15000},'device_amount_prices':{'2':0}},
         })['product']
         self.send('/start');self.bot.flush_outbox()
         self.send(data='product:'+str(custom['id']));self.bot.flush_outbox()
@@ -180,7 +181,7 @@ class BotChecks(unittest.TestCase):
         for value in ('۲۰','۳۱','۲'):
             self.send(value);self.bot.flush_outbox()
             self.assertEqual(self.transport.calls[-1][0],'sendMessage')
-        self.assertIn('27,200',self.transport.calls[-1][1]['text'])
+        self.assertIn('21,200',self.transport.calls[-1][1]['text'])
         self.assertEqual([item['message_id'] for item in self.transport.cleanup_calls],[2,4,5])
         stale=self.update('old menu',data='buy:card')
         stale['callback_query']['message'].update(message_id=2,**{'from':{'id':123456,'is_bot':True}})
@@ -188,7 +189,7 @@ class BotChecks(unittest.TestCase):
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM orders').fetchone()[0],0)
         self.send(data='buy:card');self.bot.flush_outbox()
-        self.assertIn('27,200',self.transport.calls[-1][1]['text'])
+        self.assertIn('21,200',self.transport.calls[-1][1]['text'])
     def test_public_access_for_multiple_nonmanager_customers_with_isolated_purchase_state(self):
         self.bot.administrator_ids_provider=lambda:[555]
         customers=[42,84,126]

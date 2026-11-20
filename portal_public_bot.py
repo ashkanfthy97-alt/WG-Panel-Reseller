@@ -25,6 +25,7 @@ MENU_ACTIONS={**dict(MENU),PRICE_MENU:'prices'}
 MAIN_MENU_ROWS=[[MENU[0]],[MENU[1]],[MENU[2],MENU[3]],
                 [(PRICE_MENU,'prices'),MENU[5]],[MENU[4],MENU[7]],[MENU[6]]]
 UNIT_PRICES=('per_gb_toman','per_day_toman','per_device_toman')
+AMOUNT_PRICES=('traffic_amount_prices','duration_amount_prices','device_amount_prices')
 CUSTOM_FIELDS=(('traffic_gb','حجم به گیگابایت',100000),('days','مدت به روز',3650),('devices','تعداد دستگاه',5))
 DECIMAL_DIGITS=str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩','01234567890123456789')
 MENU_COMMAND=re.compile(r'^/(start|menu)(?:@[A-Za-z0-9_]+)?(?=\s|$)')
@@ -421,9 +422,11 @@ class PublicBot:
         _,label,limit=CUSTOM_FIELDS[state['index']]
         prompt=f'{label} را به‌صورت عدد از ۱ تا {limit:,} در همین چت بفرستید.'
         if pricing:
+            amount_note=('\nبرای مقدارهای دارای قیمت اختصاصی، همان قیمت در پیش‌فاکتور اعمال می‌شود.'
+                         if any(pricing.get(field) for field in AMOUNT_PRICES) else '')
             prompt=('📊 طرح دلخواه\n\n'
                     f'هر گیگابایت {pricing["per_gb_toman"]:,} تومان، هر روز {pricing["per_day_toman"]:,} تومان، '
-                    f'هر دستگاه {pricing["per_device_toman"]:,} تومان.\n\n'+prompt)
+                    f'هر دستگاه {pricing["per_device_toman"]:,} تومان.{amount_note}\n\n'+prompt)
         elif error:
             prompt='عدد واردشده معتبر نیست. '+prompt
         return self._message(prompt,[[('⬅️ طرح‌های دلخواه','categoryshop:custom')]])

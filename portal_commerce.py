@@ -305,16 +305,21 @@ def install_commerce(app, csrf):
     @bp.get('/telegram-app/api/payments/<int:payment_id>')
     def payment(payment_id): return invoke('payment', {'id':payment_id})
 
+    def artifact_response(result,peer_id,kind,*,preview_qr=False):
+        is_qr=kind=='qr'
+        response=Response(result['body'],content_type='image/png' if is_qr else 'text/plain; charset=utf-8')
+        disposition='inline' if is_qr and preview_qr else 'attachment'
+        extension='png' if is_qr else 'conf'
+        response.headers['Content-Disposition']=f'{disposition}; filename="wireguard-{peer_id}.{extension}"'
+        return response
+
     @bp.get('/telegram-app/api/subscriptions/<int:subscription_id>/peers/<int:peer_id>/<kind>')
     def artifact(subscription_id, peer_id, kind):
         if kind not in {'config','qr'}:
             return jsonify(error='not_found'),404
-        result = service.customer_action(g.commerce_customer['customer_id'], 'artifact',
-                                         {'id':subscription_id,'peer_id':peer_id,'kind':kind})
-        body = result['body']
-        response = Response(body, content_type='image/png' if kind=='qr' else 'text/plain; charset=utf-8')
-        response.headers['Content-Disposition'] = 'attachment; filename="wireguard-'+str(peer_id)+('.png' if kind=='qr' else '.conf')+'"'
-        return response
+        result=service.customer_action(g.commerce_customer['customer_id'],'artifact',
+                                       {'id':subscription_id,'peer_id':peer_id,'kind':kind})
+        return artifact_response(result,peer_id,kind)
 
     @bp.get('/telegram-app/api/<kind>')
     def guidance(kind):
@@ -367,6 +372,14 @@ def install_commerce(app, csrf):
 
     @bp.get('/telegram-commerce/api/customers/<int:item_id>')
     def customer_detail(item_id): return invoke('customer',{'id':item_id},admin=True)
+
+    @bp.get('/telegram-commerce/api/customers/<int:customer_id>/subscriptions/<int:subscription_id>/peers/<int:peer_id>/<kind>')
+    def admin_customer_artifact(customer_id,subscription_id,peer_id,kind):
+        if kind not in {'config','qr'}:
+            return jsonify(error='not_found'),404
+        result=service.admin_action(g.commerce_owner,'customer_artifact',
+                                    {'customer_id':customer_id,'id':subscription_id,'peer_id':peer_id,'kind':kind})
+        return artifact_response(result,peer_id,kind,preview_qr=True)
 
     @bp.put('/telegram-commerce/api/customers/<int:item_id>')
     def customer_status(item_id):return invoke('suspend_customer',{**data(),'id':item_id},admin=True)

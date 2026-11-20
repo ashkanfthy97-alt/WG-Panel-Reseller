@@ -4,11 +4,14 @@ const[root,shell,rendered]=process.argv.slice(2);
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII=','base64');
 const product={id:1,name:'طرح آزمایشی <img src=x onerror=alert(1)>',category:'custom',traffic_gb:30,days:30,devices:1,price_toman:200000,active:true,target:{scope:'local',iface_id:1},pricing:{traffic_options:[30,50],duration_options:[30,60],device_options:[1,2],traffic_prices:{30:200000,50:300000},duration_percent:{60:200},additional_device_toman:50000}};
 const fixedProduct={...product,id:2,name:'طرح ثابت آزمایشی',category:'economy',pricing:{}};
-const unitRates={per_gb_toman:1000,per_day_toman:2000,per_device_toman:3000};
+const unitRates={per_gb_toman:1000,per_day_toman:2000,per_device_toman:3000,
+ traffic_amount_prices:{37:25000},device_amount_prices:{3:0}};
 const unitProduct={...product,id:3,name:'طرح با نرخ واحد',pricing:unitRates};
 const destination={id:1,card_number:'0000000000000000',cardholder_name:'حساب آزمایشی',bank_name:'بانک آزمایشی',instructions:'رسید را ارسال کنید.',active:true};
-const customer={id:1,telegram_id:12345,first_name:'کاربر <img src=x>',username:'fixture',created_at:1700000000,suspended:false};
+const customer={id:1,telegram_id:12345,first_name:'کاربر <img src=x>',username:'fixture',created_at:1700000000,suspended:false,subscription_count:2,config_count:2};
 const subscription={id:1,product_name:'اشتراک آزمایشی',status:'active',traffic_gb:30,used_bytes:1073741824,remaining_bytes:29*1073741824,expires_at:1900000000,remaining_seconds:86400*15,devices:1,peers:[{id:7,name:'دستگاه اول'}]};
+const customerConfigs=[{...subscription,trial:false,configs:[{id:7,name:'دستگاه پولی'}]},
+ {id:2,trial:true,status:'active',product_name:'تست رایگان',configs:[{id:8,name:null}]}];
 const csp="default-src 'self'; script-src 'self' 'nonce-test-nonce' https://telegram.org; style-src 'self'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'";
 async function liveContracts(){
  const origin=shell,fixture=JSON.parse(fs.readFileSync(rendered,'utf8'));
@@ -24,6 +27,12 @@ async function liveContracts(){
   await page.locator('#bottom-nav [data-go=catalog]').click();await page.locator('#product-list').getByRole('button',{name:'خرید و مشاهدهٔ شماره کارت'}).click();await page.locator('#transaction-text').fill('تراکنش آزمایشی قرارداد واقعی');await page.locator('#dialog-content form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#dialog-content').textContent.includes('صف بررسی'));await page.locator('#close-dialog').click();
   await admin.goto(origin+'/telegram-commerce#payments');await admin.locator('#commerce-panel button').filter({hasText:'بررسی رسید'}).click();await admin.locator('#commerce-field-review-confirm').check();await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
   await page.locator('#refresh-app').click();await page.waitForFunction(()=>document.querySelector('#customer-workspace').getAttribute('aria-busy')==='false');await page.locator('#bottom-nav [data-go=subscriptions]').click();await page.locator('#subscription-list button').filter({hasText:'کانفیگ و QR'}).click();await page.locator('#dialog-content button').filter({hasText:'مشاهده و کپی کانفیگ'}).click();await page.locator('.config-text').waitFor();assert((await page.locator('.config-text').textContent()).includes('[Interface]'));await page.locator('#dialog-content button').filter({hasText:'بازگشت'}).click();await page.locator('#dialog-content button').filter({hasText:'نمایش QR'}).click();await page.locator('.qr-image').waitFor();await page.waitForFunction(()=>document.querySelector('.qr-image')?.naturalWidth>0);await page.locator('#close-dialog').click();
+  await admin.locator('#commerce-tab-customers').click();
+  await admin.locator('#commerce-panel').getByRole('button',{name:'جزئیات'}).click();
+  await admin.getByRole('heading',{name:'کانفیگ‌های پولی'}).waitFor();
+  await admin.getByRole('button',{name:'نمایش QR'}).click();
+  await admin.waitForFunction(()=>document.querySelector('.customer-config-preview img')?.naturalWidth>0);
+  await admin.locator('#commerce-dialog-close').click();
   await page.reload();await page.locator('#customer-workspace').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelector('#customer-workspace').getAttribute('aria-busy')==='false');assert.equal(await page.locator('#auth-panel').isVisible(),false,'Existing real session survives reload without initData replay');
   assert.deepEqual(errors,[]);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   console.log(JSON.stringify({mode:'actual Flask/Auth/Service/Store with mock Native',status:'passed',flow:'login → direct card order → receipt → owner approval → native fulfillment → config/QR → reload'}));
@@ -59,7 +68,9 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
    const selection=request.postDataJSON();
    const quote={id:'quote-fixture',product_id:1,product_name:product.name,traffic_gb:30,days:30,devices:1,base_toman:200000,discount_toman:0,total_toman:200000};
    if(selection.product_id===unitProduct.id){
-    const {traffic_gb,days,devices}=selection, total=traffic_gb*unitRates.per_gb_toman+days*unitRates.per_day_toman+devices*unitRates.per_device_toman;
+    const {traffic_gb,days,devices}=selection;
+    const total=(unitRates.traffic_amount_prices[traffic_gb]??traffic_gb*unitRates.per_gb_toman)+
+      days*unitRates.per_day_toman+(unitRates.device_amount_prices[devices]??devices*unitRates.per_device_toman);
     return respond(route,{quote:{...quote,...selection,product_name:unitProduct.name,base_toman:total,total_toman:total}});
    }
    return respond(route,{quote});
@@ -88,7 +99,7 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
   if(endpoint==='/payments/1')return respond(route,{payment:{...payment,status:approved?'approved':'pending_review'}});
   if(endpoint==='/payments/1/review'){assert.equal(request.postDataJSON().decision,'approved');approved=true;return respond(route,{payment:{...payment,status:'approved'}});}
   if(endpoint==='/customers')return respond(route,{customers:[customer]});
-  if(endpoint==='/customers/1')return respond(route,{customer,subscriptions:[subscription],transactions:[{amount_toman:100000,reason:'آزمایشی',created_at:1700000000}]});
+  if(endpoint==='/customers/1')return respond(route,{customer,subscriptions:customerConfigs,transactions:[{amount_toman:100000,reason:'آزمایشی',created_at:1700000000}]});
   if(endpoint==='/customers/1/wallet-adjustment')return respond(route,{balance_toman:100001});
   if(endpoint==='/settings'&&method==='PUT'&&settingsFailure!==null){const status=settingsFailure;settingsFailure=null;return route.fulfill({status,contentType:'text/html',body:'<!doctype html><html>PRIVATE-DIAGNOSTIC-DO-NOT-REFLECT</html>'});}
   if(endpoint==='/settings'&&method==='GET')return respond(route,{settings:{manager_chat_id:managerID,bot_target:storedBotTarget,trial_enabled:false,trial_hours:24,trial_traffic_gb:1,trial_target:{scope:'local',iface_id:1},referral_percent:20,topup_amounts:[100000,250000],bot_enabled:false,public_base_url:'https://fixture',extra_device_price_toman:50000}});
@@ -110,10 +121,15 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
  await page.reload();await page.waitForFunction(()=>document.querySelector('#customer-workspace').getAttribute('aria-busy')==='false');assert.equal(fixture.authCalls(),1,'Valid customer session avoids initData replay on reload');
  await page.locator('#bottom-nav [data-go=catalog]').click();
  await page.locator('#product-list .product').filter({hasText:unitProduct.name}).getByRole('button').click();
+ assert.equal(await page.locator('#buy-traffic').inputValue(),'');
  await page.locator('#buy-traffic').fill('37');await page.locator('#buy-days').fill('44');await page.locator('#buy-devices').fill('3');
+ assert((await page.getByText('برآورد قیمت:').textContent()).includes(new Intl.NumberFormat('fa-IR').format(113000)));
+ await page.locator('#buy-traffic').fill('38');
+ assert((await page.getByText('برآورد قیمت:').textContent()).includes(new Intl.NumberFormat('fa-IR').format(126000)));
+ await page.locator('#buy-traffic').fill('37');
  await page.locator('#dialog-content form button[type=submit]').click();await page.locator('#payment-method').waitFor();
  assert.deepEqual(calls.filter(item=>item.path.endsWith('/quotes')).at(-1).data,{product_id:3,days:44,devices:3,traffic_gb:37});
- assert((await page.locator('.invoice-total strong').textContent()).includes(new Intl.NumberFormat('fa-IR').format(134000)));
+ assert((await page.locator('.invoice-total strong').textContent()).includes(new Intl.NumberFormat('fa-IR').format(113000)));
  await page.locator('#close-dialog').click();
  await page.locator('#product-list .product').filter({hasText:product.name}).getByRole('button').click();
  assert.equal(await page.locator('#buy-traffic').evaluate(input=>input.tagName),'SELECT','Legacy options stay available');
@@ -157,11 +173,27 @@ async function attach(context,{owner=false,authenticated=false,unavailableTarget
  await admin.locator('#commerce-panel tr').filter({hasText:unitProduct.name}).getByRole('button',{name:'ویرایش'}).click();
  assert.equal(await admin.locator('#commerce-field-product-per-gb').inputValue(),'1000');
  assert.equal(await admin.locator('#commerce-field-product-price').isVisible(),false);
+ assert.equal(await admin.locator('#commerce-field-amount-price-traffic_amount_prices-0-quantity').inputValue(),'37');
+ await admin.getByRole('button',{name:'افزودن قیمت حجم'}).click();
+ await admin.locator('#commerce-field-amount-price-traffic_amount_prices-1-quantity').fill('40');
+ await admin.locator('#commerce-field-amount-price-traffic_amount_prices-1-price').fill('30000');
  await admin.locator('#commerce-field-product-per-gb').fill('1500');await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
- assert.deepEqual(ownerFixture.calls.filter(item=>item.path.endsWith('/products/3')&&item.method==='PUT').at(-1).data.pricing,{...unitRates,per_gb_toman:1500});
+ assert.deepEqual(ownerFixture.calls.filter(item=>item.path.endsWith('/products/3')&&item.method==='PUT').at(-1).data.pricing,{...unitRates,per_gb_toman:1500,traffic_amount_prices:{37:25000,40:30000}});
  await tab('bank');await admin.locator('#commerce-panel button').filter({hasText:'افزودن مقصد'}).click();assert.equal(await admin.locator('#commerce-field-bank-card').inputValue(),'','No owner bank data in frontend');await admin.locator('#commerce-dialog-close').click();
  await tab('payments');await admin.locator('#commerce-panel button').filter({hasText:'بررسی رسید'}).click();await admin.locator('#commerce-field-review-confirm').check();await admin.locator('#commerce-dialog form button[type=submit]').click();await admin.waitForFunction(()=>!document.querySelector('#commerce-dialog').open);
- await tab('customers');await admin.locator('#commerce-panel button').filter({hasText:'جزئیات'}).click();assert((await admin.locator('#commerce-dialog-body').textContent()).includes('سابقهٔ کیف پول'));await admin.locator('#commerce-dialog-close').click();
+ await tab('customers');
+ await admin.locator('#commerce-panel button').filter({hasText:'جزئیات'}).click();
+ await admin.getByRole('heading',{name:'کانفیگ‌های تست رایگان'}).waitFor();
+ assert(await admin.getByRole('heading',{name:'کانفیگ‌های پولی'}).isVisible());
+ assert((await admin.locator('#commerce-dialog-body').textContent()).includes('سابقهٔ کیف پول'));
+ await admin.getByRole('row').filter({hasText:'دستگاه پولی'}).getByRole('button',{name:'نمایش QR'}).click();
+ await admin.waitForFunction(()=>document.querySelector('.customer-config-preview img')?.naturalWidth>0);
+ assert((await admin.locator('.customer-config-preview img').getAttribute('src')).endsWith('/customers/1/subscriptions/1/peers/7/qr'));
+ const downloadEvent=admin.waitForEvent('download');
+ await admin.getByRole('row').filter({hasText:'تست رایگان'}).getByRole('button',{name:'دانلود کانفیگ'}).click();
+ assert.equal((await downloadEvent).suggestedFilename(),'wireguard-8.conf');
+ assert(ownerFixture.calls.some(item=>item.path.endsWith('/customers/1/subscriptions/2/peers/8/config')));
+ await admin.locator('#commerce-dialog-close').click();
  await tab('trials');await admin.locator('#commerce-panel form button[type=submit]').click();await tab('notifications');await admin.locator('#commerce-field-notification-title').fill('خبر آزمایشی');await admin.locator('#commerce-field-notification-body').fill('<img src=x> پیام آزمایشی');await admin.locator('#commerce-field-notification-confirm').check();await admin.locator('#commerce-panel form button[type=submit]').click();await tab('settings');assert.equal(await admin.locator('#commerce-field-bot_token').inputValue(),'');
  assert.equal(await admin.locator('#commerce-field-manager_chat_id').inputValue(),'321987654');
  const beforeID=ownerFixture.calls.filter(item=>item.path.endsWith('/settings')&&item.method==='PUT').length;

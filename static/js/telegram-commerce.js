@@ -28,6 +28,72 @@
   async function load(name,{force=false}={}){if(!force&&cache.has(name))return cache.get(name);const endpoints={bank:'payment-destinations',support:'tickets',trials:'settings',notifications:'settings'};const value=await api('/'+(endpoints[name]||name));cache.set(name,value);return value;}
   async function showTab(name,{focus=false,force=false}={}){if(!tabs.some(item=>item[0]===name))name='dashboard';currentTab=name;const request=++generation;document.querySelectorAll('[data-commerce-tab]').forEach(button=>{const active=button.dataset.commerceTab===name;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;});$('#commerce-panel').setAttribute('aria-labelledby','commerce-tab-'+name);$('#commerce-loading').hidden=false;$('#commerce-panel').setAttribute('aria-busy','true');status('');try{const value=await load(name,{force});if(request!==generation)return;const root=$('#commerce-panel');root.replaceChildren();await renderers[name](root,value);if(focus)root.focus({preventScroll:true});history.replaceState(null,'','#'+name);}catch(error){if(request!==generation)return;$('#commerce-panel').replaceChildren();status(error.message,'error');const root=card($('#commerce-panel'),'اطلاعات دریافت نشد');root.append(control('تلاش دوباره',()=>showTab(name,{force:true}),'secondary'));}finally{if(request===generation){$('#commerce-loading').hidden=true;$('#commerce-panel').setAttribute('aria-busy','false');}}}
   async function saved(message){cache.clear();$('#commerce-dialog').close();await showTab(currentTab,{force:true});status(message,'success');}
+
+  function amountPrices(parent,storedPricing){
+    const section=node('section',undefined,'commerce-card full exact-prices');
+    section.append(node('h3','قیمت مقدارهای مشخص'),
+      node('p','اختیاری. اگر برای یک مقدار قیمت تعیین کنید، همان قیمت برای آن مقدار حساب می‌شود. سایر مقدارها با نرخ واحد محاسبه می‌شوند.','help'));
+    parent.append(section);
+    const axes=[
+      ['traffic_amount_prices','حجم','حجم (گیگابایت)',100000],
+      ['duration_amount_prices','مدت','مدت (روز)',3650],
+      ['device_amount_prices','دستگاه','تعداد دستگاه',5],
+    ];
+    const lists=axes.map(([key,title,quantityLabel,maxQuantity])=>{
+      const group=node('fieldset',undefined,'exact-price-axis'),rows=node('div');
+      group.append(node('legend',title),rows);
+      section.append(group);
+      let nextId=0;
+      const limit=Math.min(30,maxQuantity);
+      const syncRows=()=>{
+        add.setAttribute('aria-disabled',String(rows.children.length>=limit));
+        section.dispatchEvent(new Event('change'));
+      };
+      const add=control('افزودن قیمت '+title,()=>{
+        if(rows.children.length<limit)appendRow().focus();
+      },'secondary');
+      function appendRow(quantity='',price=''){
+        const id='amount-price-'+key+'-'+nextId++;
+        const row=node('div',undefined,'exact-price-row');
+        const quantityInput=field(row,quantityLabel,id+'-quantity',{type:'number',value:quantity,min:1,max:maxQuantity,required:true});
+        const priceInput=field(row,'قیمت این مقدار (تومان)',id+'-price',{type:'number',value:price,min:0,max:1000000000000,required:true});
+        const remove=control('حذف',()=>{row.remove();syncRows();add.focus();},'secondary');
+        remove.setAttribute('aria-label','حذف قیمت '+title);
+        row.append(remove);
+        rows.append(row);
+        syncRows();
+        return quantityInput;
+      }
+      for(const [quantity,price] of Object.entries(storedPricing[key]||{}))appendRow(quantity,price);
+      group.append(add);
+      return [key,rows,maxQuantity];
+    });
+    return {
+      hasRows:()=>lists.some(([,rows])=>rows.children.length>0),
+      onChange:listener=>section.addEventListener('change',listener),
+      toggle(enabled){
+        section.hidden=!enabled;
+        for(const input of section.querySelectorAll('input'))input.disabled=!enabled;
+      },
+      values(){
+        const result={};
+        for(const [key,rows,maxQuantity] of lists){
+          const prices={};
+          for(const row of rows.children){
+            const [quantityInput,priceInput]=row.querySelectorAll('input');
+            const quantity=Number(quantityInput.value),price=Number(priceInput.value);
+            if(!Number.isSafeInteger(quantity)||quantity<1||quantity>maxQuantity||priceInput.value===''||
+              !Number.isSafeInteger(price)||price<0||price>1000000000000)throw new Error('مقدار و قیمت مشخص باید عدد صحیح و در محدودهٔ مجاز باشند.');
+            if(Object.hasOwn(prices,quantity))throw new Error('برای هر مقدار فقط یک قیمت وارد کنید.');
+            prices[quantity]=price;
+          }
+          if(Object.keys(prices).length)result[key]=prices;
+        }
+        return result;
+      },
+    };
+  }
+
   function productDialog(product=null){
     const root=modal(product?'ویرایش طرح':'افزودن طرح'),form=node('form'),grid=node('div',undefined,'commerce-form-grid');
     form.append(grid);
@@ -53,6 +119,9 @@
     });
     const rateHelp=node('p','قیمت طرح دلخواه از جمع هزینهٔ حجم، روز و دستگاه محاسبه می‌شود. برای نرخ رایگان، صفر بگذارید.','help full');
     grid.append(rateHelp);
+    const specificPrices=amountPrices(grid,legacyPricing);
+    const amountPriceKeys=['traffic_amount_prices','duration_amount_prices','device_amount_prices'];
+    for(const key of amountPriceKeys)delete legacyPricing[key];
     const target=field(grid,'مقصد ساخت سرویس','product-target',{type:'textarea',value:pretty(product?.target||{}),required:true,full:true,
       help:'برای استفاده از اینترفیس فروش بات، {} را نگه دارید. اگر در تنظیمات بات اینترفیس انتخاب نشده، مقصد اختصاصی طرح را از فهرست زیر تعیین کنید. اینترفیس سفارش‌ها و اشتراک‌های قبلی تغییر نمی‌کند.'});
     if(targets.length){
@@ -66,8 +135,9 @@
       help:'طرح جدید تا زمانی که فعال نشود در فروشگاه عرضه نمی‌شود.'});
     function updateRates(){
       const custom=category.value==='custom';
-      const useRates=custom&&rates.some(([,input])=>input.value!=='');
+      const useRates=custom&&(product?.category!=='custom'||rates.some(([key,input])=>input.value!==''||Object.hasOwn(product?.pricing||{},key))||specificPrices.hasRows());
       rateHelp.hidden=!custom;
+      specificPrices.toggle(custom);
       for(const [,input] of rates){
         input.parentElement.hidden=!custom;
         input.disabled=!custom;
@@ -81,18 +151,24 @@
     }
     category.addEventListener('change',updateRates);
     for(const [,input] of rates)input.addEventListener('input',updateRates);
+    specificPrices.onChange(updateRates);
     updateRates();
     submit(form,product?'ذخیرهٔ تغییرات':'ثبت طرح',async()=>{
       const pricing=json(advanced.value);
       if(!pricing||typeof pricing!=='object'||Array.isArray(pricing))throw new Error('تنظیمات قیمت‌گذاری باید یک شیء JSON باشد.');
-      for(const [key] of rates)delete pricing[key];
+      for(const key of [...rates.map(([key])=>key),...amountPriceKeys])delete pricing[key];
       let basePrice=Number(price.value);
-      if(category.value==='custom'&&rates.some(([,input])=>input.value!=='')){
-        for(const [key,input] of rates)pricing[key]=Number(input.value);
+      if(category.value==='custom'&&(price.disabled||specificPrices.hasRows())){
+        for(const [key,input] of rates){
+          if(input.value==='')throw new Error('نرخ هر گیگابایت، هر روز و هر دستگاه را وارد کنید.');
+          pricing[key]=Number(input.value);
+        }
         if(!rates.some(([key])=>pricing[key]>0))throw new Error('حداقل یکی از نرخ‌ها باید بیشتر از صفر باشد.');
-        basePrice=Number(traffic.value)*pricing.per_gb_toman+Number(days.value)*pricing.per_day_toman+
-          Number(devices.value)*pricing.per_device_toman;
-        if(basePrice>1000000000000)throw new Error('قیمت مقدارهای پایه از سقف مجاز بیشتر است.');
+        Object.assign(pricing,specificPrices.values());
+        const quantities=[Number(traffic.value),Number(days.value),Number(devices.value)];
+        basePrice=rates.reduce((total,[key],index)=>total+(pricing[amountPriceKeys[index]]?.[quantities[index]]??
+          quantities[index]*pricing[key]),0);
+        if(basePrice<1||basePrice>1000000000000)throw new Error('قیمت مقدارهای پایه باید مثبت و در محدودهٔ مجاز باشد.');
       }
       const payload={name:name.value.trim(),category:category.value,traffic_gb:category.value==='unlimited'?null:Number(traffic.value),
         days:Number(days.value),devices:Number(devices.value),price_toman:basePrice,target:json(target.value),pricing,active:active.checked};
@@ -105,7 +181,78 @@
   }
   function bankDialog(destination=null){const root=modal(destination?'ویرایش مقصد پرداخت':'افزودن مقصد پرداخت');root.append(node('p','این اطلاعات فقط روی سرور ذخیره می‌شوند. تغییر مقصد در سابقه ثبت می‌شود و اطلاعات سفارش‌های قبلی حفظ می‌شوند.','payment-note'));const form=node('form'),numberInput=field(form,'شماره کارت ۱۶ رقمی','bank-card',{value:destination?.card_number||'',required:true});numberInput.dir='ltr';numberInput.inputMode='numeric';numberInput.maxLength=23;const holder=field(form,'نام و نام خانوادگی صاحب کارت','bank-holder',{value:destination?.cardholder_name||'',required:true}),bank=field(form,'نام بانک (اختیاری)','bank-name',{value:destination?.bank_name||''}),instructions=field(form,'راهنمای پرداخت','bank-instructions',{type:'textarea',value:destination?.instructions||'پس از واریز مبلغ دقیق، تصویر رسید یا شماره پیگیری را ثبت کنید. فعال‌سازی پس از تأیید مدیر انجام می‌شود.'}),active=field(form,'مقصد پرداخت فعال باشد','bank-active',{type:'checkbox',value:destination?.active??false});submit(form,'ذخیرهٔ مقصد پرداخت',async()=>{const cardNumber=numberInput.value.replace(/[\s-]/g,'');if(!/^\d{16}$/.test(cardNumber))throw new Error('شماره کارت باید شامل ۱۶ رقم انگلیسی باشد.');const payload={card_number:cardNumber,cardholder_name:holder.value.trim(),bank_name:bank.value.trim(),instructions:instructions.value.trim(),active:active.checked},operation=unique('bank:'+(destination?.id||'new'),payload);await api('/payment-destinations'+(destination?'/'+Number(destination.id):''),{method:destination?'PUT':'POST',data:payload,key:operation.key});operation.done();await saved('اطلاعات مقصد پرداخت ثبت شد.');});root.append(form);}
   async function paymentReview(payment){let value=payment;try{const response=await api('/payments/'+Number(payment.id));value=response.payment||response;}catch(error){if(error.status!==404)throw error;}const root=modal('بررسی پرداخت '+number.format(value.id));root.append(badge(value.status));detail(root,[['سفارش',value.order_id],['مشتری',value.customer_name||value.customer_id],['مبلغ',money(value.amount_toman??value.total_toman)],['زمان ثبت',date(value.created_at)],['زمان بررسی',date(value.reviewed_at)],['بررسی‌کننده',value.reviewed_by||value.reviewer]]);const destination=value.payment_destination||value.destination;if(destination)detail(root,[['کارت مقصد',destination.card_number],['صاحب کارت',destination.cardholder_name]]);if(value.transaction_text)root.append(node('p',value.transaction_text,'payment-note'));for(const receipt of value.receipts||[]){const section=card(root,'رسید پرداخت');section.append(node('p',receipt.transaction_text||receipt.text||''));if(receipt.id||receipt.url){const image=node('img');image.src=base+'/payments/'+Number(value.id)+'/receipt';image.alt='رسید ارسالی مشتری';image.className='receipt-image';section.append(image);}}if((value.receipt_id||value.receipt_reference)&&!value.receipts?.length){const image=node('img');image.src=base+'/payments/'+Number(value.id)+'/receipt';image.alt='رسید پرداخت مشتری';image.className='receipt-image';root.append(image);}if(value.status!=='pending_review')return;const form=node('form'),decision=field(form,'نتیجهٔ بررسی','review-decision',{options:[{value:'approved',label:'تأیید پرداخت'},{value:'rejected',label:'رد پرداخت'},{value:'more_info',label:'درخواست اطلاعات بیشتر'}]}),reason=field(form,'دلیل رد یا اطلاعات تکمیلی','review-reason',{type:'textarea'}),confirmation=field(form,'رسید و مبلغ را بررسی کرده‌ام؛ نتیجه را ثبت کن','review-confirm',{type:'checkbox',required:true});submit(form,'ثبت نتیجهٔ بررسی',async()=>{if(!confirmation.checked)throw new Error('ابتدا بررسی رسید را تأیید کنید.');if(decision.value!=='approved'&&!reason.value.trim())throw new Error('دلیل رد یا اطلاعات درخواستی را وارد کنید.');const payload={decision:decision.value,reason:reason.value.trim()},operation=unique('review:'+value.id,payload);await api('/payments/'+Number(value.id)+'/review',{method:'POST',data:payload,key:operation.key});operation.done();await saved('نتیجهٔ بررسی ثبت شد؛ آماده‌سازی و اطلاع‌رسانی از صف عملیات انجام می‌شوند.');});root.append(form);}
-  async function customerDetail(customer){const response=await api('/customers/'+Number(customer.id)),value=response.customer||response,root=modal('حساب مشتری');detail(root,[['نام',value.first_name||value.name],['نام کاربری',value.username],['شناسهٔ تلگرام',value.telegram_id],['موجودی کیف پول',money(value.balance_toman??value.wallet?.balance_toman)],['عضویت',date(value.created_at)],['وضعیت',value.suspended?'متوقف':'فعال']]);table(root,['اشتراک','وضعیت','اعتبار'],response.subscriptions||value.subscriptions||[],(row,item)=>{cell(row,item.id);cell(row,badge(item.status));cell(row,date(item.expires_at));});const actions=node('div',undefined,'commerce-actions');actions.append(control('اصلاح اعتبار کیف پول',()=>walletAdjustment(value),'secondary'),control(value.suspended?'رفع تعلیق مشتری':'تعلیق مشتری',async()=>{await api('/customers/'+Number(value.id),{method:'PUT',data:{suspended:!value.suspended}});await saved('وضعیت مشتری ذخیره شد.');},'danger'));root.append(actions);if(response.transactions||response.ledger||value.ledger){const section=card(root,'سابقهٔ کیف پول');table(section,['زمان','شرح','مبلغ'],response.transactions||response.ledger||value.ledger,(row,item)=>{cell(row,date(item.created_at));cell(row,item.description||item.reason||item.kind);cell(row,money(item.amount_toman));});}}
+  function customerConfigs(root,customer,subscriptions){
+    const configs=subscriptions.flatMap(subscription=>(subscription.configs||[]).map(peer=>({peer,subscription})));
+    const section=card(root,'کانفیگ‌های ساخته‌شده');
+    section.classList.add('customer-configs');
+    if(!configs.length){empty(section,'برای این مشتری هنوز کانفیگی ساخته نشده است.','');return;}
+    const preview=node('div',undefined,'customer-config-preview');
+    preview.hidden=true;
+    function showQR(url,label){
+      preview.replaceChildren();
+      const image=node('img');
+      image.alt='کد QR '+label;
+      image.addEventListener('error',()=>{
+        if(!image.isConnected)return;
+        const error=node('p','کد QR این کانفیگ دیگر در دسترس نیست.','dialog-error');
+        error.setAttribute('role','alert');
+        preview.replaceChildren(error,close);
+        close.focus();
+      },{once:true});
+      const close=control('بستن QR',()=>{preview.replaceChildren();preview.hidden=true;},'secondary');
+      preview.append(node('h3',label),image,close);
+      preview.hidden=false;
+      image.src=url;
+      close.focus();
+    }
+    for(const [trial,title] of [[true,'کانفیگ‌های تست رایگان'],[false,'کانفیگ‌های پولی']]){
+      const group=configs.filter(({subscription})=>Boolean(subscription.trial)===trial);
+      if(!group.length)continue;
+      section.append(node('h3',title));
+      table(section,['اشتراک','دستگاه','وضعیت','عملیات'],group,(row,{subscription,peer})=>{
+        const label=peer.name||'دستگاه '+number.format(peer.id);
+        const endpoint=base+'/customers/'+Number(customer.id)+'/subscriptions/'+Number(subscription.id)+'/peers/'+Number(peer.id);
+        cell(row,subscription.product_name||'اشتراک '+number.format(subscription.id));
+        cell(row,label);
+        cell(row,badge(subscription.status));
+        const actions=node('div',undefined,'commerce-actions');
+        actions.append(control('دانلود کانفیگ',async()=>{
+          const response=await fetch(endpoint+'/config',{cache:'no-store',credentials:'same-origin',redirect:'error'});
+          if(!response.ok||!response.headers.get('Content-Type')?.startsWith('text/plain')){
+            throw new Error('فایل این کانفیگ در دسترس نیست. وضعیت اشتراک را بررسی کنید.');
+          }
+          const url=URL.createObjectURL(await response.blob()),download=node('a');
+          download.href=url;
+          download.download='wireguard-'+Number(peer.id)+'.conf';
+          section.append(download);
+          download.click();
+          download.remove();
+          setTimeout(()=>URL.revokeObjectURL(url),1000);
+        },'secondary'),control('نمایش QR',()=>showQR(endpoint+'/qr',label),'secondary'));
+        cell(row,actions);
+      });
+    }
+    section.append(preview);
+  }
+  async function customerDetail(customer){
+    const response=await api('/customers/'+Number(customer.id)),value=response.customer||response,root=modal('حساب مشتری');
+    const subscriptions=response.subscriptions||value.subscriptions||[];
+    detail(root,[['نام',value.first_name||value.name],['نام کاربری',value.username],['شناسهٔ تلگرام',value.telegram_id],
+      ['موجودی کیف پول',money(value.balance_toman??value.wallet?.balance_toman)],['عضویت',date(value.created_at)],['وضعیت',value.suspended?'متوقف':'فعال']]);
+    customerConfigs(root,value,subscriptions);
+    table(root,['اشتراک','وضعیت','اعتبار'],subscriptions,(row,item)=>{cell(row,item.id);cell(row,badge(item.status));cell(row,date(item.expires_at));});
+    const actions=node('div',undefined,'commerce-actions');
+    actions.append(control('اصلاح اعتبار کیف پول',()=>walletAdjustment(value),'secondary'),control(value.suspended?'رفع تعلیق مشتری':'تعلیق مشتری',async()=>{
+      await api('/customers/'+Number(value.id),{method:'PUT',data:{suspended:!value.suspended}});
+      await saved('وضعیت مشتری ذخیره شد.');
+    },'danger'));
+    root.append(actions);
+    const transactions=response.transactions||response.ledger||value.ledger;
+    if(transactions){
+      const section=card(root,'سابقهٔ کیف پول');
+      table(section,['زمان','شرح','مبلغ'],transactions,(row,item)=>{cell(row,date(item.created_at));cell(row,item.description||item.reason||item.kind);cell(row,money(item.amount_toman));});
+    }
+  }
   function walletAdjustment(customer){const root=modal('اصلاح اعتبار کیف پول'),form=node('form');root.append(node('p','اعتبار با یک سند جدید اصلاح می‌شود؛ سابقهٔ مالی قبلی تغییر نمی‌کند.','payment-note'));const amount=field(form,'مبلغ اصلاح به تومان (منفی برای کسر)','adjustment-amount',{type:'number',required:true,min:-1000000000,max:1000000000}),reason=field(form,'دلیل اصلاح','adjustment-reason',{type:'textarea',required:true}),confirm=field(form,'مبلغ و حساب مشتری را بررسی کرده‌ام','adjustment-confirm',{type:'checkbox',required:true});submit(form,'ثبت اصلاح اعتبار',async()=>{if(!confirm.checked)throw new Error('تأیید بررسی مبلغ لازم است.');const payload={amount_toman:Number(amount.value),reason:reason.value.trim()},operation=unique('adjustment:'+customer.id,payload);await api('/customers/'+Number(customer.id)+'/wallet-adjustment',{method:'POST',data:payload,key:operation.key});operation.done();await saved('سند اصلاح کیف پول ثبت شد.');});root.append(form);}
   async function bankHistory(destination){const value=await api('/payment-destinations/'+Number(destination.id)+'/audit'),root=modal('سابقهٔ تغییرات حساب بانکی');table(root,['زمان','مدیر','صاحب کارت','شماره کارت'],value.audit||[],(row,item)=>{let snapshot={};try{snapshot=typeof item.snapshot==='string'?JSON.parse(item.snapshot):item.snapshot||{};}catch{}cell(row,date(item.created_at));cell(row,item.actor);cell(row,snapshot.cardholder_name||'—');cell(row,snapshot.card_number||'—');});}
   function targetKey(value){if(!value||!Object.keys(value).length)return '';if(value.scope==='local')return JSON.stringify({scope:'local',iface_id:value.iface_id});if(value.scope==='node')return JSON.stringify({scope:'node',node_id:value.node_id,iface:value.iface});return JSON.stringify(value);}
@@ -184,7 +331,7 @@
     products(root,value){heading(root,'طرح‌های فروش',control('＋ افزودن طرح',()=>productDialog()));table(root,['طرح','حجم / زمان','دستگاه','قیمت','وضعیت','عملیات'],value.products||[],(row,item)=>{cell(row,item.name);cell(row,(item.traffic_gb==null?'نامحدود':number.format(item.traffic_gb)+' گیگابایت')+' / '+number.format(item.days)+' روز');cell(row,number.format(item.devices));cell(row,money(item.price_toman));cell(row,badge(item.active?'active':'suspended'));cell(row,control('ویرایش',()=>productDialog(item),'secondary'));});},
     payments(root,value){heading(root,'رسیدها و پرداخت‌ها');const search=node('form',undefined,'commerce-search'),statusInput=field(search,'وضعیت پرداخت','payment-filter',{options:[{value:'all',label:'همهٔ وضعیت‌ها'},{value:'pending_review',label:'در انتظار بررسی'},{value:'approved',label:'تأییدشده'},{value:'rejected',label:'ردشده'}]});const refresh=control('اعمال فیلتر',async()=>{const response=await api('/payments?status='+encodeURIComponent(statusInput.value));cache.set('payments',response);await showTab('payments');},'secondary');search.append(refresh);root.append(search);table(root,['پرداخت / سفارش','مشتری','مبلغ','زمان','وضعیت','عملیات'],value.payments||[],(row,item)=>{cell(row,'#'+item.id+' / #'+item.order_id);cell(row,item.customer_name||item.customer_id);cell(row,money(item.amount_toman??item.total_toman));cell(row,date(item.created_at));cell(row,badge(item.status));cell(row,control(item.status==='pending_review'?'بررسی رسید':'مشاهده',()=>paymentReview(item),'secondary'));});},
     bank(root,value){heading(root,'حساب‌های بانکی مقصد',control('＋ افزودن مقصد',()=>bankDialog()));root.append(node('p','هیچ شماره کارت یا اطلاعات واقعی بانکی داخل کد قرار نمی‌گیرد. مقصد پرداخت را اینجا ثبت و فعال کنید.','payment-note'));table(root,['صاحب کارت','شماره کارت','بانک','وضعیت','عملیات'],value.payment_destinations||value.destinations||[],(row,item)=>{cell(row,item.cardholder_name);const td=cell(row,item.card_number);td.dir='ltr';cell(row,item.bank_name||'—');cell(row,badge(item.active?'active':'suspended'));const actions=node('div',undefined,'commerce-actions');actions.append(control('ویرایش',()=>bankDialog(item),'secondary'),control('سابقهٔ تغییرات',()=>bankHistory(item),'secondary'));cell(row,actions);});},
-    customers(root,value){heading(root,'مشتری‌های تلگرام');const search=node('form',undefined,'commerce-search'),query=field(search,'جست‌وجوی نام یا شناسه','customer-search');submit(search,'جست‌وجو',async()=>{const response=await api('/customers?q='+encodeURIComponent(query.value.trim()));cache.set('customers',response);await showTab('customers');});root.append(search);table(root,['مشتری','شناسهٔ تلگرام','اشتراک‌ها','موجودی','عضویت','عملیات'],value.customers||[],(row,item)=>{const name=node('div');name.append(node('strong',item.first_name||item.name||'مشتری'),node('small',item.username?'@'+item.username:''));cell(row,name);cell(row,item.telegram_id);cell(row,number.format(item.subscription_count??0));cell(row,money(item.balance_toman??item.wallet_balance_toman));cell(row,date(item.created_at));cell(row,control('جزئیات',()=>customerDetail(item),'secondary'));});},
+    customers(root,value){heading(root,'مشتری‌های تلگرام');const search=node('form',undefined,'commerce-search'),query=field(search,'جست‌وجوی نام یا شناسه','customer-search');submit(search,'جست‌وجو',async()=>{const response=await api('/customers?q='+encodeURIComponent(query.value.trim()));cache.set('customers',response);await showTab('customers');});root.append(search);table(root,['مشتری','شناسهٔ تلگرام','اشتراک‌ها','کانفیگ‌ها','موجودی','عضویت','عملیات'],value.customers||[],(row,item)=>{const name=node('div');name.append(node('strong',item.first_name||item.name||'مشتری'),node('small',item.username?'@'+item.username:''));cell(row,name);cell(row,item.telegram_id);cell(row,number.format(item.subscription_count??0));cell(row,number.format(item.config_count??0));cell(row,money(item.balance_toman??item.wallet_balance_toman));cell(row,date(item.created_at));cell(row,control('جزئیات',()=>customerDetail(item),'secondary'));});},
     trials(root,value){const section=card(root,'تنظیمات تست رایگان');section.append(node('p','واجد شرایط بودن و ظرفیت سرویس پیش از ساخت بررسی می‌شوند؛ هر مشتری تنها یک تست دریافت می‌کند.'));return settingsForm(section,value,{trialOnly:true});},
     async notifications(root,value){const section=card(root,'اعلان به مشتری‌های بات عمومی');section.append(node('p','پیام پس از تأیید شما در صف ارسال قرار می‌گیرد. خطاهای ارسال و محدودیت تلگرام در بخش عملیات قابل مشاهده‌اند.'));const form=node('form'),title=field(form,'عنوان پیام','notification-title',{required:true}),body=field(form,'متن پیام','notification-body',{type:'textarea',required:true}),preview=node('div',undefined,'message');body.maxLength=3000;form.append(preview);body.addEventListener('input',()=>preview.textContent=body.value);const confirm=field(form,'این پیام برای مشتری‌های بات عمومی ارسال شود','notification-confirm',{type:'checkbox',required:true});submit(form,'ثبت پیام در صف ارسال',async()=>{if(!confirm.checked)throw new Error('ارسال پیام را تأیید کنید.');const payload={title:title.value.trim(),body:body.value.trim()},operation=unique('announcement',payload);await api('/announcements',{method:'POST',data:payload,key:operation.key});operation.done();await saved('پیام در صف ارسال قرار گرفت.');});section.append(form);const settingsValue=value.settings||value;if(settingsValue.bot_username)detail(section,[['بات فعال','@'+settingsValue.bot_username]]);},
     settings(root,value){const section=card(root,'بات عمومی و سیاست‌های فروش');section.append(node('p','مبالغ عدد صحیح تومان هستند؛ هر تومان ۱۰ ریال است. کلیدهای خصوصی و توکن بات در پاسخ‌های عمومی نمایش داده نمی‌شوند.','payment-note'));return settingsForm(section,value);},

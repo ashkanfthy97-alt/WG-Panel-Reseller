@@ -28,6 +28,7 @@
   function showPage(value,{focus=false}={}){if(!['home','catalog','subscriptions','wallet','profile'].includes(value))value='home';currentPage=value;document.querySelectorAll('[data-page]').forEach(section=>section.hidden=section.dataset.page!==value);document.querySelectorAll('#bottom-nav [data-go]').forEach(control=>{if(control.dataset.go===value)control.setAttribute('aria-current','page');else control.removeAttribute('aria-current');});history.replaceState(null,'','#'+value);if(focus){const heading=$('#page-'+value+' h1');heading.tabIndex=-1;heading.focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});}}
   function renderCustomer(){const name=customer?.first_name||customer?.name||customer?.username||'دوست عزیز';$('#customer-name').textContent=name;$('#profile-name').textContent=name;$('#profile-username').textContent=customer?.username?'@'+customer.username:'';$('#profile-details').replaceChildren(...detail([['شناسهٔ حساب',customer?.id?number.format(customer.id):'—'],['عضویت',date(customer?.created_at)],['واحد مبالغ','تومان؛ هر تومان برابر ۱۰ ریال است']]).children);}
   const gb=value=>Number.isFinite(value)?number.format(Math.round(value*100)/100)+' گیگابایت':'—';
+  const customAmountKeys=['traffic_amount_prices','duration_amount_prices','device_amount_prices'];
   function renderDashboard(){const value=dashboard.dashboard||dashboard;$('#home-balance').textContent=money(value.wallet_balance_toman??value.wallet_balance??wallet.balance_toman??wallet.balance);$('#home-active').textContent=number.format(value.active_subscriptions??subscriptions.filter(item=>item.status==='active').length);$('#home-traffic').textContent=value.remaining_bytes!=null?gb(value.remaining_bytes/1073741824):value.remaining_traffic_gb!=null?gb(value.remaining_traffic_gb):'—';$('#home-days').textContent=value.remaining_days!=null?number.format(value.remaining_days)+' روز':'—';document.querySelectorAll('.skeleton').forEach(item=>item.classList.remove('skeleton'));const notices=$('#home-notices');notices.replaceChildren();for(const item of value.notices||value.notifications||value.announcements||[]){const card=node('article',undefined,'surface');card.append(node('h2',item.title||'اطلاعیه'),node('p',item.body||item.message||''));notices.append(card);}renderSubscriptions($('#home-subscriptions'),subscriptions.slice(0,2));}
   function unitRates(product){
     const pricing=product.pricing||{};
@@ -83,7 +84,7 @@
     root.append(node('h3',product.name||subscription?.product_name||'اشتراک'));
     const rates=unitRates(product);
     const pick=(label,id,options,value,max)=>inputField(form,label,id,rates?
-      {type:'number',required:true,min:1,max,value:Math.min(value,max)}:
+      {type:'number',required:true,min:1,max}:
       {options:[...new Set([value,...(options||[])])],value});
     let days,devices,traffic;
     if(!fixed){
@@ -98,13 +99,17 @@
       }
     }
     if(rates){
-      root.append(node('p','هر گیگابایت: '+money(rates[0])+' · هر روز: '+money(rates[1])+' · هر دستگاه: '+money(rates[2]),'payment-note'));
+      const overrideMaps=customAmountKeys.map(key=>product.pricing[key]||{});
+      const hasOverrides=overrideMaps.some(prices=>Object.keys(prices).length>0);
+      root.append(node('p','هر گیگابایت: '+money(rates[0])+' · هر روز: '+money(rates[1])+' · هر دستگاه: '+money(rates[2])+
+        (hasOverrides?' — قیمت اختصاصیِ مقدارهای مشخص در برآورد اعمال می‌شود.':''),'payment-note'));
       const live=node('p',undefined,'muted');
       live.setAttribute('aria-live','polite');
       const estimate=()=>{
         const values=[Number(traffic.value),Number(days.value),Number(devices?.value??subscription?.devices??1)];
-        const total=rates.reduce((sum,rate,index)=>sum+rate*values[index],0);
-        live.textContent='برآورد قیمت: '+(values.every(value=>Number.isInteger(value)&&value>0)&&total<=1000000000000?money(total):'—');
+        const total=rates.reduce((sum,rate,index)=>sum+(overrideMaps[index][values[index]]??rate*values[index]),0);
+        const valid=values.every((value,index)=>Number.isSafeInteger(value)&&value>=1&&value<=[100000,3650,5][index]);
+        live.textContent='برآورد قیمت: '+(valid&&total>0&&total<=1000000000000?money(total):'—');
       };
       for(const input of [traffic,days,devices].filter(Boolean))input.addEventListener('input',estimate);
       estimate();

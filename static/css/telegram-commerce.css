@@ -2,3 +2,16 @@
 
 .commerce-admin .commerce-interface-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-block:0 14px}.commerce-admin .commerce-interface-section{min-width:0;padding:18px;border:1px solid var(--commerce-stroke);border-radius:14px;background:#0b2535}.commerce-admin .commerce-interface-section h3{color:var(--commerce-cyan);margin:0 0 10px}.commerce-admin .commerce-interface-section .help{min-height:3.8em}.commerce-admin .commerce-interface-section select{max-width:100%;text-overflow:ellipsis}.commerce-admin .commerce-interface-groups:has(>section:only-child){grid-template-columns:1fr}@media(max-width:700px){.commerce-admin .commerce-interface-groups{grid-template-columns:1fr}.commerce-admin .commerce-interface-section{padding:15px}}
 .commerce-admin .ticket-message-body{white-space:pre-wrap;overflow-wrap:anywhere;text-align:start;unicode-bidi:plaintext}
+
+.commerce-admin .exact-prices{margin-block:12px}
+.commerce-admin .exact-price-axis{min-width:0;margin:14px 0 0;padding:12px;border:1px solid var(--commerce-stroke);border-radius:12px}
+.commerce-admin .exact-price-axis legend{padding-inline:6px;color:var(--commerce-muted)}
+.commerce-admin .exact-price-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)) auto;align-items:end;gap:10px;margin-block-end:12px}
+.commerce-admin .exact-price-row label{margin-top:0}
+.commerce-admin .exact-price-axis button[aria-disabled=true]{opacity:.55;cursor:default}
+.commerce-admin .customer-configs h3{margin-block:16px 10px}
+.commerce-admin .customer-configs .commerce-table{min-width:360px}
+.commerce-admin .customer-configs .commerce-table :is(td,th){padding:10px}
+.commerce-admin .customer-config-preview{margin-top:14px}
+.commerce-admin .customer-config-preview img{display:block;width:min(100%,280px);height:auto;margin:0 auto 14px;border:5px solid white;border-radius:10px}
+@media(max-width:600px){.commerce-admin .exact-price-row{grid-template-columns:minmax(0,1fr)}.commerce-admin .exact-price-row button{justify-self:start}}

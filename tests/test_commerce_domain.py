@@ -76,6 +76,29 @@ class CommerceDomain(unittest.TestCase):
         with self.assertRaises(DomainError):
             self.action(self.a,'checkout',{'product_id':custom['id']})
 
+    def test_custom_exact_quantity_price_overrides_only_the_matching_component(self):
+        pricing={'per_gb_toman':1000,'per_day_toman':100,'per_device_toman':500,
+                 'traffic_amount_prices':{'17':14000},'duration_amount_prices':{'28':2500},
+                 'device_amount_prices':{'3':0}}
+        payload={'name':'طرح خرید دلخواه','category':'custom','traffic_gb':10,'days':30,'devices':1,
+                 'price_toman':9999,'active':True,'target':{'scope':'local','iface_id':1},'pricing':pricing}
+        product=self.s.admin_action('owner','save_product',payload)['product']
+        selection={'product_id':product['id'],'traffic_gb':17,'days':28,'devices':3}
+        self.assertEqual(self.action(self.a,'quote',selection)['quote']['total_toman'],16500)
+        self.assertEqual(self.action(self.a,'quote',{**selection,'days':29})['quote']['total_toman'],16900)
+        self.assertEqual(self.action(self.a,'quote',{**selection,'traffic_gb':18})['quote']['total_toman'],20500)
+        self.assertEqual(self.action(self.a,'quote',{**selection,'devices':2})['quote']['total_toman'],17500)
+
+        invalid=[{'traffic_amount_prices':{'17':14000}},
+                 {**pricing,'traffic_amount_prices':{'017':14000}},
+                 {**pricing,'duration_amount_prices':{'3651':1000}},
+                 {**pricing,'device_amount_prices':{'3':True}},
+                 {**pricing,'device_amount_prices':{'0':100}},
+                 {**pricing,'traffic_amount_prices':{str(n):100 for n in range(1,32)}}]
+        for rule in invalid:
+            with self.subTest(rule=rule),self.assertRaises(DomainError):
+                self.s.admin_action('owner','save_product',{**payload,'pricing':rule})
+
     def test_unpaid_deadline_applies_to_old_rows_and_keeps_review_history(self):
         self.s.admin_action('owner','save_destination',{'card_number':'1111222233334444','cardholder_name':'fixture','active':True})
         now=1000

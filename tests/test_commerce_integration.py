@@ -18,7 +18,8 @@ class Native:
         self.calls+=1;row={'id':100+self.calls,'status':'active','used_bytes':0,'remaining_bytes':1000,'expires_at':int(time.time())+86400,'peers':[{'id':90+self.calls,'name':'fixture','public_key':'fixture-public-key'}]};self.created[operation]=row;return row
     def reconcile(self,operation):return self.created.get(operation)
     def subscription(self,native_id):return next(row for row in self.created.values() if row['id']==native_id)
-    def artifact(self,native_id,peer_id,kind):return b'fixture-private-config','text/plain'
+    def artifact(self,native_id,peer_id,kind):
+        return (b'\x89PNG-fixture','image/png') if kind=='qr' else (b'fixture-private-config','text/plain')
     def targets(self):return [{'scope':'local','iface_id':1,'available':100},{'scope':'local','iface_id':2,'available':100}]
 
 class Integrated(unittest.TestCase):
@@ -78,6 +79,58 @@ class Integrated(unittest.TestCase):
         self.assertEqual(self.send(self.client,'POST',path,payload).json,result.json)
         self.assertEqual(result.json['payment']['payment_destination']['card_number'],'1111222233334444')
         self.assertEqual(result.json['order']['total_toman'],75000)
+
+    def test_owner_sees_customer_trial_and_paid_configs_and_can_open_only_bound_artifacts(self):
+        base='https://localhost'
+        other_id=self.service.customer_from_telegram({'id':1202})['id']
+        target={'scope':'local','iface_id':1}
+        self.service.admin_action('mother','save_settings',{'trial_target':target,'trial_enabled':True})
+        product=self.service.admin_action('mother','save_product',{
+            'name':'طرح پولی','category':'economy','traffic_gb':10,'days':30,'devices':1,
+            'price_toman':100000,'active':True,'target':target,
+        })['product']
+        self.service.admin_action('mother','wallet_adjustment',{'id':self.cid,'amount_toman':100000,'reason':'fixture'},
+                                  'customer-configs-wallet-funds')
+        quote=self.service.customer_action(self.cid,'quote',{'product_id':product['id']})['quote']
+        self.service.customer_action(self.cid,'orders',{'quote_id':quote['id'],'payment_method':'wallet'},
+                                     'customer-configs-paid-order')
+        self.service.customer_action(self.cid,'trial',{},'customer-configs-trial-order')
+        self.service.process_jobs()
+        prefix='/telegram-commerce/api/customers'
+        listing=self.admin.get(prefix,base_url=base)
+        counts={row['id']:(row['subscription_count'],row['config_count']) for row in listing.json['customers']}
+        self.assertEqual(counts[self.cid],(2,2))
+        self.assertEqual(counts[other_id],(0,0))
+        detail=self.admin.get(f'{prefix}/{self.cid}',base_url=base)
+        self.assertNotIn(b'fixture-private-config',detail.data)
+        subscriptions=detail.json['subscriptions']
+        self.assertEqual({sub['trial'] for sub in subscriptions},{0,1})
+        for sub in subscriptions:
+            [config]=sub['configs']
+            self.assertEqual(set(config),{'id','name'})
+            url=f"{prefix}/{self.cid}/subscriptions/{sub['id']}/peers/{config['id']}"
+            artifact=self.admin.get(url+'/config',base_url=base)
+            self.assertEqual(artifact.status_code,200)
+            self.assertEqual(artifact.data,b'fixture-private-config')
+            self.assertEqual(artifact.headers['Cache-Control'],'no-store')
+            self.assertEqual(artifact.headers['X-Content-Type-Options'],'nosniff')
+            self.assertTrue(artifact.headers['Content-Disposition'].startswith('attachment;'))
+            qr=self.admin.get(url+'/qr',base_url=base)
+            self.assertEqual(qr.status_code,200)
+            self.assertEqual(qr.mimetype,'image/png')
+            self.assertTrue(qr.headers['Content-Disposition'].startswith('inline;'))
+            wrong_customer=url.replace(f'{prefix}/{self.cid}/',f'{prefix}/{other_id}/')
+            self.assertEqual(self.admin.get(wrong_customer+'/config',base_url=base).status_code,404)
+
+        self.owner=False
+        self.assertEqual(self.client.get(url+'/config',base_url=base).status_code,401)
+        self.owner=True
+        self.service.admin_action('mother','suspend_customer',{'id':self.cid,'suspended':True})
+        self.assertEqual(self.admin.get(url+'/config',base_url=base).status_code,200)
+        self.service.native.subscription(sub['native_id'])['peers'][0]['public_key']='recycled-peer-identity'
+        changed=self.admin.get(url+'/config',base_url=base)
+        self.assertEqual(changed.status_code,409)
+        self.assertEqual(changed.json['error'],'ownership_changed')
 
     def test_support_lists_private_receipts_with_and_without_tickets(self):
         destination={'card_number':'1111222233334444','cardholder_name':'fixture','active':True}

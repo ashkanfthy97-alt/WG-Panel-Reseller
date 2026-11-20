@@ -14,6 +14,8 @@ import time
 
 UNPAID_SECONDS = 10 * 60
 UNIT_PRICE_FIELDS = ('per_gb_toman', 'per_day_toman', 'per_device_toman')
+AMOUNT_PRICE_FIELDS = ('traffic_amount_prices', 'duration_amount_prices', 'device_amount_prices')
+CUSTOM_QUANTITY_LIMITS = (100000, 3650, 5)
 UNSUBMITTED_PAYMENT_SQL = """reviewed_at IS NULL
     AND coalesce(receipt_reference,'')='' AND coalesce(transaction_text,'')=''"""
 
@@ -165,10 +167,13 @@ class CommerceService:
         traffic, days, devices = product['traffic_gb'], product['days'], product['devices']
         pricing = product['pricing']
         if product['category']=='custom' and all(field in pricing for field in UNIT_PRICE_FIELDS):
-            traffic=integer(payload.get('traffic_gb',traffic),1,100000)
-            days=integer(payload.get('days',days),1,3650)
-            devices=integer(payload.get('devices',devices),1,5)
-            base=sum(quantity*pricing[field] for quantity,field in zip((traffic,days,devices),UNIT_PRICE_FIELDS))
+            traffic=integer(payload.get('traffic_gb',traffic),1,CUSTOM_QUANTITY_LIMITS[0])
+            days=integer(payload.get('days',days),1,CUSTOM_QUANTITY_LIMITS[1])
+            devices=integer(payload.get('devices',devices),1,CUSTOM_QUANTITY_LIMITS[2])
+            base=sum(
+                pricing.get(override,{}).get(str(quantity),quantity*pricing[rate])
+                for quantity,rate,override in zip((traffic,days,devices),UNIT_PRICE_FIELDS,AMOUNT_PRICE_FIELDS)
+            )
             if not 0<base<=10**12:
                 fail('price_unconfigured','قیمت انتخاب‌شده معتبر نیست؛ مقدار دیگری انتخاب کنید.',409)
             return traffic,days,devices,base
@@ -347,6 +352,15 @@ class CommerceService:
             item['used_bytes']=None;item['remaining_bytes']=None;item['remaining_seconds']=None
         return item
 
+    @staticmethod
+    def _customer_configs(row):
+        if row['native_id'] is None:
+            return []
+        native=json.loads(row['native_snapshot'] or '{}')
+        return [{'id':peer['id'],'name':peer.get('name')} for peer in native.get('peers',[])
+                if isinstance(peer,dict) and type(peer.get('id')) is int and peer['id']>0
+                and isinstance(peer.get('public_key'),str) and peer['public_key']]
+
     def _native_time_fields(self, snapshot):
         """Keep native display ISO and numeric time without local-zone ambiguity."""
         expiry=snapshot.get('expires_at_ts')
@@ -461,11 +475,11 @@ class CommerceService:
                 return {'attachment_reference':row['attachment_reference']}
             fail('unknown_action','این عملیات پشتیبانی نمی‌شود.',404)
 
-    def _artifact(self,cid,payload):
+    def _artifact(self,cid,payload,*,allow_suspended=False):
         sid=integer(payload.get('id'),1);pid=integer(payload.get('peer_id'),1);kind=payload.get('kind')
         if kind not in {'config','qr'}:fail()
         with self.store.db() as db:
-            self._customer(db,cid)
+            self._customer(db,cid,allow_suspended)
             row=db.execute('SELECT * FROM subscriptions WHERE id=? AND customer_id=?',(sid,cid)).fetchone()
             if not row or row['native_id'] is None:fail('not_found','اشتراک آماده نیست.',404)
             original=json.loads(row['native_snapshot'] or '{}')
@@ -566,6 +580,8 @@ class CommerceService:
         actor=text(str(actor),200);payload=payload or {}
         if not isinstance(payload,dict):fail()
         if action=='refund_order':return self._refund_external(actor,payload,request_id)
+        if action=='customer_artifact':
+            return self._artifact(payload.get('customer_id'),payload,allow_suspended=True)
         with self.store.db(write=True) as db:
             if action=='dashboard':
                 totals={name:db.execute('SELECT count(*) FROM '+table).fetchone()[0] for name,table in [('total_customers','customers'),('total_orders','orders')]}
@@ -586,10 +602,21 @@ class CommerceService:
                 if not row:fail('not_found','پرداخت پیدا نشد.',404)
                 return {'payment':self._payment_value(row)}
             if action=='review_payment':return self._receipt(db,'admin:'+actor,request_id,{'action':action,**payload},lambda:self._review_payment(db,actor,payload))
-            if action=='customers':return {'customers':[dict(row) for row in db.execute('SELECT * FROM customers ORDER BY id DESC')]}
+            if action=='customers':
+                subscription_counts=Counter()
+                config_counts=Counter()
+                for row in db.execute('SELECT customer_id,native_id,native_snapshot FROM subscriptions'):
+                    cid=row['customer_id']
+                    subscription_counts[cid]+=1
+                    config_counts[cid]+=len(self._customer_configs(row))
+                return {'customers':[dict(row,subscription_count=subscription_counts[row['id']],
+                                          config_count=config_counts[row['id']])
+                                     for row in db.execute('SELECT * FROM customers ORDER BY id DESC')]}
             if action=='customer':
                 cid=integer(payload.get('id'),1);customer=self._customer(db,cid,True)
-                return {'customer':customer,'subscriptions':[self._subscription(row) for row in db.execute('SELECT * FROM subscriptions WHERE customer_id=?',(cid,))],'transactions':[dict(row) for row in db.execute('SELECT * FROM wallet_ledger WHERE customer_id=? ORDER BY id DESC',(cid,))]}
+                subscriptions=[dict(self._subscription(row),configs=self._customer_configs(row))
+                               for row in db.execute('SELECT * FROM subscriptions WHERE customer_id=? ORDER BY id DESC',(cid,))]
+                return {'customer':customer,'subscriptions':subscriptions,'transactions':[dict(row) for row in db.execute('SELECT * FROM wallet_ledger WHERE customer_id=? ORDER BY id DESC',(cid,))]}
             if action=='suspend_customer':
                 cid=integer(payload.get('id'),1);self._customer(db,cid,True)
                 if type(payload.get('suspended')) is not bool:fail()
@@ -666,13 +693,21 @@ class CommerceService:
             fail('target_required','برای فروش فعال، اینترفیس فروش بات یا مقصد این طرح را تعیین کنید.')
         pricing=p.get('pricing',{})
         if not isinstance(pricing,dict) or len(dumps(pricing))>5000:fail()
-        if set(pricing)-{'traffic_options','traffic_prices','duration_options','duration_percent','device_options','additional_device_toman',*UNIT_PRICE_FIELDS}:fail()
-        if any(field in pricing for field in UNIT_PRICE_FIELDS):
+        if set(pricing)-{'traffic_options','traffic_prices','duration_options','duration_percent','device_options','additional_device_toman',*UNIT_PRICE_FIELDS,*AMOUNT_PRICE_FIELDS}:fail()
+        if any(field in pricing for field in (*UNIT_PRICE_FIELDS,*AMOUNT_PRICE_FIELDS)):
             if category!='custom' or not all(field in pricing for field in UNIT_PRICE_FIELDS):
                 fail('invalid_unit_pricing','هر سه نرخ حجم، روز و دستگاه را برای طرح دلخواه وارد کنید.')
             if not any([integer(pricing[field],0,10**9) for field in UNIT_PRICE_FIELDS]):
                 fail('invalid_unit_pricing','حداقل یکی از نرخ‌ها باید بیشتر از صفر باشد.')
-            integer(traffic,1,100000)
+            integer(traffic,1,CUSTOM_QUANTITY_LIMITS[0])
+        for field,limit in zip(AMOUNT_PRICE_FIELDS,CUSTOM_QUANTITY_LIMITS):
+            prices=pricing.get(field,{})
+            if not isinstance(prices,dict) or len(prices)>30:
+                fail('invalid_amount_pricing','برای هر نوع مقدار حداکثر ۳۰ قیمت مشخص وارد کنید.')
+            for quantity,amount in prices.items():
+                if not isinstance(quantity,str) or not re.fullmatch(r'[1-9][0-9]{0,5}',quantity) or int(quantity)>limit:
+                    fail('invalid_amount_pricing','مقدار واردشده برای قیمت مشخص معتبر نیست.')
+                integer(amount,0)
         for key,low,high in [('traffic_options',1,1000000),('duration_options',1,3650),('device_options',1,5)]:
             if key in pricing:
                 if not isinstance(pricing[key],list) or not 1<=len(pricing[key])<=30:fail()
