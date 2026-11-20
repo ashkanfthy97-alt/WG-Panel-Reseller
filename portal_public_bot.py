@@ -22,6 +22,7 @@ MENU=[('🛒 خرید اشتراک','shop'),('🧪 دریافت تست رایگ�
 CATEGORIES={'economy':'🔥 طرح‌های اقتصادی','custom':'📊 اشتراک حجمی','unlimited':'♾ اشتراک نامحدود'}
 PRICE_MENU='📋 طرح‌ها و قیمت‌ها'
 MENU_ACTIONS={**dict(MENU),PRICE_MENU:'prices'}
+MENU_COMMAND=re.compile(r'^/(start|menu)(?:@[A-Za-z0-9_]+)?(?=\s|$)')
 GUIDES='📚 راهنمای اتصال WireGuard\n۱. برنامهٔ رسمی WireGuard را نصب کنید.\n۲. فایل کانفیگ را وارد کنید یا کد QR اشتراک را اسکن کنید.\n۳. اتصال را روشن کنید.\nدر ویندوز و مک از Import tunnel from file و در اندروید و iOS از افزودن تونل استفاده کنید.'
 DOWNLOADS='📥 برنامه‌های رسمی WireGuard برای اندروید، iOS، ویندوز و macOS:\nhttps://www.wireguard.com/install/'
 
@@ -112,7 +113,9 @@ class PublicBot:
             callback_message_id=(message_id if callback and type(message_id) is int and message_id>0
                                  and isinstance(message.get('text'),str) and isinstance(author,dict) and author.get('is_bot') is True
                                  and str(author.get('id'))==bot else None)
-            referral=text[11:] if text.startswith('/start ref_') else None
+            menu_command=MENU_COMMAND.match(text)
+            argument=text[menu_command.end():].strip() if menu_command else ''
+            referral=argument[4:] if menu_command and menu_command[1]=='start' and argument.startswith('ref_') else None
             customer=self.service.customer_from_telegram({
                 'id':uid,
                 'first_name':_profile_text(sender.get('first_name'),128),
@@ -141,6 +144,8 @@ class PublicBot:
                         encoded=item['text'].encode('utf-16-le')
                         screen=item['text'] if len(encoded)<=8000 else encoded[:7998].decode('utf-16-le',errors='ignore')+'…'
                         item=dict(item,text=screen,menu_message_id=callback_message_id)
+                        if menu_command:
+                            item['fresh_menu']=True
                     db.execute('INSERT INTO commerce_public_outbox(bot_id,customer_id,chat_id,payload) VALUES(?,?,?,?)',(bot,cid,uid,json.dumps(item,ensure_ascii=False)))
                 db.execute('INSERT INTO commerce_public_updates VALUES(?,?,1) ON CONFLICT(bot_id,update_id) DO UPDATE SET done=1',(bot,update_id))
             return True
@@ -149,7 +154,7 @@ class PublicBot:
         if data is None and text in MENU_ACTIONS:
             data=MENU_ACTIONS[text]
         if data is not None and (not isinstance(data,str) or len(data)>64):return [self._message('گزینه معتبر نیست.')],None
-        if text.startswith('/start') or text in {'/cancel','/menu'} or data=='home':return [self.main()],None
+        if MENU_COMMAND.match(text) or text=='/cancel' or data=='home':return [self.main()],None
         if state and state.get('product'):
             selection=state['selection']
             if data=='back:traffic':
@@ -383,6 +388,7 @@ class PublicBot:
 
     def _deliver_menu(self,token,bot,row,payload):
         callback_message_id=payload.pop('menu_message_id')
+        fresh_menu=payload.pop('fresh_menu',False)
         with self.store.db() as db:
             menu=db.execute('SELECT message_id,outbox_id FROM commerce_public_menu_messages WHERE bot_id=? AND chat_id=?',
                             (bot,row['chat_id'])).fetchone()
@@ -390,7 +396,7 @@ class PublicBot:
             return None
         message_id=menu['message_id'] if menu else callback_message_id
         response={'chat_id':row['chat_id'],'link_preview_options':{'is_disabled':True},**payload}
-        if message_id is not None:
+        if not fresh_menu and message_id is not None:
             try:
                 self._write_menu(token,'editMessageText',dict(response,message_id=message_id))
                 return message_id

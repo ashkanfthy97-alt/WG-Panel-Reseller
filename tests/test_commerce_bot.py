@@ -114,6 +114,25 @@ class BotChecks(unittest.TestCase):
                for method,payload,_ in self.transport.calls if method=='editMessageText']
         self.assertEqual(edits,[(84,2),(42,1)])
 
+    def test_start_recovers_a_buried_menu_and_buttons_edit_the_replacement(self):
+        self.send('/start')
+        self.bot.flush_outbox()
+        self.send(data='wallet')
+        self.bot.flush_outbox()
+        self.send('/start')
+        self.bot.flush_outbox()
+        self.send(data='shop')
+        self.bot.flush_outbox()
+        self.send(data='home')
+        self.bot.flush_outbox()
+        self.send('/menu')
+        self.bot.flush_outbox()
+        self.assertEqual([method for method,_,_ in self.transport.calls],[
+            'sendMessage','editMessageText','sendMessage','editMessageText','editMessageText','sendMessage',
+        ])
+        self.assertEqual([payload['message_id'] for method,payload,_ in self.transport.calls
+                          if method=='editMessageText'],[1,3,3])
+
     def test_rejected_mini_app_button_does_not_stop_the_public_menu(self):
         from portal_reseller_bot import BotError
         call=self.transport.call
