@@ -11,7 +11,7 @@ import time
 from urllib.parse import urlsplit
 
 
-MENU=[('🛒 خرید اشتراک','shop'),('🧪 دریافت تست رایگان','trial'),('📦 اشتراک‌های من','subscriptions'),
+MENU=[('🛒 خرید اشتراک','shop'),('🧪 دریافت تست رایگان','trialinfo'),('📦 اشتراک‌های من','subscriptions'),
       ('💰 کیف پول','wallet'),('🎁 دعوت دوستان','referrals'),('📚 آموزش اتصال','guides'),
       ('📥 دانلود برنامه‌ها','downloads'),('🎧 پشتیبانی','support'),('🚀 ورود به پنل کاربری','miniapp')]
 CATEGORIES={'economy':'🔥 طرح‌های اقتصادی','custom':'📊 اشتراک حجمی','unlimited':'♾ اشتراک نامحدود'}
@@ -30,6 +30,7 @@ def _ensure(db):
     db.execute('CREATE TABLE IF NOT EXISTS commerce_public_states (bot_id TEXT NOT NULL, telegram_id INTEGER NOT NULL, value TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY(bot_id,telegram_id))')
     db.execute('CREATE TABLE IF NOT EXISTS commerce_public_offsets (bot_id TEXT PRIMARY KEY, offset INTEGER NOT NULL DEFAULT 0)')
     db.execute('CREATE TABLE IF NOT EXISTS commerce_public_outbox (id INTEGER PRIMARY KEY, bot_id TEXT NOT NULL, customer_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, sent INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0)')
+    db.execute('CREATE TABLE IF NOT EXISTS commerce_public_menu_messages (bot_id TEXT NOT NULL, chat_id INTEGER NOT NULL, message_id INTEGER NOT NULL, outbox_id INTEGER NOT NULL, PRIMARY KEY(bot_id,chat_id))')
     db.execute('CREATE TABLE IF NOT EXISTS commerce_public_notification_deliveries (bot_id TEXT NOT NULL, job_id INTEGER NOT NULL, chat_id INTEGER NOT NULL, part INTEGER NOT NULL, PRIMARY KEY(bot_id,job_id,chat_id,part))')
 
 
@@ -52,11 +53,10 @@ class PublicBot:
     def _bot(self):return self._token().split(':')[0]
 
     def main(self):
-        rows=[[MENU[0][0]],[MENU[1][0]],[MENU[2][0],MENU[3][0]],
-              [PRICE_MENU,MENU[5][0]],[MENU[4][0],MENU[7][0]],[MENU[6][0]]]
-        buttons=[[{'text':label} for label in row] for row in rows]
-        buttons.append([{'text':MENU[-1][0],'web_app':{'url':self.base_url+'/telegram-app'}}])
-        markup={'keyboard':buttons,'resize_keyboard':True,'is_persistent':True}
+        rows=[[MENU[0]],[MENU[1]],[MENU[2],MENU[3]],
+              [(PRICE_MENU,'prices'),MENU[5]],[MENU[4],MENU[7]],[MENU[6]]]
+        markup=keyboard(rows)
+        markup['inline_keyboard'].append([{'text':MENU[-1][0],'web_app':{'url':self.base_url+'/telegram-app'}}])
         return {'text':'به WG Portal خوش آمدید. گزینهٔ موردنظر را انتخاب کنید.','reply_markup':markup}
 
     def _action(self,cid,action,payload=None,key=None):
@@ -76,7 +76,7 @@ class PublicBot:
         if not isinstance(update,dict) or type(update.get('update_id')) is not int or update['update_id']<0:return None
         callback=update.get('callback_query') or {}
         message=callback.get('message') or update.get('message') or {}
-        sender=callback.get('from') or message.get('from') or {}
+        sender=(callback.get('from') if callback else message.get('from')) or {}
         chat=message.get('chat') or {}
         uid=sender.get('id')
         if type(uid) is not int or not 0<uid<2**52 or sender.get('is_bot') or chat.get('type')!='private' or chat.get('id')!=uid:return None
@@ -92,7 +92,12 @@ class PublicBot:
             with self.store.db(write=True) as db:
                 _ensure(db)
                 if db.execute('SELECT 1 FROM commerce_public_updates WHERE bot_id=? AND update_id=? AND done=1',(bot,update_id)).fetchone():return True
-            text=str(message.get('text') or '').strip()
+            text='' if callback else str(message.get('text') or '').strip()
+            message_id=message.get('message_id')
+            author=message.get('from') or {}
+            callback_message_id=(message_id if callback and type(message_id) is int and message_id>0
+                                 and isinstance(message.get('text'),str) and author.get('is_bot') is True
+                                 and str(author.get('id'))==bot else None)
             referral=text[11:] if text.startswith('/start ref_') else None
             customer=self.service.customer_from_telegram({key:sender.get(key,'') for key in ('id','first_name','last_name','username')},referral_code=referral)
             cid=customer['id'];key='public-bot-'+bot+'-'+str(update_id)
@@ -114,9 +119,11 @@ class PublicBot:
                 if new_state is None:db.execute('DELETE FROM commerce_public_states WHERE bot_id=? AND telegram_id=?',(bot,uid))
                 else:db.execute('INSERT INTO commerce_public_states VALUES(?,?,?,?) ON CONFLICT(bot_id,telegram_id) DO UPDATE SET value=excluded.value,expires_at=excluded.expires_at',(bot,uid,json.dumps(new_state,ensure_ascii=False),int(self.clock())+600))
                 for item in messages:
-                    chunks=([dict(item,text=item['text'][start:start+1500]) for start in range(0,len(item['text']),1500)]
-                            if isinstance(item.get('text'),str) and len(item['text'].encode('utf-16-le'))//2>4000 else [item])
-                    for chunk in chunks:db.execute('INSERT INTO commerce_public_outbox(bot_id,customer_id,chat_id,payload) VALUES(?,?,?,?)',(bot,cid,uid,json.dumps(chunk,ensure_ascii=False)))
+                    if 'text' in item:
+                        encoded=item['text'].encode('utf-16-le')
+                        screen=item['text'] if len(encoded)<=8000 else encoded[:7998].decode('utf-16-le',errors='ignore')+'…'
+                        item=dict(item,text=screen,menu_message_id=callback_message_id)
+                    db.execute('INSERT INTO commerce_public_outbox(bot_id,customer_id,chat_id,payload) VALUES(?,?,?,?)',(bot,cid,uid,json.dumps(item,ensure_ascii=False)))
                 db.execute('INSERT INTO commerce_public_updates VALUES(?,?,1) ON CONFLICT(bot_id,update_id) DO UPDATE SET done=1',(bot,update_id))
             return True
 
@@ -141,15 +148,21 @@ class PublicBot:
             available={p.get('category') for p in products}
             rows=[[(label,'categoryshop:'+kind)] for kind,label in CATEGORIES.items() if kind in available]
             if not rows and products:rows=[[('📋 همهٔ طرح‌ها','prices')]]
-            rows.append([('🧪 دریافت تست رایگان','trial')])
-            return [self._message('نوع اشتراک WireGuard را انتخاب کنید.' if products else 'در حال حاضر طرح فعالی وجود ندارد.',rows)],None
+            rows.append([('🧪 دریافت تست رایگان','trialinfo')])
+            text=('🛒 خرید اشتراک WireGuard\n\nدستهٔ موردنظر را انتخاب کنید. در هر دسته، قیمت پایهٔ طرح‌ها را می‌بینید. '
+                  'پس از انتخاب طرح، حجم، مدت و تعداد دستگاه را مشخص کنید.' if products
+                  else '🛒 خرید اشتراک\n\nدر حال حاضر طرحی برای فروش فعال نیست.')
+            return [self._message(text,rows)],None
         category=re.fullmatch(r'categoryshop:(economy|custom|unlimited)',data or '')
         if data=='prices' or category:
             products=self._action(cid,'products').get('products',[])
             if category:products=[p for p in products if p.get('category')==category[1]]
             rows=[[(str(p.get('name','اشتراک'))[:50]+' · '+format(p.get('price_toman',0),',')+' تومان','product:'+str(p['id']))] for p in products[:80]]
             rows.append([('⬅️ دسته‌بندی طرح‌ها','shop')])
-            return [self._message('🛒 طرح موردنظر را انتخاب کنید.' if products else 'در حال حاضر طرح فعالی وجود ندارد.',rows)],None
+            title=CATEGORIES[category[1]] if category else PRICE_MENU
+            detail=('یک طرح را انتخاب کنید تا گزینه‌های حجم، مدت و تعداد دستگاه آن را ببینید.'
+                    if products else 'در این دسته فعلاً طرح فعالی برای خرید وجود ندارد.')
+            return [self._message(title+'\n\n'+detail,rows)],None
         match=re.fullmatch(r'product:([1-9][0-9]*)',data or '')
         if match:
             product=next((p for p in self._action(cid,'products').get('products',[]) if p['id']==int(match[1])),None)
@@ -161,7 +174,8 @@ class PublicBot:
             rows=[[(('نامحدود' if amount is None else str(amount)+' گیگابایت'),'traffic:'+str(amount))] for amount in options]
             category=product.get('category')
             rows.append([('⬅️ طرح‌ها','categoryshop:'+category if category in CATEGORIES else 'prices')])
-            return [self._message('حجم اشتراک را انتخاب کنید.',rows)],state
+            title=str(product.get('name','اشتراک'))[:100]
+            return [self._message('📊 حجم اشتراک '+title+'\n\nحجم تعیین می‌کند در دورهٔ اشتراک چقدر ترافیک در اختیار دارید. یکی از گزینه‌های این طرح را انتخاب کنید.',rows)],state
         match=re.fullmatch(r'traffic:(None|[1-9][0-9]*)',data or '')
         if match and state and state.get('step')=='traffic':
             traffic=None if match[1]=='None' else int(match[1]);product=state['product'];pricing=product.get('pricing') or {}
@@ -170,7 +184,7 @@ class PublicBot:
             options=list(dict.fromkeys([product['days']]+pricing.get('duration_options',[])))
             rows=[[(str(days)+' روز','duration:'+str(days))] for days in options]
             rows.append([('⬅️ انتخاب حجم','back:traffic')])
-            return [self._message('مدت اشتراک را انتخاب کنید.',rows)],state
+            return [self._message('📅 مدت اشتراک\n\nتعداد روزهایی را انتخاب کنید که می‌خواهید سرویس پس از فعال‌سازی اعتبار داشته باشد.',rows)],state
         match=re.fullmatch(r'duration:([1-9][0-9]*)',data or '')
         if match and state and state.get('step')=='duration':
             days=int(match[1]);product=state['product'];pricing=product.get('pricing') or {}
@@ -179,7 +193,7 @@ class PublicBot:
             options=list(dict.fromkeys([product['devices']]+pricing.get('device_options',[])))
             rows=[[(str(count)+' دستگاه','devices:'+str(count))] for count in options]
             rows.append([('⬅️ انتخاب مدت','back:duration')])
-            return [self._message('تعداد دستگاه را انتخاب کنید.',rows)],state
+            return [self._message('📱 تعداد دستگاه‌ها\n\nبرای هر دستگاه یک کانفیگ جدا آماده می‌شود. بعد از این انتخاب، مبلغ نهایی را در پیش‌فاکتور می‌بینید.',rows)],state
         match=re.fullmatch(r'devices:([1-5])',data or '')
         if match and state and state.get('step')=='devices':
             selection=dict(state['selection'],devices=int(match[1]))
@@ -190,7 +204,8 @@ class PublicBot:
             traffic=quote.get('traffic_gb')
             volume='نامحدود' if traffic is None else f'{traffic} گیگابایت'
             return [self._message('🧾 پیش‌فاکتور\nطرح: '+str(quote.get('product_name',''))+'\nحجم: '+volume+'\nمدت: '+str(quote.get('days',''))+' روز\nدستگاه: '+str(quote.get('devices',''))+'\nقیمت پایه: '+format(quote.get('base_toman',0),',')+' تومان\nتخفیف: '+format(quote.get('discount_toman',0),',')+' تومان\nمبلغ نهایی: '+format(quote['total_toman'],',')+' تومان\nپرداخت را انتخاب کنید.',rows)],dict(state,step='invoice',quote_id=qid,selection=selection)
-        if data=='discount' and state and state.get('step')=='invoice':return [self._message('کد تخفیف را ارسال کنید.')],dict(state,step='discount')
+        if data=='discount' and state and state.get('step')=='invoice':
+            return [self._message('🎟 کد تخفیف\n\nکد را در همین چت بفرستید تا مبلغ پیش‌فاکتور دوباره محاسبه شود.')],dict(state,step='discount')
         if state and state.get('step')=='discount' and not data:
             quote=self._action(cid,'quote',dict(state['selection'],discount_code=text[:64]),key)['quote']
             return [self._message('مبلغ پس از تخفیف: '+format(quote['total_toman'],',')+' تومان',[[('💳 کارت‌به‌کارت','buy:card'),('💰 کیف پول','buy:wallet')]])],dict(state,step='invoice',quote_id=str(quote['id']))
@@ -200,16 +215,22 @@ class PublicBot:
             if payment:
                 return self._payment_messages(order,payment),None
             return [self._message('✅ سفارش '+str(order['id'])+' ثبت شد. وضعیت فعال‌سازی را در اشتراک‌های من ببینید.',[[('📦 اشتراک‌های من','subscriptions')]])],None
+        if data=='trialinfo':
+            return [self._message('🧪 تست رایگان\n\nبا تست رایگان می‌توانید اتصال WireGuard را پیش از خرید امتحان کنید. هر حساب یک بار می‌تواند تست بگیرد. پس از ثبت، وضعیت و کانفیگ آماده‌شده در «اشتراک‌های من» نمایش داده می‌شود.',
+                                  [[('🧪 ثبت درخواست تست','trial')]])],None
         if data=='trial':
             result=self._action(cid,'trial',{},key)
             subscription=result.get('subscription') or result.get('order') or {}
             return [self._message('🧪 درخواست تست ثبت شد. وضعیت: '+str(subscription.get('status','در حال آماده‌سازی')),[[('📦 اشتراک‌های من','subscriptions')]])],None
         if data=='wallet':
             wallet=self._action(cid,'wallet')
-            lines=['💰 موجودی: '+format(wallet.get('balance_toman',0),',')+' تومان']
+            lines=['💰 کیف پول','موجودی: '+format(wallet.get('balance_toman',0),',')+' تومان',
+                   'می‌توانید موجودی را برای خرید استفاده کنید. شارژ کارت‌به‌کارت پس از بررسی رسید به موجودی اضافه می‌شود.']
             for row in wallet.get('transactions',[])[:10]:lines.append(str(row.get('amount_toman',row.get('amount',0)))+' تومان · '+str(row.get('kind','تراکنش')))
             return [self._message('\n'.join(lines),[[('➕ شارژ کیف پول','topup')]])],None
-        if data=='topup':return [self._message('مبلغ شارژ را به تومان، فقط عدد وارد کنید.')],{'step':'topup'}
+        if data=='topup':
+            return [self._message('➕ شارژ کیف پول\n\nمبلغ را به تومان و فقط با عدد در همین چت بفرستید تا اطلاعات واریز نمایش داده شود.',
+                                  [[('⬅️ کیف پول','wallet')]])],{'step':'topup'}
         if state and state.get('step')=='topup' and not data:
             normalized=text.translate(str.maketrans('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩','01234567890123456789'))
             if not re.fullmatch(r'[0-9]{1,10}',normalized):return [self._message('مبلغ معتبر به تومان وارد کنید.')],state
@@ -223,14 +244,16 @@ class PublicBot:
         if data=='subscriptions':
             subs=self._action(cid,'subscriptions').get('subscriptions',[])
             rows=[[(str(s.get('product_name',s.get('name','اشتراک')))[:35]+' · '+str(s['id']),'subscription:'+str(s['id']))] for s in subs[:80]]
-            return [self._message('📦 اشتراک‌های شما' if rows else 'هنوز اشتراکی ندارید.',rows)],None
+            text=('📦 اشتراک‌های من\n\nبرای بررسی وضعیت، دانلود کانفیگ یا تمدید، اشتراک را انتخاب کنید.' if rows
+                  else '📦 اشتراک‌های من\n\nهنوز اشتراکی در حساب شما ثبت نشده است. از منوی اصلی می‌توانید طرح‌های فعال یا تست رایگان را ببینید.')
+            return [self._message(text,rows)],None
         match=re.fullmatch(r'subscription:([1-9][0-9]*)',data or '')
         if match:
             sid=int(match[1]);sub=self._action(cid,'subscription',{'id':sid})['subscription'];rows=[]
             for peer in sub.get('peers',[]):
                 rows.append([('📄 فایل دستگاه '+str(peer['id']),'config:'+str(sid)+':'+str(peer['id'])),('▦ کد QR','qr:'+str(sid)+':'+str(peer['id']))])
             rows.append([('🔄 تمدید','renew:'+str(sid)),('⬆️ ارتقا','upgrade:'+str(sid))])
-            return [self._message('اشتراک '+str(sid)+'\nوضعیت: '+str(sub.get('status',''))+'\nمصرف ثبت‌شده: '+str(sub.get('used_bytes','نامشخص'))+' بایت\nزمان باقی‌مانده: '+str(sub.get('remaining_seconds','نامشخص'))+' ثانیه',rows)],None
+            return [self._message('📦 اشتراک '+str(sid)+'\nوضعیت: '+str(sub.get('status',''))+'\nمصرف ثبت‌شده: '+str(sub.get('used_bytes','نامشخص'))+' بایت\nزمان باقی‌مانده: '+str(sub.get('remaining_seconds','نامشخص'))+' ثانیه\n\nبرای اتصال، فایل دستگاه یا کد QR را انتخاب کنید.',rows)],None
         match=re.fullmatch(r'(config|qr):([1-9][0-9]*):([1-9][0-9]*)',data or '')
         if match:
             sid,pid=int(match[2]),int(match[3])
@@ -240,7 +263,9 @@ class PublicBot:
         match=re.fullmatch(r'(renew|upgrade):([1-9][0-9]*)',data or '')
         if match:
             products=self._action(cid,'products').get('products',[])
-            return [self._message('طرح تمدید یا ارتقا را انتخاب کنید.',[[(str(product['name'])[:40],match[1]+'product:'+match[2]+':'+str(product['id']))] for product in products[:80]])],None
+            caption=('🔄 تمدید اشتراک\n\nطرحی را انتخاب کنید تا هزینهٔ تمدید همین اشتراک را ببینید.'
+                     if match[1]=='renew' else '⬆️ ارتقای اشتراک\n\nطرح جدید را انتخاب کنید تا هزینهٔ ارتقای همین اشتراک را ببینید.')
+            return [self._message(caption,[[(str(product['name'])[:40],match[1]+'product:'+match[2]+':'+str(product['id']))] for product in products[:80]])],None
         match=re.fullmatch(r'(renew|upgrade)product:([1-9][0-9]*):([1-9][0-9]*)',data or '')
         if match:
             quote=self._action(cid,match[1]+'_quote',{'id':int(match[2]),'product_id':int(match[3])},key)['quote']
@@ -253,14 +278,16 @@ class PublicBot:
                 if not isinstance(identity,dict) or str(identity.get('id'))!=self._bot() or not re.fullmatch(r'[A-Za-z0-9_]{5,64}',str(identity.get('username',''))):raise ValueError('bot_identity_unavailable')
                 username=identity['username']
             link='https://t.me/'+username+'?start=ref_'+result['referral_code']
-            return [self._message('🎁 دعوت دوستان\n'+link+'\nدعوت‌ها: '+str(result.get('referral_count',0))+'\nپاداش تأییدشده: '+format(result.get('earnings_toman',0),',')+' تومان')],None
+            return [self._message('🎁 دعوت دوستان\n\nلینک اختصاصی را برای دوستانتان بفرستید. پاداش خریدهای واجد شرایط بعد از تأیید پرداخت ثبت می‌شود.\n\n'+link+'\nدعوت‌ها: '+str(result.get('referral_count',0))+'\nپاداش تأییدشده: '+format(result.get('earnings_toman',0),',')+' تومان')],None
         if data in {'guides','downloads'}:return [self._message(GUIDES if data=='guides' else DOWNLOADS)],None
         if data=='support':
             tickets=self._action(cid,'tickets').get('tickets',[])
             rows=[[(str(t.get('category','پشتیبانی'))+' · '+str(t['id']),'ticket:'+str(t['id']))] for t in tickets[:20]]
             rows.insert(0,[('✍️ تیکت جدید','ticketnew')])
-            return [self._message('🎧 پشتیبانی؛ تیکت خود را انتخاب کنید.',rows)],None
-        if data=='ticketnew':return [self._message('موضوع را انتخاب کنید.',[[('پرداخت','category:payment'),('اتصال','category:connection')],[('اشتراک','category:subscription'),('کیف پول','category:wallet')],[('سایر','category:other')]])],None
+            return [self._message('🎧 پشتیبانی\n\nبرای پیگیری درخواست، تیکت را باز کنید. برای مطرح‌کردن موضوع تازه، «تیکت جدید» را بزنید.',rows)],None
+        if data=='ticketnew':
+            return [self._message('✍️ تیکت جدید\n\nنزدیک‌ترین موضوع به درخواستتان را انتخاب کنید. مرحلهٔ بعد متن درخواست را می‌فرستید.',
+                                  [[('پرداخت','category:payment'),('اتصال','category:connection')],[('اشتراک','category:subscription'),('کیف پول','category:wallet')],[('سایر','category:other')]])],None
         if data and data.startswith('category:'):
             category=data.split(':')[1]
             if category not in {'payment','connection','subscription','wallet','other'}:raise ValueError('invalid_category')
@@ -271,8 +298,10 @@ class PublicBot:
         match=re.fullmatch(r'ticket:([1-9][0-9]*)',data or '')
         if match:
             tid=int(match[1]);rows=self._action(cid,'ticket_messages',{'id':tid}).get('messages',[])
-            items=[self._message(str(row.get('body',''))[:3500]) for row in rows[-12:]]
-            return items+[self._message('برای پاسخ، متن پیام خود را ارسال کنید.')],{'step':'ticket_reply','id':tid}
+            history='\n\n'.join(str(row.get('body','')) for row in rows[-12:])
+            if len(history)>1750:history='…\n'+history[-1750:]
+            text='🎧 گفت‌وگوی تیکت '+str(tid)+'\n\n'+history+'\n\nبرای پاسخ، همین‌جا پیام بفرستید. برای دیدن کل گفت‌وگو، از پنل کاربری استفاده کنید.'
+            return [self._message(text,[[('⬅️ تیکت‌ها','support')]])],{'step':'ticket_reply','id':tid}
         if state and state.get('step')=='ticket_reply' and not data:
             self._action(cid,'reply_ticket',{'id':state['id'],'body':text[:4000]},key)
             return [self._message('✅ پاسخ شما ثبت شد.')],None
@@ -293,6 +322,10 @@ class PublicBot:
             self.transport.call(token,'sendDocument',payload,document=body)
 
     def flush_outbox(self,limit=20):
+        with self.lock:
+            return self._flush_outbox(limit)
+
+    def _flush_outbox(self,limit):
         bot=self._bot();token=self._token();now=int(self.clock());sent=0
         with self.store.db(write=True) as db:
             _ensure(db)
@@ -302,20 +335,52 @@ class PublicBot:
                 if db.execute('UPDATE commerce_public_outbox SET locked_until=? WHERE id=? AND sent=0 AND locked_until<=?',(now+60,row['id'],now)).rowcount!=1:continue
             try:
                 payload=json.loads(row['payload'])
+                menu_message_id=None
+                rendered=True
                 if 'artifact' in payload:
                     artifact=payload['artifact']
                     if not callable(self.artifact_provider):raise ValueError('artifact_provider_missing')
                     body,_=self.artifact_provider(row['customer_id'],artifact['subscription_id'],artifact['peer_id'],artifact['kind'])
                     self._send_artifact(token,row['chat_id'],artifact['kind'],body)
+                elif 'menu_message_id' in payload:
+                    menu_message_id=self._deliver_menu(token,bot,row,payload)
+                    rendered=menu_message_id is not None
                 else:self.transport.call(token,'sendMessage',{'chat_id':row['chat_id'],'disable_web_page_preview':True,**payload})
             except Exception as error:
                 attempts=row['attempts']+1;delay=max(min(3600,2**min(attempts,11)),int(getattr(error,'retry_after',0) or 0))
                 with self.store.db(write=True) as db:
                     db.execute('UPDATE commerce_public_outbox SET attempts=?,next_at=?,locked_until=0,sent=? WHERE id=?',(attempts,now+delay,-1 if attempts>=12 else 0,row['id']))
                 continue
-            with self.store.db(write=True) as db:db.execute('UPDATE commerce_public_outbox SET sent=1,locked_until=0 WHERE id=?',(row['id'],))
-            sent+=1
+            with self.store.db(write=True) as db:
+                if menu_message_id is not None:
+                    db.execute('''INSERT INTO commerce_public_menu_messages VALUES(?,?,?,?)
+                        ON CONFLICT(bot_id,chat_id) DO UPDATE SET message_id=excluded.message_id,outbox_id=excluded.outbox_id
+                        WHERE excluded.outbox_id>commerce_public_menu_messages.outbox_id''',
+                        (bot,row['chat_id'],menu_message_id,row['id']))
+                db.execute('UPDATE commerce_public_outbox SET sent=1,locked_until=0 WHERE id=?',(row['id'],))
+            sent+=rendered
         return sent
+
+    def _deliver_menu(self,token,bot,row,payload):
+        callback_message_id=payload.pop('menu_message_id')
+        with self.store.db() as db:
+            menu=db.execute('SELECT message_id,outbox_id FROM commerce_public_menu_messages WHERE bot_id=? AND chat_id=?',
+                            (bot,row['chat_id'])).fetchone()
+        if menu and menu['outbox_id']>=row['id']:
+            return None
+        message_id=menu['message_id'] if menu else callback_message_id
+        response={'chat_id':row['chat_id'],'link_preview_options':{'is_disabled':True},**payload}
+        if message_id is not None:
+            try:
+                self.transport.call(token,'editMessageText',dict(response,message_id=message_id))
+                return message_id
+            except Exception as error:
+                if getattr(error,'code','')!='telegram_message_uneditable':raise
+        result=self.transport.call(token,'sendMessage',response)
+        new_id=result.get('message_id') if isinstance(result,dict) else None
+        if type(new_id) is not int or new_id<=0:
+            raise ValueError('telegram_message_id_missing')
+        return new_id
 
     def notify_pending(self,limit=20):
         claim=getattr(self.service,'claim_notifications',None)

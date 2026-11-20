@@ -40,9 +40,9 @@ class BotChecks(unittest.TestCase):
         self.send('/start');self.send(data='shop');self.send(data='product:'+str(self.product['id']))
         self.send(data='traffic:10');self.send(data='duration:30');self.send(data='devices:1')
         return self.send(data='buy:card')
-    def test_persistent_menu_buttons_and_https_launcher(self):
+    def test_inline_menu_buttons_and_https_launcher(self):
         self.send('/start');self.bot.flush_outbox()
-        markup=self.transport.calls[-1][1]['reply_markup'];buttons=[b for row in markup['keyboard'] for b in row]
+        markup=self.transport.calls[-1][1]['reply_markup'];buttons=[b for row in markup['inline_keyboard'] for b in row]
         self.assertEqual(len(buttons),10)
         self.assertEqual(buttons[-1]['web_app']['url'],'https://portal.example.test/telegram-app')
         for action in ['shop','wallet','subscriptions','referrals','guides','downloads','support']:
@@ -61,7 +61,11 @@ class BotChecks(unittest.TestCase):
         self.send(data='back:devices')
         self.send(data='back:duration')
         self.bot.flush_outbox()
-        replies=[payload for method,payload,_ in self.transport.calls if method=='sendMessage']
+        self.assertEqual([method for method,_,_ in self.transport.calls],
+                         ['sendMessage']+['editMessageText']*(len(self.transport.calls)-1))
+        replies=[payload for _,payload,_ in self.transport.calls]
+        self.assertEqual({reply['message_id'] for reply in replies[1:]},{1})
+        self.assertIn('حجم، مدت و تعداد دستگاه',replies[1]['text'])
         options=lambda reply:{button.get('callback_data') for row in reply['reply_markup']['inline_keyboard'] for button in row}
         self.assertIn('categoryshop:economy',options(replies[1]))
         self.assertIn('product:'+str(self.product['id']),options(replies[2]))
@@ -83,7 +87,7 @@ class BotChecks(unittest.TestCase):
         self.bot.flush_outbox()
         menus=[payload for method,payload,_ in self.transport.calls if method=='sendMessage' and 'به WG Portal خوش آمدید' in payload.get('text','')]
         self.assertEqual({payload['chat_id'] for payload in menus},set(customers+[555]))
-        self.assertTrue(all(len([item for row in payload['reply_markup']['keyboard'] for item in row])==10 for payload in menus))
+        self.assertTrue(all(len([item for row in payload['reply_markup']['inline_keyboard'] for item in row])==10 for payload in menus))
         steps=['shop','product:'+str(self.product['id']),'traffic:10','duration:30']
         for step in steps:
             for uid in customers:self.assertTrue(self.bot.handle_update(self.update(data=step,uid=uid)))
@@ -98,6 +102,17 @@ class BotChecks(unittest.TestCase):
         for uid in customers[:2]:self.bot.handle_update(self.update(data='trial',uid=uid))
         self.bot.handle_update(self.update(data='trial',uid=42))
         with self.store.db() as db:self.assertEqual(db.execute('SELECT count(*) FROM trial_claims').fetchone()[0],2)
+
+    def test_each_private_chat_edits_its_own_menu(self):
+        for uid in (42,84):
+            self.bot.handle_update(self.update('/start',uid=uid))
+        self.bot.flush_outbox()
+        for uid in (84,42):
+            self.bot.handle_update(self.update(data='wallet',uid=uid))
+        self.bot.flush_outbox()
+        edits=[(payload['chat_id'],payload['message_id'])
+               for method,payload,_ in self.transport.calls if method=='editMessageText']
+        self.assertEqual(edits,[(84,2),(42,1)])
 
     def test_public_customer_cannot_retrieve_another_customers_configuration(self):
         for uid in [42,84]:self.bot.handle_update(self.update('/start',uid=uid))
@@ -134,6 +149,72 @@ class BotChecks(unittest.TestCase):
         with self.store.db() as db:self.assertEqual(db.execute('SELECT count(*) FROM commerce_public_outbox').fetchone()[0],1)
         altered=self.update('/start',data='shop');altered['callback_query']['from']['id']=99
         self.assertFalse(self.bot.handle_update(altered))
+    def test_reuses_legacy_callback_message_and_typed_reply_after_restart(self):
+        update=self.update('/start ref_ignored',data='topup')
+        update['callback_query']['message'].update(message_id=97, **{'from':{'id':123456,'is_bot':True}})
+        self.bot.handle_update(update);self.bot.flush_outbox()
+        self.assertEqual(self.transport.calls[-1][0],'editMessageText')
+        self.assertEqual(self.transport.calls[-1][1]['message_id'],97)
+        self.bot=PublicBot(self.service,self.transport,'https://portal.example.test',lambda:TOKEN,clock=lambda:self.now)
+        self.send('۱۰۰۰۰۰');self.bot.flush_outbox()
+        self.assertEqual(self.transport.calls[-1][0],'editMessageText')
+        self.assertEqual(self.transport.calls[-1][1]['message_id'],97)
+
+    def test_replaces_uneditable_message_once_and_remembers_replacement(self):
+        self.send('/start');self.bot.flush_outbox()
+        original=self.transport.call
+        attempted=[]
+        def deleted(token,method,payload=None,**files):
+            if method=='editMessageText' and payload['message_id']==1:
+                attempted.append(payload['message_id'])
+                error=ValueError('simulated missing message')
+                error.code='telegram_message_uneditable'
+                raise error
+            return original(token,method,payload,**files)
+        self.transport.call=deleted
+        self.send(data='wallet');self.bot.flush_outbox()
+        self.send(data='home');self.bot.flush_outbox()
+        self.assertEqual(attempted,[1])
+        self.assertEqual([method for method,_,_ in self.transport.calls],['sendMessage','sendMessage','editMessageText'])
+        self.assertEqual(self.transport.calls[-1][1]['message_id'],2)
+
+    def test_retry_of_old_screen_cannot_replace_a_delivered_newer_screen(self):
+        self.send('/start');self.bot.flush_outbox()
+        self.transport.fail=True
+        self.send(data='wallet');self.bot.flush_outbox()
+        self.transport.fail=False
+        self.send(data='support');self.bot.flush_outbox()
+        self.now+=61
+        self.assertEqual(self.bot.flush_outbox(),0)
+        self.assertIn('پشتیبانی',self.transport.calls[-1][1]['text'])
+
+    def test_trial_opens_explanation_before_registering_request(self):
+        self.service.admin_action('owner','save_settings',{'trial_enabled':True,'trial_target':{'scope':'local','iface_id':1}})
+        self.send('/start');self.send(data='trialinfo');self.bot.flush_outbox()
+        method,payload,_=self.transport.calls[-1]
+        self.assertEqual(method,'editMessageText')
+        self.assertIn('پیش از خرید',payload['text'])
+        self.assertEqual(payload['reply_markup']['inline_keyboard'][0][0]['callback_data'],'trial')
+        with self.store.db() as db:self.assertEqual(db.execute('SELECT count(*) FROM trial_claims').fetchone()[0],0)
+        self.send(data='trial');self.bot.flush_outbox()
+        self.assertEqual(self.transport.calls[-1][0],'editMessageText')
+        with self.store.db() as db:self.assertEqual(db.execute('SELECT count(*) FROM trial_claims').fetchone()[0],1)
+
+    def test_ticket_history_and_reply_prompt_use_one_bounded_screen(self):
+        self.send('/start');self.bot.flush_outbox()
+        original=self.service.customer_action
+        def action(customer_id,action,payload=None,request_id=None):
+            if action=='ticket_messages':
+                return {'messages':[{'body':'📣'*4000},{'body':'آخرین پیام'}]}
+            return original(customer_id,action,payload,request_id)
+        self.service.customer_action=action
+        self.send(data='ticket:1');self.bot.flush_outbox()
+        self.assertEqual([method for method,_,_ in self.transport.calls],['sendMessage','editMessageText'])
+        reply=self.transport.calls[-1][1]
+        self.assertEqual(reply['message_id'],1)
+        self.assertIn('آخرین پیام',reply['text'])
+        self.assertIn('برای پاسخ',reply['text'])
+        self.assertLessEqual(len(reply['text'].encode('utf-16-le'))//2,4096)
     def test_outbox_rate_limit_retries_without_recreating_order(self):
         self.purchase();self.transport.fail=True
         self.assertEqual(self.bot.flush_outbox(),0)

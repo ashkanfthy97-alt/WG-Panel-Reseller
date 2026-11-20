@@ -57,7 +57,7 @@ class BotError(ValueError):
         self.retry_after = min(3600, max(0, int(retry_after or 0)))
 
 
-def telegram_result(status, value):
+def telegram_result(status, value, method=None):
     if not isinstance(value, dict):
         raise BotError('telegram_response_invalid')
     if status == 200 and value.get('ok') is True:
@@ -71,12 +71,18 @@ def telegram_result(status, value):
         parameters = value.get('parameters') or {}
         raise BotError('telegram_rate_limited', retry_after=parameters.get('retry_after', 30))
     if status == 400 and code == 400:
+        if method == 'editMessageText':
+            description = str(value.get('description') or '').casefold().removeprefix('bad request: ')
+            if description == 'message is not modified' or description.startswith('message is not modified:'):
+                return True
+            if description in {'message to edit not found', "message can't be edited", "message can't be edited by the bot"}:
+                raise BotError('telegram_message_uneditable')
         raise BotError('telegram_bad_request')
     raise BotError('telegram_unavailable')
 
 
 TELEGRAM_METHODS = {'getMe', 'getWebhookInfo', 'getChat', 'getUpdates', 'sendMessage',
-                    'sendDocument', 'sendPhoto', 'answerCallbackQuery'}
+                    'sendDocument', 'sendPhoto', 'answerCallbackQuery', 'editMessageText'}
 
 
 def telegram_payload(payload):
@@ -102,7 +108,7 @@ class TelegramTransport:
                     timeout=timeout or (5, 40 if method == 'getUpdates' else 15), allow_redirects=False)
                 if len(result.content) > 4 * 1024 * 1024:
                     raise BotError('telegram_response_invalid')
-                return telegram_result(result.status_code, result.json())
+                return telegram_result(result.status_code, result.json(), method)
         except BotError:
             raise
         except requests.RequestException:
